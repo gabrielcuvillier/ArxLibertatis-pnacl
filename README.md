@@ -5,6 +5,13 @@
              |   __(PNaCl port)____|__
               \_/____________________/
 
+## Important Note!
+This port is now deprecated since PNaCl is no more supported by Google.
+
+... But it is being replaced by a port to WebAssembly: see https://github.com/gabrielcuvillier/ArxLibertatis-WebAssembly
+
+## Intro
+
 This is an experimental port of Arx Libertatis to Portable Native Client (PNaCl) and Pepper API (PPAPI), allowing to run the Arx Fatalis game in a native sandbox of Google Chrome browser.
 
 ## Contents
