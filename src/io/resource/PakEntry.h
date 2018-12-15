@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -52,7 +52,7 @@ public:
 	PakFile * alternative() const { return _alternative; }
 	
 	virtual void read(void * buf) const = 0;
-	char * readAlloc() const;
+	std::string read() const;
 	
 	virtual PakFileHandle * open() const = 0;
 	

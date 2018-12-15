@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,7 +23,7 @@
 #include "graphics/GraphicsTypes.h"
 
 
-#pragma pack(push,1)
+#pragma pack(push, 1)
 
 
 struct SavedColor {
@@ -52,9 +52,7 @@ struct SavedVec3 {
 	f32 z;
 	
 	Vec3f toVec3() const {
-		Vec3f a;
-		a.x = x, a.y = y, a.z = z;
-		return a;
+		return Vec3f(x, y, z);
 	}
 	
 	SavedVec3 & operator=(const Vec3f & b) {
@@ -75,7 +73,7 @@ struct SavedAnglef {
 	}
 	
 	SavedAnglef & operator=(const Anglef & o) {
-		a = o.getYaw(), b = o.getPitch(), g = o.getRoll();
+		a = o.getPitch(), b = o.getYaw(), g = o.getRoll();
 		return *this;
 	}
 	
@@ -89,26 +87,6 @@ struct SavedTextureVertex {
 	u32 specular;
 	f32 tu;
 	f32 tv;
-	
-	operator TexturedVertex() const {
-		TexturedVertex a;
-		a.p.x = pos.x, a.p.y = pos.y, a.p.z = pos.z;
-		a.rhw = rhw;
-		a.color = Color::fromBGRA(ColorBGRA(color)).toRGBA();
-		a.uv.x = tu;
-		a.uv.y = tv;
-		return a;
-	}
-	
-	SavedTextureVertex & operator=(const TexturedVertex & b) {
-		pos.x = b.p.x, pos.y = b.p.y, pos.z = b.p.z;
-		rhw = b.rhw;
-		color = Color::fromRGBA(b.color).toBGRA();
-		specular = 0xFF000000; // TODO unused
-		tu = b.uv.x;
-		tv = b.uv.y;
-		return *this;
-	}
 	
 };
 

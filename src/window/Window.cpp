@@ -35,18 +35,19 @@ std::ostream & operator<<(std::ostream & os, const DisplayMode & mode) {
 	return os << mode.resolution.x << 'x' << mode.resolution.y;
 }
 
-void Window::Listener::onCreateWindow( const Window & /*window*/ ) {}
-bool Window::Listener::onCloseWindow( const Window & /*window*/ ) { return true; }
-void Window::Listener::onDestroyWindow( const Window & /*window*/ ) {}
-void Window::Listener::onMoveWindow( const Window & /*window*/ ) {}
-void Window::Listener::onResizeWindow( const Window & /*window*/ ) {}
-void Window::Listener::onMinimizeWindow( const Window & /*window*/ ) {}
-void Window::Listener::onMaximizeWindow( const Window & /*window*/ ) {}
-void Window::Listener::onRestoreWindow( const Window & /*window*/ ) {}
-void Window::Listener::onToggleFullscreen( const Window & /*window*/ ) {}
-void Window::Listener::onWindowGotFocus( const Window & /*window*/ ) {}
-void Window::Listener::onWindowLostFocus( const Window & /*window*/ ) {}
-void Window::Listener::onPaintWindow( const Window & /*window*/ ) {}
+void Window::Listener::onCreateWindow(const Window & /* window */) { }
+bool Window::Listener::onCloseWindow(const Window & /* window */) { return true; }
+void Window::Listener::onDestroyWindow(const Window & /* window */) { }
+void Window::Listener::onMoveWindow(const Window & /* window */) { }
+void Window::Listener::onResizeWindow(const Window & /* window */) { }
+void Window::Listener::onMinimizeWindow(const Window & /* window */) { }
+void Window::Listener::onMaximizeWindow(const Window & /* window */) { }
+void Window::Listener::onRestoreWindow(const Window & /* window */) { }
+void Window::Listener::onToggleFullscreen(const Window & /* window */) { }
+void Window::Listener::onWindowGotFocus(const Window & /* window */) { }
+void Window::Listener::onWindowLostFocus(const Window & /* window */) { }
+void Window::Listener::onPaintWindow(const Window & /*window*/) { }
+void Window::Listener::onDroppedFile(const Window & /*window*/, const fs::path & /* path */) { }
 
 Window::Window()
 	: m_position(0, 0)
@@ -155,5 +156,11 @@ void Window::onFocus(bool hasFocus) {
 void Window::onPaint() {
 	BOOST_FOREACH(Listener * listener, m_listeners) {
 		listener->onPaintWindow(*this);
+	}
+}
+
+void Window::onDroppedFile(const fs::path & path) {
+	BOOST_FOREACH(Listener * listener, m_listeners) {
+		listener->onDroppedFile(*this, path);
 	}
 }

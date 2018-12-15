@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -53,19 +53,19 @@ struct lfunction {
 	typedef FnSign                          signature;
 	typedef detail::lfn_invoker<signature>  lfn_invoker;
 	
-	Function function;
+	Function m_function;
 	
-	explicit lfunction(Function const & function) : function(function) {
+	explicit lfunction(Function const & function) : m_function(function) {
 	}
 	
 	template <typename Args>
 	typename lfn_invoker::result_type operator()(Args & args) {
-		return lfn_invoker()(function, args);
+		return lfn_invoker()(m_function, args);
 	}
 };
 
 template <typename FnSign, typename Function>
-lfunction<FnSign,Function> make_lfunction(Function const& fn) {
+lfunction<FnSign, Function> make_lfunction(const Function & fn) {
 	return lfunction<FnSign, Function>(fn);
 }
 

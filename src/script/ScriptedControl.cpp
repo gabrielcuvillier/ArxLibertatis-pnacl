@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -42,6 +42,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 */
 
 #include "script/ScriptedControl.h"
+
+#include "ai/Anchors.h"
 
 #include "core/Core.h"
 #include "core/GameTime.h"
@@ -165,11 +167,11 @@ public:
 	
 	Result execute(Context & context) {
 		
-		bool choice = context.getBool();
+		bool blocked = context.getBool();
 		
-		DebugScript(' ' << choice);
+		DebugScript(' ' << blocked);
 		
-		ANCHOR_BLOCK_By_IO(context.getEntity(), choice ? 1 : 0);
+		ANCHOR_BLOCK_By_IO(context.getEntity(), blocked);
 		
 		return Success;
 	}
@@ -226,13 +228,12 @@ public:
 		DebugScript(' ' << options << " \"" << name << '"');
 		
 		if(name == "kill") {
-			DANAE_KillCinematic();
+			cinematicKill();
 		} else if(name == "play") {
 			cinematicRequestStart();
-			arxtime.pause();
 		} else {
 			
-			if(resources->getFile(res::path("graph/interface/illustrations") / (name + ".cin"))) {
+			if(g_resources->getFile(res::path("graph/interface/illustrations") / (name + ".cin"))) {
 				cinematicPrepare(name + ".cin", preload);
 			} else {
 				ScriptWarning << "unable to find cinematic \"" << name << '"';
@@ -367,7 +368,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedControl() {
 	

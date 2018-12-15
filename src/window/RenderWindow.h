@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -35,7 +35,6 @@ public:
 	RenderWindow()
 		: m_minTextureUnits(1)
 		, m_maxMSAALevel(1)
-		, m_MSAALevel(0)
 		, m_vsync(1)
 		, m_renderer(NULL)
 		{ }
@@ -62,11 +61,6 @@ public:
 	void setMaxMSAALevel(int msaa) { m_maxMSAALevel = std::max(1, msaa); }
 	
 	/*!
-	 * Get the current MSAA level.
-	 */
-	int getMSAALevel() { return m_MSAALevel; }
-	
-	/*!
 	 * Enebly or disable vsync.
 	 * May not have any effect when called after \ref initialize().
 	 *
@@ -76,6 +70,11 @@ public:
 	 * \return true if the vsync setting was successfully changed.
 	 */
 	virtual bool setVSync(int vsync) = 0;
+	
+	/*!
+	 * Set the monitor gamma when in fullscreen mode.
+	 */
+	virtual bool setGamma(float gamma = 1.f) = 0;
 	
 	Renderer * getRenderer() { return m_renderer; }
 	
@@ -88,7 +87,6 @@ protected:
 	
 	int m_minTextureUnits;
 	int m_maxMSAALevel;
-	int m_MSAALevel;
 	int m_vsync;
 	
 	Renderer * m_renderer;

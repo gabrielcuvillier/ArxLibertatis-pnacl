@@ -1,4 +1,4 @@
-# Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+# Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
 #
 # This file is part of Arx Libertatis.
 #
@@ -22,12 +22,44 @@ import logging
 
 log = logging.getLogger('arx addon')
 
+import sys
+def getCurrentMachine():
+    if sys.maxsize > 2**32:
+        return 'x64'
+    else:
+        return 'x86'
+
+import struct
+def getDllMachine(dllFile):
+    with open(dllFile, "rb") as f:
+        f.seek(60)
+        e_lfanew, = struct.unpack("<l", f.read(4))
+        f.seek(e_lfanew)
+        pemagic = f.read(4)
+        if pemagic == b'PE\x00\x00':
+            machine, = struct.unpack("<H", f.read(2))
+            if machine == 0x8664:
+                return 'x64'
+            elif machine == 0x014c:
+                return 'x86'
+            else:
+                raise RuntimeError("Unknown machine type in PE header" + str(machine))
+        else:
+            raise RuntimeError("PE magic not found" + str(pemagic))
+
+def checkDll(dllFile):
+    a = getDllMachine(dllFile)
+    b = getCurrentMachine()
+    if a != b:
+        raise RuntimeError("Can not load '"+a+"' '" + dllFile + "' dll in '"+b+"' Blender, please use matching dll")
+
 class ArxIO(object):
     messageBufferSize = 512
 
     def __init__(self):
         if platform.system() == "Windows":
             libPaths = [ os.path.realpath(__file__ + "\..\ArxIO.dll") ]
+            checkDll(libPaths[0])
         else:
             libPaths = [
                 os.path.realpath(__file__ + "/../libArxIO.so.0"),
@@ -35,14 +67,18 @@ class ArxIO(object):
                 "libArxIO.so.0"
             ]
         
+        self.lib = None
+        lastException = None
         for libPath in libPaths:
-            try:
-                self.lib = ctypes.cdll.LoadLibrary(libPath)
-                break
-            except:
-                continue
+            if os.path.isfile(libPath):
+                try:
+                    self.lib = ctypes.cdll.LoadLibrary(libPath)
+                    break
+                except Exception as e:
+                    lastException = e
+                    continue
         if self.lib is None:
-            raise Exception('could not load the ArxIO library from ' + ', '.join(libPaths))
+            raise Exception('could not load the ArxIO library from: [\n' + ',\n'.join(libPaths) + '\n]\nLoadLibrary Exception: ' + str(lastException))
         self.lib.ArxIO_init()
 
     def getError(self):

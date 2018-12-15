@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -30,20 +30,9 @@ public:
 	enum TextureOp {
 		OpDisable,    //!< Disables output from this texture stage and all stages with a higher index.
 		OpSelectArg1, //!< Use this texture stage's first color or alpha argument, unmodified, as the output.
-		OpSelectArg2, //!< Use this texture stage's second color or alpha argument, unmodified, as the output.
 		OpModulate,   //!< Multiply the components of the arguments together.
 		OpModulate2X, //!< Multiply the components of the arguments, and shift the products to the left 1 bit.
 		OpModulate4X, //!< Multiply the components of the arguments, and shift the products to the left 2 bits.
-		OpAddSigned   //!< Add args with -0.5 bias
-	};
-	
-	//! Texture blending arguments
-	enum TextureArg {
-		ArgDiffuse    = 0x00000,
-		ArgCurrent    = 0x00001,
-		ArgTexture    = 0x00002,
-		ArgMask       = 0x0000F,
-		ArgComplement = 0x00010
 	};
 	
 	//! Texture wrapping/addressing mode
@@ -55,34 +44,29 @@ public:
 	
 	//! Minification/Magnification/Mipmap filter
 	enum FilterMode {
-		FilterNone,    //!< Only valid for mip filtering.
-		FilterNearest, //!< Point filtering. The texel with coordinates nearest to the desired pixel value is used. 
+		FilterNearest, //!< Point filtering. The texel with coordinates nearest to the desired pixel value is used.
 		FilterLinear   //!< Bilinear interpolation filtering. A weighted average of a 2×2 area of texels surrounding the desired pixel is used.
 	};
 	
 	explicit TextureStage(unsigned int stage);
 	virtual ~TextureStage() { }
 	
-	virtual Texture* getTexture() const = 0;
+	virtual Texture * getTexture() const = 0;
 	virtual void setTexture(Texture * pTexture) = 0;
 	virtual void resetTexture() = 0;
 	
-	virtual void setColorOp(TextureOp textureOp, TextureArg texArg1, TextureArg texArg2) = 0;
 	virtual void setColorOp(TextureOp textureOp) = 0;
-	void setColorOp(TextureArg texArg);
-	void disableColor();
 	
-	virtual void setAlphaOp(TextureOp textureOp, TextureArg texArg1, TextureArg texArg2) = 0;
 	virtual void setAlphaOp(TextureOp textureOp) = 0;
-	void setAlphaOp(TextureArg texArg);
-	void disableAlpha();
 	
-	virtual WrapMode getWrapMode() const = 0;
-	virtual void setWrapMode(WrapMode wrapMode) = 0;
+	WrapMode getWrapMode() const { return m_wrapMode; }
+	void setWrapMode(WrapMode wrapMode) { m_wrapMode = wrapMode; }
 	
-	virtual void setMinFilter(FilterMode filterMode) = 0;
-	virtual void setMagFilter(FilterMode filterMode) = 0;
-	virtual void setMipFilter(FilterMode filterMode) = 0;
+	FilterMode getMinFilter() const { return m_minFilter; }
+	void setMinFilter(FilterMode filterMode) { m_minFilter = filterMode; }
+	
+	FilterMode getMagFilter() const { return m_magFilter; }
+	void setMagFilter(FilterMode filterMode) { m_magFilter = filterMode; }
 	
 	//! Level of detail bias for mipmaps. Can be used to make textures appear more chunky or more blurred.
 	/* Each unit bias (+/-1.0) biases the selection by exactly one MIP map level. 
@@ -96,23 +80,10 @@ protected:
 	
 	unsigned int mStage;
 	
+	WrapMode m_wrapMode;
+	FilterMode m_minFilter;
+	FilterMode m_magFilter;
+	
 };
-
-
-inline void TextureStage::setColorOp(TextureArg texArg) {
-	setColorOp(OpSelectArg1, texArg, ArgCurrent);
-}
-
-inline void TextureStage::disableColor() {
-	setColorOp(OpDisable, ArgCurrent, ArgCurrent);
-}
-
-inline void TextureStage::setAlphaOp(TextureArg texArg) {
-	setAlphaOp(OpSelectArg1, texArg, ArgCurrent);
-}
-
-inline void TextureStage::disableAlpha() {
-	setAlphaOp(OpDisable, ArgCurrent, ArgCurrent);
-}
 
 #endif // ARX_GRAPHICS_TEXTURE_TEXTURESTAGE_H

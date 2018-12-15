@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -40,7 +40,7 @@ CriticalErrorDialog::~CriticalErrorDialog() {
 		
 		std::ostringstream message;
 		message << errorString;
-		fs::path logfile = fs::paths.user / "arx.log";
+		fs::path logfile = fs::getUserDir() / "arx.log";
 		if(fs::exists(logfile)) {
 			message << "\n\nYou might want to look at the log for more details:\n";
 			message << logfile.string();

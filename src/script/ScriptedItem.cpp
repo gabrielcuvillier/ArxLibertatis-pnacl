@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,6 +49,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/Item.h"
 #include "game/Player.h"
 #include "graphics/Math.h"
+#include "gui/Console.h"
+#include "gui/Credits.h"
+#include "gui/Menu.h"
 #include "scene/Interactive.h"
 #include "script/ScriptEvent.h"
 #include "script/ScriptUtils.h"
@@ -222,7 +225,7 @@ public:
 			}
 		}
 		
-		std::string param2 = context.getWord();
+		std::string modifierName = context.getWord();
 		std::string val = context.getWord();
 		
 		EquipmentModifierFlags flag = 0;
@@ -231,9 +234,9 @@ public:
 		}
 		float fval = context.getFloatVar(val);
 		
-		DebugScript(' ' << options << ' ' << param2 << ' ' << fval << ' ' << flag);
+		DebugScript(' ' << options << ' ' << modifierName << ' ' << fval << ' ' << flag);
 		
-		ARX_EQUIPMENT_SetEquip(context.getEntity(), special, param2, fval, flag);
+		ARX_EQUIPMENT_SetEquip(context.getEntity(), special, modifierName, fval, flag);
 		
 		return Success;
 	}
@@ -366,14 +369,22 @@ public:
 			player.hunger = std::min(player.hunger, 100.f);
 		}
 		
-		ARX_INTERACTIVE_DestroyIOdelayed(entity);
+		if(entity == entities.player()) {
+			// The player entity must not be destroyed!
+			g_console.close();
+			ARX_MENU_Launch(g_canResumeGame);
+			ARX_MENU_Clicked_CREDITS();
+			credits::setMessage("You have been eaten by a Grue!");
+		} else {
+			ARX_INTERACTIVE_DestroyIOdelayed(entity);
+		}
 		
 		return Success;
 	}
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedItem() {
 	

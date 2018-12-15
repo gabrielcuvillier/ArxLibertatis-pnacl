@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,6 +21,8 @@
 #define ARX_CORE_CONFIG_H
 
 #include <string>
+
+#include "audio/AudioTypes.h"
 
 #include "input/InputKey.h"
 
@@ -51,6 +53,7 @@ enum ControlAction {
 	CONTROLS_CUST_BOOKQUEST,
 	CONTROLS_CUST_DRINKPOTIONLIFE,
 	CONTROLS_CUST_DRINKPOTIONMANA,
+	CONTROLS_CUST_DRINKPOTIONCURE,
 	CONTROLS_CUST_TORCH,
 	CONTROLS_CUST_PRECAST1,
 	CONTROLS_CUST_PRECAST2,
@@ -72,6 +75,7 @@ enum ControlAction {
 	CONTROLS_CUST_CANCELCURSPELL,
 	CONTROLS_CUST_MINIMAP,
 	CONTROLS_CUST_TOGGLE_FULLSCREEN,
+	CONTROLS_CUST_CONSOLE,
 	NUM_ACTION_KEY
 };
 
@@ -86,15 +90,31 @@ enum UIScaleFilter {
 	UIFilterBilinear = 1
 };
 
+enum QuickLevelTransition {
+	NoQuickLevelTransition = 0,
+	JumpToChangeLevel = 1,
+	ChangeLevelImmediately = 2,
+};
+
+enum AutoReadyWeapon {
+	NeverAutoReadyWeapon = 0,
+	AutoReadyWeaponNearEnemies = 1,
+	AlwaysAutoReadyWeapon = 2,
+};
+
 struct ActionKey {
 	
-	explicit ActionKey(InputKeyId key_0 = -1, InputKeyId key_1 = -1) {
+	explicit ActionKey(InputKeyId key_0 = UNUSED,
+	                   InputKeyId key_1 = UNUSED) {
+		if(key_0 != UNUSED && key_0 == key_1) {
+			key_1 = UNUSED;
+		}
 		key[0] = key_0;
 		key[1] = key_1;
 	}
 	
 	InputKeyId key[2];
-	
+	static const InputKeyId UNUSED = -1;
 };
 
 class Config {
@@ -107,16 +127,23 @@ public:
 	// section 'video'
 	struct {
 		
-		Vec2i resolution;
+		std::string renderer;
 		
 		bool fullscreen;
+		Vec2i resolution;
+		float gamma;
+		
+		int vsync;
+		int fpsLimit;
+		
+		float fov;
+		
 		int levelOfDetail;
 		float fogDistance;
 		bool antialiasing;
-		bool vsync;
 		int maxAnisotropicFiltering;
-		bool colorkeyAlphaToCoverage;
 		bool colorkeyAntialiasing;
+		int alphaCutoutAntialiasing;
 		
 		int bufferSize;
 		std::string bufferUpload;
@@ -133,7 +160,14 @@ public:
 		
 		float hudScale;
 		bool hudScaleInteger;
-		UIScaleFilter hudScaleFilter;
+		float bookScale;
+		bool bookScaleInteger;
+		float cursorScale;
+		bool cursorScaleInteger;
+		UIScaleFilter scaleFilter;
+		
+		float fontSize;
+		int fontWeight;
 		
 		Vec2i thumbnailSize;
 		
@@ -141,8 +175,6 @@ public:
 	
 	// section 'window'
 	struct {
-		
-		std::string framework;
 		
 		Vec2i size;
 		
@@ -162,21 +194,25 @@ public:
 		float ambianceVolume;
 		
 		bool eax;
+		audio::HRTFAttribute hrtf;
 		bool muteOnFocusLost;
-	
+		
 	} audio;
 	
 	// section 'input'
 	struct {
 		
 		bool invertMouse;
-		bool autoReadyWeapon;
+		AutoReadyWeapon autoReadyWeapon;
 		bool mouseLookToggle;
 		bool autoDescription;
 		int mouseSensitivity;
 		int mouseAcceleration;
 		bool rawMouseInput;
 		bool borderTurning;
+		bool useAltRuneRecognition;
+		QuickLevelTransition quickLevelTransition;
+		bool allowConsole;
 		
 	} input;
 	
@@ -203,7 +239,7 @@ public:
 	
 public:
 	
-	void setActionKey(ControlAction action, int index, InputKeyId key);
+	bool setActionKey(ControlAction actionId, size_t index, InputKeyId key);
 	void setDefaultActionKeys();
 	
 	/*!
@@ -214,11 +250,12 @@ public:
 	
 	bool init(const fs::path & file);
 	
-	void setOutputFile(const fs::path & _file);
+	void setOutputFile(const fs::path & file);
 	
 private:
 	
-	fs::path file;
+	fs::path m_file;
+	
 };
 
 extern Config config;

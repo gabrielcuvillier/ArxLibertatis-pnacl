@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -35,78 +35,75 @@ class TextureContainer;
 enum SpellType {
 	
 	// LEVEL 1
-	SPELL_MAGIC_SIGHT           ,//= 11,
-	SPELL_MAGIC_MISSILE         ,//= 12,
-	SPELL_IGNIT                 ,//= 13,
-	SPELL_DOUSE                 ,//= 14,
-	SPELL_ACTIVATE_PORTAL       ,//= 15,
+	SPELL_MAGIC_SIGHT,           // = 11,
+	SPELL_MAGIC_MISSILE,         // = 12,
+	SPELL_IGNIT,                 // = 13,
+	SPELL_DOUSE,                 // = 14,
+	SPELL_ACTIVATE_PORTAL,       // = 15,
 	
 	// LEVEL 2
-	SPELL_HEAL                  ,//= 21,
-	SPELL_DETECT_TRAP           ,//= 22,
-	SPELL_ARMOR                 ,//= 23,
-	SPELL_LOWER_ARMOR           ,//= 24,
-	SPELL_HARM                  ,//= 25,
+	SPELL_HEAL,                  // = 21,
+	SPELL_DETECT_TRAP,           // = 22,
+	SPELL_ARMOR,                 // = 23,
+	SPELL_LOWER_ARMOR,           // = 24,
+	SPELL_HARM,                  // = 25,
 	
 	// LEVEL 3
-	SPELL_SPEED                 ,//= 31,
-	SPELL_DISPELL_ILLUSION      ,//= 32,
-	SPELL_FIREBALL              ,//= 33,
-	SPELL_CREATE_FOOD           ,//= 34,
-	SPELL_ICE_PROJECTILE        ,//= 35,
+	SPELL_SPEED,                 // = 31,
+	SPELL_DISPELL_ILLUSION,      // = 32,
+	SPELL_FIREBALL,              // = 33,
+	SPELL_CREATE_FOOD,           // = 34,
+	SPELL_ICE_PROJECTILE,        // = 35,
 	
 	// LEVEL 4
-	SPELL_BLESS                 ,//= 41,
-	SPELL_DISPELL_FIELD         ,//= 42,
-	SPELL_FIRE_PROTECTION       ,//= 43,
-	SPELL_TELEKINESIS           ,//= 44,
-	SPELL_CURSE                 ,//= 45,
-	SPELL_COLD_PROTECTION       ,//= 46,
+	SPELL_BLESS,                 // = 41,
+	SPELL_DISPELL_FIELD,         // = 42,
+	SPELL_FIRE_PROTECTION,       // = 43,
+	SPELL_TELEKINESIS,           // = 44,
+	SPELL_CURSE,                 // = 45,
+	SPELL_COLD_PROTECTION,       // = 46,
 	
 	// LEVEL 5
-	SPELL_RUNE_OF_GUARDING      ,//= 51,
-	SPELL_LEVITATE              ,//= 52,
-	SPELL_CURE_POISON           ,//= 53,
-	SPELL_REPEL_UNDEAD          ,//= 54,
-	SPELL_POISON_PROJECTILE     ,//= 55,
+	SPELL_RUNE_OF_GUARDING,      // = 51,
+	SPELL_LEVITATE,              // = 52,
+	SPELL_CURE_POISON,           // = 53,
+	SPELL_REPEL_UNDEAD,          // = 54,
+	SPELL_POISON_PROJECTILE,     // = 55,
 	
 	// LEVEL 6
-	SPELL_RISE_DEAD             ,//= 61,
-	SPELL_PARALYSE              ,//= 62,
-	SPELL_CREATE_FIELD          ,//= 63,
-	SPELL_DISARM_TRAP           ,//= 64,
-	SPELL_SLOW_DOWN             ,//= 65, //secret
+	SPELL_RISE_DEAD,             // = 61,
+	SPELL_PARALYSE,              // = 62,
+	SPELL_CREATE_FIELD,          // = 63,
+	SPELL_DISARM_TRAP,           // = 64,
+	SPELL_SLOW_DOWN,             // = 65, //secret
 	
 	// LEVEL 7
-	SPELL_FLYING_EYE            ,//= 71,
-	SPELL_FIRE_FIELD            ,//= 72,
-	SPELL_ICE_FIELD             ,//= 73,
-	SPELL_LIGHTNING_STRIKE      ,//= 74,
-	SPELL_CONFUSE               ,//= 75,
+	SPELL_FLYING_EYE,            // = 71,
+	SPELL_FIRE_FIELD,            // = 72,
+	SPELL_ICE_FIELD,             // = 73,
+	SPELL_LIGHTNING_STRIKE,      // = 74,
+	SPELL_CONFUSE,               // = 75,
 	
 	// LEVEL 8
-	SPELL_INVISIBILITY          ,//= 81,
-	SPELL_MANA_DRAIN            ,//= 82,
-	SPELL_EXPLOSION             ,//= 83,
-	SPELL_ENCHANT_WEAPON        ,//= 84,
-	SPELL_LIFE_DRAIN            ,//= 85, //secret
+	SPELL_INVISIBILITY,          // = 81,
+	SPELL_MANA_DRAIN,            // = 82,
+	SPELL_EXPLOSION,             // = 83,
+	SPELL_ENCHANT_WEAPON,        // = 84,
+	SPELL_LIFE_DRAIN,            // = 85, //secret
 	
 	// LEVEL 9
-	SPELL_SUMMON_CREATURE       ,//= 91,
-	SPELL_NEGATE_MAGIC          ,//= 92,
-	SPELL_INCINERATE            ,//= 93,
-	SPELL_MASS_PARALYSE         ,//= 94,
+	SPELL_SUMMON_CREATURE,       // = 91,
+	SPELL_NEGATE_MAGIC,          // = 92,
+	SPELL_INCINERATE,            // = 93,
+	SPELL_MASS_PARALYSE,         // = 94,
 	
 	// LEVEL 10
-	SPELL_MASS_LIGHTNING_STRIKE ,//= 101,
-	SPELL_CONTROL_TARGET        ,//= 102,
-	SPELL_FREEZE_TIME           ,//= 103,
-	SPELL_MASS_INCINERATE       ,//= 104
+	SPELL_MASS_LIGHTNING_STRIKE, // = 101,
+	SPELL_CONTROL_TARGET,        // = 102,
+	SPELL_FREEZE_TIME,           // = 103,
+	SPELL_MASS_INCINERATE,       // = 104
 	
-	SPELL_FAKE_SUMMON           ,// special =105
-	
-	// LEVEL ZOB
-	SPELL_TELEPORT = SPELL_FAKE_SUMMON + 2, // TODO explicit value for savegame compatability
+	SPELL_FAKE_SUMMON,           // special =105
 	
 	SPELL_NONE = -1
 };
@@ -114,14 +111,14 @@ enum SpellType {
 const size_t SPELL_TYPES_COUNT = SPELL_FAKE_SUMMON + 1;
 
 enum SpellcastFlag {
-	SPELLCAST_FLAG_NODRAW         = (1<<0),
-	SPELLCAST_FLAG_NOANIM         = (1<<1),
-	SPELLCAST_FLAG_NOMANA         = (1<<2),
-	SPELLCAST_FLAG_PRECAST        = (1<<3),
-	SPELLCAST_FLAG_LAUNCHPRECAST  = (1<<4),
-	SPELLCAST_FLAG_NOCHECKCANCAST = (1<<5),
-	SPELLCAST_FLAG_NOSOUND        = (1<<6),
-	SPELLCAST_FLAG_RESTORE        = (1<<7)
+	SPELLCAST_FLAG_NODRAW         = 1 << 0,
+	SPELLCAST_FLAG_NOANIM         = 1 << 1,
+	SPELLCAST_FLAG_NOMANA         = 1 << 2,
+	SPELLCAST_FLAG_PRECAST        = 1 << 3,
+	SPELLCAST_FLAG_LAUNCHPRECAST  = 1 << 4,
+	SPELLCAST_FLAG_NOCHECKCANCAST = 1 << 5,
+	SPELLCAST_FLAG_NOSOUND        = 1 << 6,
+	SPELLCAST_FLAG_RESTORE        = 1 << 7
 };
 DECLARE_FLAGS(SpellcastFlag, SpellcastFlags)
 DECLARE_FLAGS_OPERATORS(SpellcastFlags)
@@ -154,6 +151,11 @@ public:
 	void updateCasterHand();
 	void updateCasterPosition();
 	
+	void requestEnd() {
+		m_hasDuration = true;
+		m_duration = 0;
+	}
+	
 	SpellHandle m_thisHandle;
 	
 	EntityHandle m_caster; //!< Number of the source interactive obj (0==player)
@@ -166,17 +168,18 @@ public:
 	
 	SpellType m_type;
 	
-	unsigned long m_timcreation;
+	GameInstant m_timcreation;
 	
 	bool m_hasDuration;
-	unsigned long m_duration;
+	GameDuration m_duration;
+	GameDuration m_elapsed;
 	
 	float m_fManaCostPerSecond;
 	
 	SpellcastFlags m_flags;
-	audio::SourceId m_snd_loop;
+	audio::SourcedSample m_snd_loop;
 	
-	long m_launchDuration;
+	GameDuration m_launchDuration;
 
 	
 	std::vector<EntityHandle> m_targets;

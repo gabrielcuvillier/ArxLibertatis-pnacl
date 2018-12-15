@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -74,6 +74,7 @@ public:
 	enum LogLevel {
 		Debug,
 		Info,
+		Console,
 		Warning,
 		Error,
 		Critical,
@@ -129,10 +130,10 @@ public:
 	/*!
 	 * Set the log level for a file or group of files.
 	 * \param component Path component of all files to set the log level for.
-	 *               This must be either 'src', 'tools' or a subdirectory,
-	 *               or the basename of a contained file (excluding the extension).
-	 *               The order in which log levels are set is ignored,
-	 *               but more specific prefixes overwrite more general ones.
+	 *                  This must be either 'src', 'tools' or a subdirectory,
+	 *                  or the basename of a contained file (excluding the extension).
+	 *                  The order in which log levels are set is ignored,
+	 *                  but more specific prefixes overwrite more general ones.
 	 * \param level The log level to set. Use log level none to disable logging completely.
 	 */
 	static void set(const std::string & component, LogLevel level);
@@ -155,7 +156,7 @@ public:
 	 *  - "none" / "n" / "N"
 	 *  - "reset" / "r" / "R" / "-"
 	 */
-	static void configure(const std::string config);
+	static void configure(const std::string & settings);
 	
 	/*!
 	 * \return true if the given log level is currently enabled for the current level.

@@ -46,6 +46,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 
+#include <vector>
+
 #include "audio/AudioTypes.h"
 #include "audio/codec/Codec.h"
 #include "platform/Platform.h"
@@ -60,39 +62,37 @@ class CodecADPCM : public Codec {
 public:
 	
 	CodecADPCM();
-	~CodecADPCM();
 	
 	aalError setHeader(void * header);
 	void setStream(PakFileHandle * stream);
 	aalError setPosition(size_t position);
 	
-	size_t getPosition();
-	
 	aalError read(void * buffer, size_t to_read, size_t & read);
 	
 private:
 	
-	void getSample(size_t channel_i, s8 nybble);
+	enum { MaxChannels = 2 };
+	
+	void getSample(size_t channel, s8 adpcmSample);
 	aalError getNextBlock();
 	
-	PakFileHandle * stream;
-	ADPCMHeader * header;
+	PakFileHandle * m_stream;
+	ADPCMHeader * m_header;
 	u32 padding;
 	u32 shift;
 	u32 sample_i;
-	char * predictor;
-	s16 * delta;
-	s16 * samp1;
-	s16 * samp2;
-	s16 * coef1;
-	s16 * coef2;
-	s8 * nybble_l;
-	u32 nybble_c, nybble_i;
+	char predictor[MaxChannels];
+	s16 delta[MaxChannels];
+	s16 samp1[MaxChannels];
+	s16 samp2[MaxChannels];
+	s16 coef1[MaxChannels];
+	s16 coef2[MaxChannels];
+	std::vector<s8> nybble_l;
+	u32 nybble_i;
 	s8 nybble;
 	bool odd;
 	u8 cache_c, cache_i;
-	void * cache_l;
-	size_t cursor;
+	s16 cache_l[MaxChannels];
 	
 };
 

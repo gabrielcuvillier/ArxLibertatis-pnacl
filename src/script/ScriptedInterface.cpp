@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -43,7 +43,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "script/ScriptedInterface.h"
 
-#include "animation/Intro.h"
+#include <boost/foreach.hpp>
+
 #include "game/Inventory.h"
 #include "game/Entity.h"
 #include "game/Player.h"
@@ -70,22 +71,22 @@ public:
 		
 		HandleFlags("aem") {
 			if(flg & flag('a')) { // Magic
-				g_guiBookCurrentTopTab = BOOKMODE_MINIMAP;
+				g_playerBook.forcePage(BOOKMODE_MINIMAP);
 			}
 			if(flg & flag('e')) { // Equip
-				g_guiBookCurrentTopTab = BOOKMODE_SPELLS;
+				g_playerBook.forcePage(BOOKMODE_SPELLS);
 			}
 			if(flg & flag('m')) { // Map
-				g_guiBookCurrentTopTab = BOOKMODE_QUESTS;
+				g_playerBook.forcePage(BOOKMODE_QUESTS);
 			}
 		}
 		
 		std::string command = context.getWord();
 		
 		if(command == "open") {
-			ARX_INTERFACE_BookOpen();
+			g_playerBook.open();
 		} else if(command == "close") {
-			ARX_INTERFACE_BookClose();
+			g_playerBook.close();
 		} else if(command == "change") {
 			// Nothing to do, mode already changed by flags.
 		} else {
@@ -128,17 +129,17 @@ public:
 	
 	Result execute(Context & context) {
 		
-		gui::Note::Type type;
+		Note::Type type;
 		std::string tpname = context.getWord();
 		if(tpname == "note") {
-			type = gui::Note::SmallNote;
+			type = Note::SmallNote;
 		} else if(tpname == "notice") {
-			type = gui::Note::Notice;
+			type = Note::Notice;
 		} else if(tpname == "book") {
-			type = gui::Note::Book;
+			type = Note::Book;
 		} else {
 			ScriptWarning << "unexpected note type: " << tpname;
-			type = gui::Note::SmallNote;
+			type = Note::SmallNote;
 		}
 		
 		std::string text = loadUnlocalized(context.getWord());
@@ -152,6 +153,17 @@ public:
 	
 };
 
+struct PrintGlobalVariables { };
+
+std::ostream & operator<<(std::ostream & os, const PrintGlobalVariables & /* unused */) {
+	
+	BOOST_FOREACH(const SCRIPT_VAR & var, svar) {
+		os << var << '\n';
+	}
+	
+	return os;
+}
+
 class ShowGlobalsCommand : public Command {
 	
 public:
@@ -164,14 +176,29 @@ public:
 		
 		DebugScript("");
 		
-		std::string text;
-		MakeGlobalText(text);
-		LogInfo << "Global vars:\n" << text;
+		LogInfo << "Global variables:\n" << PrintGlobalVariables();
 		
 		return Success;
 	}
 	
 };
+
+struct PrintLocalVariables {
+	
+	Entity * m_entity;
+	
+	explicit PrintLocalVariables(Entity * entity) : m_entity(entity) { }
+	
+};
+
+std::ostream & operator<<(std::ostream & os, const PrintLocalVariables & data) {
+	
+	BOOST_FOREACH(const SCRIPT_VAR & var, data.m_entity->m_variables) {
+		os << var << '\n';
+	}
+	
+	return os;
+}
 
 class ShowLocalsCommand : public Command {
 	
@@ -183,9 +210,8 @@ public:
 		
 		DebugScript("");
 		
-		std::string text;
-		MakeLocalText(context.getScript(), text);
-		LogInfo << "Local vars:\n" << text;
+		LogInfo << "Local variables for " << context.getEntity()->idString() << ":\n"
+		        << PrintLocalVariables(context.getEntity());
 		
 		return Success;
 	}
@@ -202,11 +228,9 @@ public:
 		
 		DebugScript("");
 		
-		std::string text;
-		MakeGlobalText(text);
-		text += "--------------------------\n";
-		MakeLocalText(context.getScript(), text);
-		LogInfo << "Vars:\n" << text;
+		LogInfo << "Local variables for " << context.getEntity()->idString() << ":\n"
+		        << PrintLocalVariables(context.getEntity());
+		LogInfo << "Global variables:\n" << PrintGlobalVariables();
 		
 		return Success;
 	}
@@ -273,7 +297,8 @@ public:
 		
 		DebugScript("");
 		
-		ARX_INTERFACE_EndIntro();
+		ARX_SOUND_MixerStop(ARX_SOUND_MixerGame);
+		ARX_MENU_Launch(false);
 		
 		return Success;
 	}
@@ -326,7 +351,7 @@ public:
 			
 			float x = context.getFloat();
 			float y = context.getFloat();
-			long level = (long)context.getFloat();
+			int level = int(context.getFloat());
 			
 			std::string marker = loadUnlocalized(context.getWord());
 			
@@ -355,14 +380,14 @@ public:
 		
 		DebugScript(' ' << symbol << ' ' << duration);
 		
-		ARX_SPELLS_RequestSymbolDraw(context.getEntity(), symbol, duration);
+		ARX_SPELLS_RequestSymbolDraw(context.getEntity(), symbol, GameDurationMsf(duration));
 		
 		return Success;
 	}
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedInterface() {
 	

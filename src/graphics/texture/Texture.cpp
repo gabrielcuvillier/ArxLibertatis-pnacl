@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,72 +21,70 @@
 
 #include "core/Config.h"
 
-bool Texture2D::Init(const res::path & strFileName, TextureFlags newFlags) {
+bool Texture::create(const res::path & filename, TextureFlags flags) {
 	
-	mFileName = strFileName;
-	flags = newFlags;
-	return Restore();
+	m_filename = filename;
+	m_flags = flags;
+	
+	return restore();
 }
 
-bool Texture2D::Init(const Image & pImage, TextureFlags newFlags) {
+bool Texture::create(const Image & image, TextureFlags flags) {
 	
-	mFileName.clear();
-	mImage = pImage;
-	flags = newFlags;
-	return Restore();
+	m_filename.clear();
+	m_image = image;
+	m_flags = flags;
+	
+	return restore();
 }
 
-bool Texture2D::Init(unsigned int pWidth, unsigned int pHeight, Image::Format pFormat) {
+bool Texture::create(size_t width, size_t height, Image::Format format) {
 	
-	mFileName.clear();
+	m_filename.clear();
+	m_image.create(width, height, format);
+	m_flags = 0;
 	
-	size = Vec2i(pWidth, pHeight);
-	mImage.Create(pWidth, pHeight, pFormat);
-	mFormat = pFormat;
-	flags = 0;
+	m_size = Vec2i(s32(width), s32(height));
+	m_format = format;
 	
-	return Create();
+	return create();
 }
 
-bool Texture2D::Restore() {
+bool Texture::restore() {
 	
-	bool bRestored = false;
-
-	if(!mFileName.empty()) {
+	bool restored = false;
+	
+	if(!getFileName().empty()) {
 		
-		mImage.LoadFromFile(mFileName);
+		m_image.load(getFileName());
 		
-		if((flags & HasColorKey) && !mImage.HasAlpha()) {
-			mImage.ApplyColorKeyToAlpha(Color::black, config.video.colorkeyAntialiasing);
-			if(!mImage.HasAlpha()) {
-				flags &= ~HasColorKey;
-			}
+		if((m_flags & ApplyColorKey) && !m_image.hasAlpha()) {
+			m_image.applyColorKeyToAlpha(Color::black, config.video.colorkeyAntialiasing);
 		}
 		
-		if(flags & Intensity) {
-			mImage.ToGrayscale();
+		if(isIntensity()) {
+			m_image.toGrayscale();
 		}
 		
 	}
-
-	if(mImage.IsValid()) {
-		mFormat = mImage.GetFormat();
-		size = Vec2i(mImage.GetWidth(), mImage.GetHeight());
-
-		Destroy();
-		bool bCreated = Create();
-		if(!bCreated) {
-			return false;
+	
+	if(m_image.isValid()) {
+		
+		m_format = m_image.getFormat();
+		m_size = Vec2i(s32(m_image.getWidth()), s32(m_image.getHeight()));
+		
+		destroy();
+		
+		if(create()) {
+			upload();
+			restored = true;
 		}
-
-		Upload();
-
-		bRestored = true;
-	} 
-
-	if(!mFileName.empty()) {
-		mImage.Reset();
+		
 	}
 	
-	return bRestored;
+	if(!getFileName().empty()) {
+		m_image.reset();
+	}
+	
+	return restored;
 }

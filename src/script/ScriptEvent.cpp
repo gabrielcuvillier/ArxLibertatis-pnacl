@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -42,6 +42,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 */
 
 #include "script/ScriptEvent.h"
+
+#include <boost/foreach.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include "core/GameTime.h"
 #include "core/Core.h"
@@ -147,14 +151,10 @@ SCRIPT_EVENT AS_EVENT[] = {
 	SCRIPT_EVENT("on collide_field"),
 	SCRIPT_EVENT("on cursormode"),
 	SCRIPT_EVENT("on explorationmode"),
-	SCRIPT_EVENT("") // TODO is this really needed?
 };
 
-void ARX_SCRIPT_ComputeShortcuts(EERIE_SCRIPT& es)
-{
-	long nb = std::min((long)MAX_SHORTCUT, (long)SM_MAXCMD);
-
-	for (long j = 1; j < nb; j++) {
+void ARX_SCRIPT_ComputeShortcuts(EERIE_SCRIPT & es) {
+	for(size_t j = 1; j < SM_MAXCMD; j++) {
 		es.shortcut[j] = FindScriptPos(&es, AS_EVENT[j].name);
 	}
 }
@@ -196,7 +196,7 @@ static bool checkInteractiveObject(Entity * io, ScriptMessage msg, ScriptResult 
 		return true;
 	}
 	
-	//change weapons if you break
+	// Change weapons if an equpped weapon entity breaks
 	if(((io->ioflags & IO_FIX) || (io->ioflags & IO_ITEM)) && msg == SM_BREAK) {
 		ManageCasseDArme(io);
 	}
@@ -233,139 +233,68 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 } // namespace script
 
-#define ScriptEventWarning ARX_LOG(isSuppressed(context, word) ? Logger::Debug : Logger::Warning) << ScriptContextPrefix(context) << getName(msg, evname) << ": "
+#define ScriptEventWarning ARX_LOG(isSuppressed(context, word) ? Logger::Debug : Logger::Warning) << ScriptContextPrefix(context) << event << ": "
 
 #ifdef ARX_DEBUG
 static const char * toString(ScriptResult ret) {
 	switch(ret) {
 		case ACCEPT: return "accept";
+		case DESTRUCTIVE: return "destructive";
 		case REFUSE: return "refuse";
 		case BIGERROR: return "error";
-		default: arx_assert(false); return NULL;
+		default: arx_unreachable();
 	}
 }
 #endif
 
-ScriptResult ScriptEvent::send(EERIE_SCRIPT * es, ScriptMessage msg, const std::string & params,
-                               Entity * io, const std::string & evname, long info) {
+ScriptResult ScriptEvent::send(const EERIE_SCRIPT * es, Entity * sender, Entity * entity,
+                               ScriptEventName event, const ScriptParameters & parameters,
+                               size_t position) {
 	
 	ScriptResult ret = ACCEPT;
-	std::string eventname;
-	long pos;
 	
 	totalCount++;
 	
-	if(io && checkInteractiveObject(io, msg, ret)) {
+	arx_assert(entity);
+	
+	if(checkInteractiveObject(entity, event.getId(), ret)) {
 		return ret;
 	}
 	
-	if(!es->data) {
+	if(!es->valid) {
 		return ACCEPT;
 	}
 	
-	// Retrieves in esss script pointer to script holding variables.
-	EERIE_SCRIPT * esss = (EERIE_SCRIPT *)es->master;
-	if(esss == NULL) {
-		esss = es;
+	if(entity->m_disabledEvents & event.toDisabledEventsMask()) {
+		return REFUSE;
 	}
 	
 	// Finds script position to execute code...
-	if (!evname.empty()) {
-		eventname = "on " + evname;
-		pos = FindScriptPos(es, eventname);
-	} else {
-		if (msg == SM_EXECUTELINE) {
-			pos = info;
-		} else {
-			switch(msg) {
-				case SM_COLLIDE_NPC:
-					if (esss->allowevents & DISABLE_COLLIDE_NPC) return REFUSE;
-					break;
-				case SM_CHAT:
-					if (esss->allowevents & DISABLE_CHAT) return REFUSE;
-					break;
-				case SM_HIT:
-					if (esss->allowevents & DISABLE_HIT) return REFUSE;
-					break;
-				case SM_INVENTORY2_OPEN:
-					if (esss->allowevents & DISABLE_INVENTORY2_OPEN) return REFUSE;
-					break;
-				case SM_HEAR:
-					if (esss->allowevents & DISABLE_HEAR) return REFUSE;
-					break;
-				case SM_UNDETECTPLAYER:
-				case SM_DETECTPLAYER:
-					if (esss->allowevents & DISABLE_DETECT) return REFUSE;
-					break;
-				case SM_AGGRESSION:
-					if (esss->allowevents & DISABLE_AGGRESSION) return REFUSE;
-					break;
-				case SM_MAIN:
-					if (esss->allowevents & DISABLE_MAIN) return REFUSE;
-					break;
-				case SM_CURSORMODE:
-					if (esss->allowevents & DISABLE_CURSORMODE) return REFUSE;
-					break;
-				case SM_EXPLORATIONMODE:
-					if (esss->allowevents & DISABLE_EXPLORATIONMODE) return REFUSE;
-					break;
-				case SM_KEY_PRESSED: {
-					if(cinematicBorder.elapsedTime() < 3000) {
-						LogDebug("refusing SM_KEY_PRESSED");
-						return REFUSE;
-					}
-					break;
-				}
-				default: break;
-			}
-
-			if(msg < (long)MAX_SHORTCUT) {
-				pos = es->shortcut[msg];
-				arx_assert(pos <= (long)es->size);
-			} else {
-				
-				arx_assert(msg != SM_EXECUTELINE && evname.empty());
-				
-				if(msg >= SM_MAXCMD) {
-					LogDebug("unknown message " << msg);
-					return ACCEPT;
-				}
-				
-				// TODO will never be reached as MAX_SHORTCUT > SM_MAXCMD
-				
-				pos = FindScriptPos(es, AS_EVENT[msg].name);
-			}
-		}
+	size_t pos = position;
+	if(!event.getName().empty()) {
+		arx_assert(event.getId() == SM_NULL);
+		arx_assert_msg(ScriptEventName::parse(event.getName()).getId() == SM_NULL, "non-canonical event name");
+		pos = FindScriptPos(es, "on " + event.getName());
+	} else if(event != SM_EXECUTELINE) {
+		arx_assert(event.getId() < SM_MAXCMD);
+		pos = es->shortcut[event.getId()];
+		arx_assert(pos == size_t(-1) || pos <= es->data.size());
 	}
 
-	if(pos <= -1) {
+	if(pos == size_t(-1)) {
 		return ACCEPT;
 	}
 	
+	LogDebug("--> " << event << " params=\"" << parameters << "\"" << " entity=" << entity->idString()
+	         << (es == &entity->script ? " base" : " overriding") << " pos=" << pos);
 	
-	LogDebug("--> " << getName(msg, evname)
-	         << " params=\"" << params << "\""
-	         << " entity=" << (io ? io->idString() : "unknown")
-	         << (io == NULL ? "" : es == &io->script ? " base" : " overriding")
-	         << " pos=" << pos);
-
-	MakeSSEPARAMS(params.c_str());
-
-	if (msg != SM_EXECUTELINE) {
-		if (!evname.empty()) {
-			pos += eventname.length(); // adding 'ON ' length
-		} else {
-			pos += AS_EVENT[msg].name.length();
-		}
-	}
+	script::Context context(es, pos, sender, entity, event.getId(), parameters);
 	
-	script::Context context(es, pos, io, msg);
-	
-	if(msg != SM_EXECUTELINE) {
+	if(event != SM_EXECUTELINE) {
 		std::string word = context.getCommand();
 		if(word != "{") {
 			ScriptEventWarning << "<-- missing bracket after event, got \"" << word << "\"";
@@ -377,10 +306,10 @@ ScriptResult ScriptEvent::send(EERIE_SCRIPT * es, ScriptMessage msg, const std::
 	
 	for(;;) {
 		
-		std::string word = context.getCommand(msg != SM_EXECUTELINE);
+		std::string word = context.getCommand(event != SM_EXECUTELINE);
 		if(word.empty()) {
-			if(msg == SM_EXECUTELINE && context.pos != es->size) {
-				arx_assert(es->data[context.pos] == '\n');
+			if(event == SM_EXECUTELINE && context.getPosition() != es->data.size()) {
+				arx_assert(es->data[context.getPosition()] == '\n');
 				LogDebug("<-- line end");
 				return ACCEPT;
 			}
@@ -399,12 +328,14 @@ ScriptResult ScriptEvent::send(EERIE_SCRIPT * es, ScriptMessage msg, const std::
 			
 			script::Command::Result res;
 			if(command.getEntityFlags()
-			   && (!io || (command.getEntityFlags() != script::Command::AnyEntity
-			               && !(command.getEntityFlags() & long(io->ioflags))))) {
-				ScriptEventWarning << "command " << command.getName() << " needs an IO of type "
+			   && (command.getEntityFlags() != script::Command::AnyEntity
+			       && !(command.getEntityFlags() & long(entity->ioflags)))) {
+				ScriptEventWarning << "Command " << command.getName() << " needs an IO of type "
 				                   << command.getEntityFlags();
 				context.skipCommand();
 				res = script::Command::Failed;
+			} else if(parameters.isPeekOnly()) {
+				res = it->second->peek(context);
 			} else {
 				res = it->second->execute(context);
 			}
@@ -416,25 +347,32 @@ ScriptResult ScriptEvent::send(EERIE_SCRIPT * es, ScriptMessage msg, const std::
 				ret = REFUSE;
 				break;
 			} else if(res == script::Command::AbortError) {
-				ret =  BIGERROR;
+				ret = BIGERROR;
+				break;
+			} else if(res == script::Command::AbortDestructive) {
+				ret = DESTRUCTIVE;
 				break;
 			} else if(res == script::Command::Jumped) {
-				if(msg == SM_EXECUTELINE) {
-					msg = SM_DUMMY;
+				if(event == SM_EXECUTELINE) {
+					event = SM_DUMMY;
 				}
-				brackets = (size_t)-1;
+				brackets = size_t(-1);
 			}
 			
 		} else if(!word.compare(0, 2, ">>", 2)) {
 			context.skipCommand(); // labels
 		} else if(!word.compare(0, 5, "timer", 5)) {
+			if(parameters.isPeekOnly()) {
+				ret = DESTRUCTIVE;
+				break;
+			}
 			script::timerCommand(word.substr(5), context);
 		} else if(word == "{") {
-			if(brackets != (size_t)-1) {
+			if(brackets != size_t(-1)) {
 				brackets++;
 			}
 		} else if(word == "}") {
-			if(brackets != (size_t)-1) {
+			if(brackets != size_t(-1)) {
 				brackets--;
 				if(brackets == 0) {
 					if(isBlockEndSuprressed(context, word)) { // TODO(broken-scripts)
@@ -458,7 +396,7 @@ ScriptResult ScriptEvent::send(EERIE_SCRIPT * es, ScriptMessage msg, const std::
 		
 	}
 	
-	LogDebug("<-- " << getName(msg, evname) << " finished: " << toString(ret));
+	LogDebug("<-- " << event << " finished: " << toString(ret));
 	
 	return ret;
 }
@@ -520,18 +458,34 @@ void ScriptEvent::shutdown() {
 	LogInfo << "Scripting system shutdown";
 }
 
-std::string ScriptEvent::getName(ScriptMessage msg, const std::string & eventname) {
-	if(msg == SM_EXECUTELINE) {
-		return "executeline";
-	} else if(msg == SM_DUMMY)  {
-		return "dummy event";
-	} else if(!eventname.empty()) {
-		return "on " + eventname + " event";
-	} else if(size_t(msg) <= ARRAY_SIZE(AS_EVENT) - 1) {
-		return AS_EVENT[msg].name + " event";
-	} else {
-		return "(no event)";
+void ScriptEvent::autocomplete(const std::string & prefix, AutocompleteHandler handler, void * context) {
+	
+	std::string cmd = boost::to_lower_copy(prefix);
+	cmd.resize(std::remove(cmd.begin(), cmd.end(), '_') - cmd.begin());
+	
+	if(boost::starts_with("timer", cmd)) {
+		if(!handler(context, "timer")) {
+			return;
+		}
 	}
+	
+	BOOST_FOREACH(const Commands::value_type & v, commands) {
+		if(boost::starts_with(v.first, cmd)) {
+			if(!handler(context, v.first + " ")) {
+				return;
+			}
+		}
+	}
+	
+}
+
+bool ScriptEvent::isCommand(const std::string & command) {
+	
+	if(boost::starts_with(command, "timer")) {
+		return true;
+	}
+	
+	return commands.find(command) != commands.end();
 }
 
 ScriptEvent::Commands ScriptEvent::commands;

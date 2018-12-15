@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -39,9 +39,8 @@ bool CinematicBorder::isActive()
 	return m_active;
 }
 
-float CinematicBorder::elapsedTime() {
-	arxtime.update();
-	return arxtime.now_f() - m_startTime;
+GameDuration CinematicBorder::elapsedTime() {
+	return g_gameTime.now() - m_startTime;
 }
 
 void CinematicBorder::reset() {
@@ -49,47 +48,51 @@ void CinematicBorder::reset() {
 	m_direction = 0;
 }
 
-void CinematicBorder::set(bool status, bool smooth)
-{
+void CinematicBorder::set(bool status, bool smooth) {
+	
 	if(status) {
-		m_active = true;//++;
-		arxtime.update();
-		m_startTime = arxtime.now_f();
+		m_active = true;
+		m_startTime = g_gameTime.now();
 	} else {
-		m_active = false;//--;
+		m_active = false;
 		m_startTime = 0;
 	}
 	
 	if(m_active) {
-		if(smooth)
-			m_direction=1;
-		else
-			CINEMA_DECAL=100;
+		if(smooth) {
+			m_direction = 1;
+		} else {
+			CINEMA_DECAL = 100;
+		}
 	} else {
-		if(smooth)
-			m_direction=-1;
-		else
-			CINEMA_DECAL=0;
+		if(smooth) {
+			m_direction = -1;
+		} else {
+			CINEMA_DECAL = 0;
+		}
 	}
-
-	if(player.Interface & INTER_INVENTORY)
-		player.Interface &=~ INTER_INVENTORY;
-
-	if(player.Interface & INTER_INVENTORYALL)
-		player.Interface &=~ INTER_INVENTORYALL;
+	
+	if(player.Interface & INTER_INVENTORY) {
+		player.Interface &= ~INTER_INVENTORY;
+	}
+	
+	if(player.Interface & INTER_INVENTORYALL) {
+		player.Interface &= ~INTER_INVENTORYALL;
+	}
+	
 }
 
 void CinematicBorder::update() {
 	
 	if(m_direction == 1) {
-		CINEMA_DECAL += Original_framedelay * (1.0f/10);
+		CINEMA_DECAL += g_platformTime.lastFrameDuration() / PlatformDurationMs(10);
 
 		if(CINEMA_DECAL > 100.f) {
 			CINEMA_DECAL = 100.f;
 			m_direction = 0;
 		}
 	} else if(m_direction == -1) {
-		CINEMA_DECAL -= Original_framedelay * (1.0f/10);
+		CINEMA_DECAL -= g_platformTime.lastFrameDuration() / PlatformDurationMs(10);
 
 		if(CINEMA_DECAL < 0.f) {
 			CINEMA_DECAL = 0.f;

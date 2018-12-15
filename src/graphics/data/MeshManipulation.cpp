@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -62,7 +62,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/Vertex.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/data/TextureContainer.h"
-#include "graphics/effects/DrawEffects.h"
+#include "graphics/effects/PolyBoom.h"
 
 #include "io/resource/PakReader.h"
 #include "io/log/Logger.h"
@@ -77,47 +77,52 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 void EERIE_MESH_TWEAK_Skin(EERIE_3DOBJ * obj, const res::path & s1, const res::path & s2) {
 	
 	LogDebug("Tweak Skin " << s1 << " " << s2);
-
+	
 	if(obj == NULL || s1.empty() || s2.empty()) {
 		LogError << "Tweak Skin got NULL Pointer";
 		return;
 	}
 	
 	LogDebug("Tweak Skin " << s1 << " " << s2);
-
+	
 	res::path skintochange = "graph/obj3d/textures" / s1;
 	
 	res::path skinname = "graph/obj3d/textures" / s2;
 	TextureContainer * tex = TextureContainer::Load(skinname);
-
-	if(obj->originaltextures == NULL) {
-		obj->originaltextures = (char *)malloc(256 * obj->texturecontainer.size()); 
-		memset(obj->originaltextures, 0, 256 * obj->texturecontainer.size());
-
+	if(!tex) {
+		return;
+	}
+	
+	if(obj->originaltextures.empty()) {
+		obj->originaltextures.resize(obj->texturecontainer.size());
 		for(size_t i = 0; i < obj->texturecontainer.size(); i++) {
 			if(obj->texturecontainer[i]) {
-				strcpy(obj->originaltextures + 256 * i, obj->texturecontainer[i]->m_texName.string().c_str());
+				obj->originaltextures[i] = obj->texturecontainer[i]->m_texName;
 			}
 		}
 	}
-
-	if(tex != NULL && obj->originaltextures != NULL) {
-		for(size_t i = 0; i < obj->texturecontainer.size(); i++) {
-			if(strstr(obj->originaltextures + 256 * i, skintochange.string().c_str())) {
-				skintochange = obj->texturecontainer[i]->m_texName;
-				break;
-			}
-		}
-
-		TextureContainer * tex2 = TextureContainer::Find(skintochange);
-		if(tex2) {
-			for(size_t i = 0; i < obj->texturecontainer.size(); i++) {
-				if(obj->texturecontainer[i] == tex2) {
-					obj->texturecontainer[i] = tex;
-				}
-			}
+	
+	arx_assert(obj->originaltextures.size() == obj->texturecontainer.size());
+	
+	bool found = false;
+	
+	for(size_t i = 0; i < obj->texturecontainer.size(); i++) {
+		if(obj->originaltextures[i] == skintochange) {
+			obj->texturecontainer[i] = tex;
+			found = true;
 		}
 	}
+	
+	if(found) {
+		return;
+	}
+	
+	for(size_t i = 0; i < obj->texturecontainer.size(); i++) {
+		if(obj->texturecontainer[i]->m_texName == skintochange) {
+			obj->texturecontainer[i] = tex;
+		}
+	}
+	
 }
 
 bool IsInSelection(const EERIE_3DOBJ * obj, size_t vert, ObjSelection tw) {
@@ -205,8 +210,8 @@ static long ObjectAddFace(EERIE_3DOBJ * obj, const EERIE_FACE * face, const EERI
 	obj->facelist.back().vid[0] = (unsigned short)f0;
 	obj->facelist.back().vid[1] = (unsigned short)f1;
 	obj->facelist.back().vid[2] = (unsigned short)f2;
-	obj->facelist.back().texid = 0; 
-
+	obj->facelist.back().texid = 0;
+	
 	for(size_t i = 0; i < obj->texturecontainer.size(); i++) {
 		if(0 <= face->texid
 		   && (size_t)face->texid < srcobj->texturecontainer.size()
@@ -395,23 +400,21 @@ static EERIE_3DOBJ * CreateIntermediaryMesh(const EERIE_3DOBJ * obj1, const EERI
 	// We reset all data to create a fresh object
 	work->cub = obj1->cub;
 	work->quat = obj1->quat;
-
+	
 	// Linked objects are linked to this object.
 	if(obj1->linked.size() > obj2->linked.size()) {
 		work->linked = obj1->linked;
-	} else if(obj2->linked.size() > 0) {
-		work->linked = obj2->linked;
 	} else {
-		work->linked.clear();
+		work->linked = obj2->linked;
 	}
-
+	
 	// Is the origin of object in obj1 or obj2 ? Retreives it for work object
 	if(IsInSelection(obj1, obj1->origin, tw1)) {
 		work->point0 = obj2->point0;
-		work->origin = ObjectAddVertex(work, &obj2vertexlist2[obj2->origin]); 
+		work->origin = ObjectAddVertex(work, &obj2vertexlist2[obj2->origin]);
 	} else {
 		work->point0 = obj1->point0;
-		work->origin = ObjectAddVertex(work, &obj1vertexlist2[obj1->origin]); 
+		work->origin = ObjectAddVertex(work, &obj1vertexlist2[obj1->origin]);
 	}
 
 	// Recreate Action Points included in work object.for Obj1
@@ -423,8 +426,7 @@ static EERIE_3DOBJ * CreateIntermediaryMesh(const EERIE_3DOBJ * obj1, const EERI
 		   || action.name == "head2chest"
 		   || action.name == "chest2leggings"
 		) {
-			ObjectAddAction(work, action.name, action.act,
-							action.sfx, &obj1vertexlist2[action.idx.handleData()]);
+			ObjectAddAction(work, action.name, action.act, action.sfx, &obj1vertexlist2[action.idx.handleData()]);
 		}
 	}
 
@@ -436,8 +438,7 @@ static EERIE_3DOBJ * CreateIntermediaryMesh(const EERIE_3DOBJ * obj1, const EERI
 		   || action.name == "head2chest"
 		   || action.name == "chest2leggings"
 		) {
-			ObjectAddAction(work, action.name, action.act,
-							action.sfx, &obj2vertexlist2[action.idx.handleData()]);
+			ObjectAddAction(work, action.name, action.act, action.sfx, &obj2vertexlist2[action.idx.handleData()]);
 		}
 	}
 
@@ -618,7 +619,7 @@ static EERIE_3DOBJ * CreateIntermediaryMesh(const EERIE_3DOBJ * obj1, const EERI
 		}
 	}
 
-	//Now recreates other selections...
+	// Now recreates other selections...
 	for(size_t i = 0; i < obj1->selections.size(); i++) {
 		
 		if(EERIE_OBJECT_GetSelection(work, obj1->selections[i].name) == ObjSelection()) {
@@ -685,9 +686,11 @@ static EERIE_3DOBJ * CreateIntermediaryMesh(const EERIE_3DOBJ * obj1, const EERI
 			AddVertexToGroup(work, i, &obj2vertexlist2[obj2->grouplist[i].indexes[j]]);
 		}
 	}
-
-	work->vertexlist3 = work->vertexlist;
-
+	
+	work->vertexWorldPositions.resize(work->vertexlist.size());
+	work->vertexClipPositions.resize(work->vertexlist.size());
+	work->vertexColors.resize(work->vertexlist.size());
+	
 	return work;
 }
 
@@ -695,9 +698,7 @@ void EERIE_MESH_TWEAK_Do(Entity * io, TweakType tw, const res::path & path) {
 	
 	res::path ftl_file = ("game" / path).set_ext("ftl");
 
-	if ((!resources->getFile(ftl_file)) && (!resources->getFile(path))) return;
-
-	if (!tw) return;
+	if ((!g_resources->getFile(ftl_file)) && (!g_resources->getFile(path))) return;
 
 	if (io == NULL) return;
 
@@ -714,67 +715,66 @@ void EERIE_MESH_TWEAK_Do(Entity * io, TweakType tw, const res::path & path) {
 		
 		return;
 	}
-
-	EERIE_3DOBJ * tobj = NULL;
+	
+	if(!(tw & (TWEAK_HEAD | TWEAK_TORSO | TWEAK_LEGS))){
+		return;
+	}
+	
+	EERIE_3DOBJ * tobj = loadObject(path);
+	if(!tobj) {
+		return;
+	}
+	
 	EERIE_3DOBJ * result = NULL;
-
-	{
-		tobj = loadObject(path);
-
-		if (!tobj) return;
-
-		switch (tw)
-		{
-			case (u32)TWEAK_HEAD | (u32)TWEAK_TORSO | (u32)TWEAK_LEGS:
-
-				if (!io->tweaky)
-					io->tweaky = io->obj;
-				else delete
-					io->obj;
-
-				io->obj = tobj;
-				return;
-				break;
-			case (u32)TWEAK_HEAD | (u32)TWEAK_TORSO: {
-				EERIE_3DOBJ * result2 = CreateIntermediaryMesh(io->obj, tobj, TWEAK_HEAD);
-				result = CreateIntermediaryMesh(result2, tobj, TWEAK_TORSO);
-				delete result2;
-				break;
-			}
-			case (u32)TWEAK_TORSO | (u32)TWEAK_LEGS: {
-				EERIE_3DOBJ * result2 = CreateIntermediaryMesh(io->obj, tobj, TWEAK_TORSO);
-				result = CreateIntermediaryMesh(result2, tobj, TWEAK_LEGS);
-				delete result2;
-				break;
-			}
-			case (u32)TWEAK_HEAD | (u32)TWEAK_LEGS:
-				result = CreateIntermediaryMesh(tobj, io->obj, TWEAK_TORSO);
-				break;
-			default:
-				result = CreateIntermediaryMesh(io->obj, tobj, tw);
-				break;
+	if(tw == (TWEAK_HEAD | TWEAK_TORSO | TWEAK_LEGS)) {
+		result = tobj; // Replace the entire mesh
+	} else {
+		
+		if(tw & TWEAK_HEAD) {
+			result = CreateIntermediaryMesh(io->obj, tobj, TWEAK_HEAD);
+		} else {
+			result = io->obj;
 		}
-
+		
+		if(result && (tw & TWEAK_TORSO)) {
+			EERIE_3DOBJ * result2 = CreateIntermediaryMesh(result, tobj, TWEAK_TORSO);
+			if(result != io->obj) {
+				delete result;
+			}
+			result = result2;
+		}
+		
+		if(result && (tw & TWEAK_LEGS)) {
+			EERIE_3DOBJ * result2 = CreateIntermediaryMesh(result, tobj, TWEAK_LEGS);
+			if(result != io->obj) {
+				delete result;
+			}
+			result = result2;
+		}
+		
+		delete tobj;
+		
+		arx_assert(result != io->obj);
+		
 		if(!result) {
-			delete tobj;
 			return;
 		}
-
-		result->pdata = NULL;
-		result->cdata = NULL;
-
-		if (io->tweaky == NULL) io->tweaky = io->obj;
-		else if (io->tweaky != io->obj)
-			delete io->obj;
-
-		io->obj = result;
-		EERIE_Object_Precompute_Fast_Access(io->obj);
+		
+		EERIE_Object_Precompute_Fast_Access(result);
+		
+		EERIE_CreateCedricData(result);
+		
+		// TODO also do this for the other branch?
+		io->animBlend.lastanimtime = 0;
+		io->animBlend.m_active = false;
 	}
-
-	EERIE_CreateCedricData(io->obj);
 	
-	io->animBlend.lastanimtime = 0;
-	io->animBlend.m_active = false;
+	if(!io->tweaky) {
+		io->tweaky = io->obj;
+	} else if(io->tweaky != io->obj) {
+		delete io->obj;
+	}
 	
-	delete tobj;
+	io->obj = result;
+	
 }

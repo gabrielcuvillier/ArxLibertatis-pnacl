@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,7 +49,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 #include <string>
+#include <vector>
 
+#include "core/TimeTypes.h"
 #include "graphics/BaseGraphicsTypes.h"
 #include "graphics/Color.h"
 #include "io/resource/ResourcePath.h"
@@ -66,18 +68,26 @@ enum PathwayType {
 };
 
 struct ARX_PATHWAY {
-	Vec3f rpos; //relative pos
+	
+	Vec3f rpos; // Relative position
 	PathwayType flag;
-	float _time;
+	GameDuration _time;
+	
+	ARX_PATHWAY()
+		: rpos(0.f)
+		, flag(PATHWAY_STANDARD)
+		, _time(0)
+	{ }
+	
 };
 
 // ARX_PATH@flags values
 enum PathFlag {
-	PATH_LOOP     = (1<<0),
-	PATH_AMBIANCE = (1<<1),
-	PATH_RGB      = (1<<2),
-	PATH_FARCLIP  = (1<<3),
-	PATH_REVERB   = (1<<4)
+	PATH_LOOP     = 1 << 0,
+	PATH_AMBIANCE = 1 << 1,
+	PATH_RGB      = 1 << 2,
+	PATH_FARCLIP  = 1 << 3,
+	PATH_REVERB   = 1 << 4
 };
 DECLARE_FLAGS(PathFlag, PathFlags)
 DECLARE_FLAGS_OPERATORS(PathFlags)
@@ -85,14 +95,13 @@ DECLARE_FLAGS_OPERATORS(PathFlags)
 // TODO this struct is used both for paths followed by NPCs and for zones
 struct ARX_PATH {
 	
-	ARX_PATH(const std::string & name, const Vec3f & pos);
+	ARX_PATH(const std::string & _name, const Vec3f & _pos);
 	
 	std::string name;
 	PathFlags flags;
 	Vec3f initpos;
 	Vec3f pos;
-	long nb_pathways;
-	ARX_PATHWAY * pathways;
+	std::vector<ARX_PATHWAY> pathways;
 	
 	long height; // 0 NOT A ZONE
 	
@@ -108,43 +117,53 @@ struct ARX_PATH {
 	Vec3f bbmin;
 	Vec3f bbmax;
 	
-	Vec3f interpolateCurve(size_t i, float step);
+	Vec3f interpolateCurve(size_t i, float step) const;
 	
 };
 
 enum UsePathFlag {
-	ARX_USEPATH_FLAG_FINISHED    = (1<<0),
-	ARX_USEPATH_WORM_SPECIFIC    = (1<<1),
-	ARX_USEPATH_FOLLOW_DIRECTION = (1<<2),
-	ARX_USEPATH_FORWARD          = (1<<3),
-	ARX_USEPATH_BACKWARD         = (1<<4),
-	ARX_USEPATH_PAUSE            = (1<<5),
-	ARX_USEPATH_FLAG_ADDSTARTPOS = (1<<6)
+	ARX_USEPATH_FLAG_FINISHED    = 1 << 0,
+	ARX_USEPATH_WORM_SPECIFIC    = 1 << 1,
+	ARX_USEPATH_FOLLOW_DIRECTION = 1 << 2,
+	ARX_USEPATH_FORWARD          = 1 << 3,
+	ARX_USEPATH_BACKWARD         = 1 << 4,
+	ARX_USEPATH_PAUSE            = 1 << 5,
+	ARX_USEPATH_FLAG_ADDSTARTPOS = 1 << 6
 };
 DECLARE_FLAGS(UsePathFlag, UsePathFlags)
 DECLARE_FLAGS_OPERATORS(UsePathFlags)
 
 struct ARX_USE_PATH {
+	
 	ARX_PATH * path;
-	float _starttime;
-	float _curtime;
+	GameInstant _starttime;
+	GameInstant _curtime;
 	UsePathFlags aupflags;
 	Vec3f initpos;
 	long lastWP;
+	
+	ARX_USE_PATH()
+		: path(NULL)
+		, _starttime(0)
+		, _curtime(0)
+		, aupflags(0)
+		, initpos(0.f)
+		, lastWP(0)
+	{ }
+	
 };
 
 enum PathMod {
-	ARX_PATH_MOD_POSITION  = (1<<0),
-	ARX_PATH_MOD_FLAGS     = (1<<1),
-	ARX_PATH_MOD_TIME      = (1<<2),
-	ARX_PATH_MOD_TRANSLATE = (1<<3),
-	ARX_PATH_HIERARCHY     = (1<<4)
+	ARX_PATH_MOD_POSITION  = 1 << 0,
+	ARX_PATH_MOD_FLAGS     = 1 << 1,
+	ARX_PATH_MOD_TIME      = 1 << 2,
+	ARX_PATH_MOD_TRANSLATE = 1 << 3,
+	ARX_PATH_HIERARCHY     = 1 << 4
 };
 DECLARE_FLAGS(PathMod, PathMods)
 DECLARE_FLAGS_OPERATORS(PathMods)
 
-extern ARX_PATH ** ARXpaths;
-extern long	nbARXpaths;
+extern std::vector<ARX_PATH *> g_paths;
 
 void ARX_PATH_UpdateAllZoneInOutInside();
 long ARX_PATH_IsPosInZone(ARX_PATH * ap, Vec3f pos);

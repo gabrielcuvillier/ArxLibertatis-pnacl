@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -41,6 +41,7 @@
 
 #include <cstring>
 #include <cstdlib>
+#include <exception>
 
 #include "io/log/Logger.h"
 
@@ -49,7 +50,7 @@
 
 namespace {
 
-struct blast_truncated_error { };
+struct blast_truncated_error : public std::exception { };
 
 } // anonymous namespace
 
@@ -157,7 +158,7 @@ static int decode(state * s, huffman * h) {
 	code = first = index = 0;
 	len = 1;
 	next = h->count + 1;
-	while(1) {
+	while(true) {
 		while(left--) {
 			code |= (bitbuf & 1) ^ 1;   /* invert code */
 			bitbuf >>= 1;
@@ -173,7 +174,7 @@ static int decode(state * s, huffman * h) {
 			code <<= 1;
 			len++;
 		}
-		left = (MAXBITS+1) - len;
+		left = (MAXBITS + 1) - len;
 		if(left == 0) break;
 		if(s->left == 0) {
 			s->left = s->infun(s->inhow, &(s->in));
@@ -208,7 +209,7 @@ static int construct(huffman * h, const unsigned char * rep, int n) {
 	int symbol;         /* current symbol when stepping through length[] */
 	int len;            /* current length when stepping through h->count[] */
 	int left;           /* number of possible codes left of current length */
-	short offs[MAXBITS+1];      /* offsets in symbol table for each length */
+	short offs[MAXBITS + 1];      /* offsets in symbol table for each length */
 	short length[256];  /* code lengths */
 	
 	/* convert compact repeat counts into symbol bit length list */
@@ -219,17 +220,20 @@ static int construct(huffman * h, const unsigned char * rep, int n) {
 		len &= 15;
 		do {
 			length[symbol++] = len;
-		} while (--left);
-	} while (--n);
+		} while(--left);
+	} while(--n);
 	n = symbol;
 	
 	/* count number of codes of each length */
-	for(len = 0; len <= MAXBITS; len++)
+	for(len = 0; len <= MAXBITS; len++) {
 		h->count[len] = 0;
-	for(symbol = 0; symbol < n; symbol++)
-		(h->count[length[symbol]])++;   /* assumes lengths are within bounds */
-	if(h->count[0] == n)               /* no codes! */
-		return 0;                       /* complete, but decode() will fail */
+	}
+	for(symbol = 0; symbol < n; symbol++) {
+		(h->count[length[symbol]])++; /* assumes lengths are within bounds */
+	}
+	if(h->count[0] == n) { /* no codes! */
+		return 0; /* complete, but decode() will fail */
+	}
 	
 	/* check for an over-subscribed or incomplete set of lengths */
 	left = 1;                           /* one possible code of zero length */
@@ -241,16 +245,19 @@ static int construct(huffman * h, const unsigned char * rep, int n) {
 	
 	/* generate offsets into symbol table for each length for sorting */
 	offs[1] = 0;
-	for(len = 1; len < MAXBITS; len++)
+	for(len = 1; len < MAXBITS; len++) {
 		offs[len + 1] = offs[len] + h->count[len];
+	}
 	
 	/*
 	 * put symbols in table sorted by length, by symbol order within each
 	 * length
 	 */
-	for(symbol = 0; symbol < n; symbol++)
-		if(length[symbol] != 0)
+	for(symbol = 0; symbol < n; symbol++) {
+		if(length[symbol] != 0) {
 			h->symbol[offs[length[symbol]]++] = symbol;
+		}
+	}
 	
 	/* return zero for complete set, positive for incomplete set */
 	return left;
@@ -304,9 +311,9 @@ static BlastResult blastDecompress(state * s) {
 	int copy;           /* copy counter */
 	unsigned char * from, *to;   /* copy pointers */
 	static int virgin = 1;                              /* build tables once */
-	static short litcnt[MAXBITS+1], litsym[256];        /* litcode memory */
-	static short lencnt[MAXBITS+1], lensym[16];         /* lencode memory */
-	static short distcnt[MAXBITS+1], distsym[64];       /* distcode memory */
+	static short litcnt[MAXBITS + 1], litsym[256];        /* litcode memory */
+	static short lencnt[MAXBITS + 1], lensym[16];         /* lencode memory */
+	static short distcnt[MAXBITS + 1], distsym[64];       /* distcode memory */
 	static huffman litcode = {litcnt, litsym};   /* length code */
 	static huffman lencode = {lencnt, lensym};   /* length code */
 	static huffman distcode = {distcnt, distsym};/* distance code */
@@ -393,12 +400,12 @@ static BlastResult blastDecompress(state * s) {
 				s->first = 0;
 			}
 		}
-	} while(1);
+	} while(true);
 	
 	return BLAST_SUCCESS;
 }
 
-BlastResult blast(blast_in infun, void *inhow, blast_out outfun, void *outhow) {
+BlastResult blast(blast_in infun, void * inhow, blast_out outfun, void * outhow) {
 	
 	state s;
 	
@@ -432,9 +439,9 @@ BlastResult blast(blast_in infun, void *inhow, blast_out outfun, void *outhow) {
 
 // Additional functions.
 
-int blastOutMem(void * Param, unsigned char * buf, size_t len) {
+int blastOutMem(void * param, unsigned char * buf, size_t len) {
 	
-	BlastMemOutBuffer * p = (BlastMemOutBuffer *)Param;
+	BlastMemOutBuffer * p = static_cast<BlastMemOutBuffer *>(param);
 	
 	if(len > p->size) {
 		return 1;
@@ -447,11 +454,11 @@ int blastOutMem(void * Param, unsigned char * buf, size_t len) {
 	return 0;
 }
 
-size_t blastInMem(void * Param, const unsigned char ** buf) {
+size_t blastInMem(void * param, const unsigned char ** buf) {
 	
-	BlastMemInBuffer * p = (BlastMemInBuffer *)Param;
+	BlastMemInBuffer * p = static_cast<BlastMemInBuffer *>(param);
 	
-	*buf = (const unsigned char *)p->buf;
+	*buf = reinterpret_cast<const unsigned char *>(p->buf);
 	
 	size_t size = p->size;
 	
@@ -461,58 +468,28 @@ size_t blastInMem(void * Param, const unsigned char ** buf) {
 	return size;
 }
 
-int blastOutMemRealloc(void * Param, unsigned char * buf, size_t len) {
+int blastOutString(void * param, unsigned char * buf, size_t len) {
 	
-	BlastMemOutBufferRealloc * p = (BlastMemOutBufferRealloc *)Param;
+	BlastMemOutString * p = static_cast<BlastMemOutString *>(param);
 	
-	if(p->fillSize + len > p->allocSize) {
-		p->allocSize = (p->fillSize + len) * 4 / 3;
-		char * newBuf = (char *)realloc(p->buf, p->allocSize);
-		if(!newBuf) {
-			free(p->buf);
-			p->allocSize = 0;
-			p->fillSize = 0;
-			return 1;
-		}
-		p->buf = newBuf;
-	}
-	
-	memcpy(p->buf + p->fillSize, buf, len);
-	
-	p->fillSize += len;
+	p->buffer.append(reinterpret_cast<const char *>(buf), len);
 	
 	return 0;
 }
 
-char * blastMemAlloc(const char * from, size_t fromSize, size_t & toSize) {
+std::string blast(const char * from, size_t fromSize, size_t toSizeHint) {
+	
+	std::string uncompressed;
+	uncompressed.reserve(toSizeHint == size_t(-1) ? fromSize : toSizeHint);
 	
 	BlastMemInBuffer in(from, fromSize);
-	BlastMemOutBufferRealloc out;
+	BlastMemOutString out(uncompressed);
 	
-	BlastResult error = blast(blastInMem, &in, blastOutMemRealloc, &out);
+	BlastResult error = blast(blastInMem, &in, blastOutString, &out);
 	if(error) {
-		LogError << "blastMemAlloc error " << error << " for " << fromSize;
-		toSize = 0;
-		return NULL;
+		LogError << "blast error " << error << " for " << fromSize;
+		uncompressed.clear();
 	}
 	
-	// TODO realloc to fit fill size?
-	
-	toSize = out.fillSize;
-	return out.buf;
-}
-
-
-size_t blastMem(const char * from, size_t fromSize, char * to, size_t toSize) {
-	
-	BlastMemInBuffer in(from, fromSize);
-	BlastMemOutBuffer out(to, toSize);
-	
-	BlastResult error = blast(blastInMem, &in, blastOutMem, &out);
-	if(error) {
-		LogError << "blastMem error " << error << " for " << fromSize << "/" << toSize;
-		return 0;
-	}
-	
-	return toSize - out.size;
+	return uncompressed;
 }

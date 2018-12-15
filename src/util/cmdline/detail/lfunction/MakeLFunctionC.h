@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -38,7 +38,7 @@ template <
 	BOOST_PP_COMMA_IF(N)
 	BOOST_PP_ENUM_PARAMS(N, typename ARG)
 	>
-lfunction<R(BOOST_PP_ENUM_PARAMS(N, ARG)), R(*)(BOOST_PP_ENUM_PARAMS(N, ARG))> 
+lfunction<R(BOOST_PP_ENUM_PARAMS(N, ARG)), R(*)(BOOST_PP_ENUM_PARAMS(N, ARG))>
 make_lfunction(R(*c_function)(BOOST_PP_ENUM_PARAMS(N, ARG))) {
 	return lfunction<
 		R(BOOST_PP_ENUM_PARAMS(N, ARG)),

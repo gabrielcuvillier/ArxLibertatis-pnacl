@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,6 +20,7 @@
 #include "game/spell/FlyingEye.h"
 
 #include "core/Core.h"
+#include "core/GameTime.h"
 
 #include "scene/Object.h"
 
@@ -30,17 +31,14 @@
 
 EYEBALL_DEF eyeball;
 
-float MagicSightFader=0.f;
+float MagicSightFader = 0.f;
 
 static TextureContainer * Flying_Eye = NULL;
-static EERIE_3DOBJ * eyeballobj = NULL;			// EyeBall 3D Object	// NEEDTO: Load dynamically
-
-extern float Original_framedelay;
-extern float PULSATE;
+static EERIE_3DOBJ * eyeballobj = NULL; // EyeBall 3D Object
 
 void FlyingEye_Init() {
 	Flying_Eye = TextureContainer::LoadUI("graph/particles/flying_eye_fx");
-	eyeballobj = LoadTheObj("editor/obj3d/eyeball.teo", "eyeball_teo maps");
+	eyeballobj = loadObject("editor/obj3d/eyeball.teo");
 }
 
 void FlyingEye_Release() {
@@ -48,59 +46,59 @@ void FlyingEye_Release() {
 	eyeballobj = NULL;
 }
 
-void DrawMagicSightInterface()
-{
+void DrawMagicSightInterface() {
 	if(eyeball.exist == 1 || !Flying_Eye)
 		return;
+	
+	UseRenderState state(render2D().blend(BlendZero, BlendInvSrcColor));
+	
+	float col = 0.75f + PULSATE * (1.f / 20);
 
-
-	GRenderer->SetBlendFunc(BlendZero, BlendInvSrcColor);
-
-	float col = 0.75f + PULSATE * (1.f/20);
-
-	if(col > 1.f)
+	if(col > 1.f) {
 		col = 1.f;
+	}
 
 	if(eyeball.exist < 0) {
-		col = -eyeball.exist * (1.f/100);
+		col = -eyeball.exist * (1.f / 100);
 	} else if(eyeball.exist > 2) {
 		col = 1.f - eyeball.size.x;
 	}
 
-	EERIEDrawBitmap(Rectf(g_size), 0.0001f, Flying_Eye, Color3f::gray(col).to<u8>());
+	EERIEDrawBitmap(Rectf(g_size), 0.0001f, Flying_Eye, Color::gray(col));
 
 	if(MagicSightFader > 0.f) {
 		col = MagicSightFader;
 
-		EERIEDrawBitmap(Rectf(g_size), 0.0001f, NULL, Color3f::gray(col).to<u8>());
+		EERIEDrawBitmap(Rectf(g_size), 0.0001f, NULL, Color::gray(col));
 
-		MagicSightFader -= Original_framedelay * (1.f/400);
+		MagicSightFader -= g_platformTime.lastFrameDuration() / PlatformDurationMs(400);
 
-		if(MagicSightFader < 0.f)
+		if(MagicSightFader < 0.f) {
 			MagicSightFader = 0.f;
+		}
 	}
-
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
+	
 }
 
 
 void ARXDRAW_DrawEyeBall() {
-	if(eyeball.exist == 0 || !eyeballobj)
+	if(eyeball.exist == 0 || !eyeballobj) {
 		return;
-
+	}
+	
 	float d;
 
 	if(eyeball.exist < 0) {
-		d = -eyeball.exist * (1.0f/100);
+		d = -eyeball.exist * (1.0f / 100);
 		eyeball.exist++;
 	} else if(eyeball.exist > 2) {
-		d = eyeball.exist * (1.0f/100);
-	}
-	else
+		d = eyeball.exist * (1.0f / 100);
+	} else {
 		return;
+	}
 
 	Anglef angle = eyeball.angle;
-	angle.setPitch(MAKEANGLE(180.f - angle.getPitch()));
+	angle.setYaw(MAKEANGLE(180.f - angle.getYaw()));
 
 	Vec3f pos = eyeball.pos;
 	pos.y += eyeball.floating;

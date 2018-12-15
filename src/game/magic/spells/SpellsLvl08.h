@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,19 +21,26 @@
 #define ARX_GAME_MAGIC_SPELLS_SPELLSLVL08_H
 
 #include "game/magic/Spell.h"
+#include "graphics/effects/Cabal.h"
+#include "platform/Platform.h"
 
-class InvisibilitySpell : public SpellBase {
+class InvisibilitySpell arx_final : public SpellBase {
+	
 public:
+	
 	bool CanLaunch();
 	void Launch();
 	void End();
 	void Update();
 	
 	Vec3f getPosition();
+	
 };
 
-class ManaDrainSpell : public SpellBase {
+class ManaDrainSpell arx_final : public SpellBase {
+	
 public:
+	
 	ManaDrainSpell();
 	
 	bool CanLaunch();
@@ -44,32 +51,42 @@ public:
 	Vec3f getPosition();
 	
 private:
-	LightHandle m_light;
+	
 	DamageHandle m_damage;
-	float m_pitch;
+	CabalFx m_cabal;
+	
 };
 
-class ExplosionSpell : public SpellBase {
+class ExplosionSpell arx_final : public SpellBase {
+	
 public:
+	
 	ExplosionSpell();
 	
 	void Launch();
 	void Update();
 	
 private:
+	
 	LightHandle m_light;
 	DamageHandle m_damage;
+	
 };
 
-class EnchantWeaponSpell : public SpellBase {
+class EnchantWeaponSpell arx_final : public SpellBase {
+	
 public:
+	
 	void Launch();
 	void End();
 	void Update();
+	
 };
 
-class LifeDrainSpell : public SpellBase {
+class LifeDrainSpell arx_final : public SpellBase {
+	
 public:
+	
 	LifeDrainSpell();
 	
 	bool CanLaunch();
@@ -80,9 +97,10 @@ public:
 	Vec3f getPosition();
 	
 private:
-	LightHandle m_light;
+	
 	DamageHandle m_damage;
-	float m_pitch;
+	CabalFx m_cabal;
+	
 };
 
 #endif // ARX_GAME_MAGIC_SPELLS_SPELLSLVL08_H

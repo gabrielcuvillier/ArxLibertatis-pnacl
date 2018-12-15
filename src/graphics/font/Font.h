@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -38,19 +38,16 @@ public:
 	
 	struct Info {
 		
-		Info(const res::path & fontFile, unsigned int fontSize)
-			: name(fontFile), size(fontSize) { }
+		Info(const res::path & fontFile, unsigned fontSize, unsigned fontWeight)
+			: name(fontFile), size(fontSize), weight(fontWeight) { }
 		
 		bool operator==(const Info & other) const {
-			return name == other.name && size == other.size;
-		}
-		
-		bool operator<(const Info & other) const  {
-			return name == other.name ? size < other.size : name < other.name;
+			return name == other.name && size == other.size && weight == other.weight;
 		}
 		
 		res::path name;
-		unsigned int size;
+		unsigned size;
+		unsigned weight;
 		
 	};
 	
@@ -88,48 +85,126 @@ public:
 		Vec2f uv_end;
 		
 		//!< Texture page on which the glyph can be found
-		unsigned int texture;
+		size_t texture;
+		
+		Glyph()
+			: index(0)
+			, size(0)
+			, draw_offset(0)
+			, advance(0.f)
+			, lsb_delta(0)
+			, rsb_delta(0)
+			, uv_start(0.f)
+			, uv_end(0.f)
+			, texture(0)
+		{ }
 		
 	};
 	
 public:
 	
+	class TextSize {
+		
+		Vec2i m_anchor;
+		s32 m_start;
+		s32 m_end;
+		s32 m_next;
+		s32 m_height;
+		
+	public:
+		
+		TextSize(Vec2i anchor, s32 start, s32 end, s32 next, s32 height)
+			: m_anchor(anchor)
+			, m_start(start)
+			, m_end(end)
+			, m_next(next)
+			, m_height(height)
+		{ }
+		
+		Vec2i anchor() const {
+			return m_anchor;
+		}
+		
+		s32 start() const {
+			return m_start;
+		}
+		
+		s32 end() const {
+			return m_end;
+		}
+		
+		s32 width() const {
+			return m_end - m_start;
+		}
+		
+		s32 height() const {
+			return m_height;
+		}
+		
+		s32 advance() const {
+			return m_next - m_anchor.x;
+		}
+		
+		s32 head() const {
+			return m_start - m_anchor.x;
+		}
+		
+		s32 tail() const {
+			return m_next - m_end;
+		}
+		
+		s32 next() const {
+			return m_next;
+		}
+		
+		Vec2i size() const {
+			return Vec2i(width(), height());
+		}
+		
+		operator Vec2i() const {
+			return size();
+		}
+		
+	};
+	
 	typedef u32 Char;
 	
 	typedef std::string::const_iterator text_iterator;
 	
-	const Info & getInfo() const { return info; }
-	const res::path & getName() const { return info.name; }
-	unsigned int getSize() const { return info.size; }
+	const Info & getInfo() const { return m_info; }
+	const res::path & getName() const { return m_info.name; }
+	unsigned getSize() const { return m_info.size; }
+	unsigned getWeight() const { return m_info.weight; }
 	
-	void draw(const Vec2i & p, const std::string & str, const Color & color) {
-		draw(p.x, p.y, str, color);
+	TextSize draw(const Vec2i & p, const std::string & str, const Color & color) {
+		return draw(p.x, p.y, str, color);
 	}
 	
-	void draw(int x, int y, const std::string & str, Color color) {
-		draw(x, y, str.begin(), str.end(), color);
+	TextSize draw(int x, int y, const std::string & str, Color color) {
+		return draw(x, y, str.begin(), str.end(), color);
 	}
 	
-	void draw(int x, int y, text_iterator start, text_iterator end, Color color);
+	TextSize draw(int x, int y, text_iterator start, text_iterator end, Color color);
 	
-	Vec2i getTextSize(const std::string & str) {
+	TextSize getTextSize(const std::string & str) {
 		return getTextSize(str.begin(), str.end());
 	}
 	
-	Vec2i getTextSize(text_iterator start, text_iterator end);
+	TextSize getTextSize(text_iterator start, text_iterator end);
+	
+	size_t getPosition(const std::string & str, int x) {
+		return getPosition(str.begin(), str.end(), x) - str.begin();
+	}
+	
+	text_iterator getPosition(text_iterator start, text_iterator end, int x);
 	
 	int getLineHeight() const;
-	
-	/*!
-	 * For debugging purpose... will write one image file per page
-	 * under "name_style_size_pagen.png"
-	 */
-	bool writeToDisk();
+	int getMaxAdvance() const;
 	
 private:
 	
 	// Construction/destruction handled by FontCache only
-	Font(const res::path & fontFile, unsigned int fontSize, struct FT_FaceRec_ * face);
+	Font(const res::path & file, unsigned size, unsigned weight, struct FT_FaceRec_ * face);
 	~Font();
 	
 	//! Maps the given character to a placeholder glyph
@@ -152,13 +227,13 @@ private:
 private:
 	
 	template <bool Draw>
-	Vec2i process(int pX, int pY, text_iterator start, text_iterator end, Color color);
+	TextSize process(int pX, int pY, text_iterator start, text_iterator end, Color color);
 	
-	Info info;
-	unsigned int referenceCount;
+	Info m_info;
+	unsigned int m_referenceCount;
 	
-	struct FT_FaceRec_ * face;
-	std::map<Char, Glyph> glyphs;
+	struct FT_SizeRec_ * m_size;
+	std::map<Char, Glyph> m_glyphs;
 	typedef std::map<Char, Glyph>::const_iterator glyph_iterator;
 	
 	/*!
@@ -168,7 +243,7 @@ private:
 	 */
 	glyph_iterator getNextGlyph(text_iterator & it, text_iterator end);
 	
-	class PackedTexture * textures;
+	class PackedTexture * m_textures;
 	
 };
 

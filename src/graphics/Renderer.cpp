@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -30,11 +30,11 @@
 
 Renderer * GRenderer;
 
-TextureStage * Renderer::GetTextureStage(unsigned int textureStage) {
+TextureStage * Renderer::GetTextureStage(size_t textureStage) {
 	return (textureStage < m_TextureStages.size()) ? m_TextureStages[textureStage] : NULL;
 }
 
-const TextureStage * Renderer::GetTextureStage(unsigned int textureStage) const {
+const TextureStage * Renderer::GetTextureStage(size_t textureStage) const {
 	return (textureStage < m_TextureStages.size()) ? m_TextureStages[textureStage] : NULL;
 }
 
@@ -61,12 +61,7 @@ void Renderer::SetTexture(unsigned int textureStage, TextureContainer * pTexture
 
 Renderer::Renderer()
 	: m_initialized(false)
-	, m_hasBlend()
-	, m_srcBlend(BlendOne)
-	, m_dstBlend(BlendZero)
-{
-	m_state.setColorKey(true); // TODO only enable this when needed
-}
+{ }
 
 Renderer::~Renderer() {
 	if(isInitialized()) {
@@ -98,43 +93,4 @@ void Renderer::onRendererShutdown() {
 		listener->onRendererShutdown(*this);
 	}
 	m_initialized = false;
-}
-
-void Renderer::SetRenderState(RenderStateFlag renderState, bool enable) {
-	
-	switch(renderState) {
-		
-		case AlphaBlending: {
-			if(enable) {
-				m_state.setBlend(m_srcBlend, m_dstBlend);
-			} else {
-				m_state.setBlend(BlendOne, BlendZero);
-			}
-			m_hasBlend = enable;
-			break;
-		}
-		
-		case ColorKey: {
-			m_state.setColorKey(enable);
-			break;
-		}
-		
-		case DepthTest: {
-			m_state.setDepthTest(enable);
-			break;
-		}
-		
-		case DepthWrite: {
-			m_state.setDepthWrite(enable);
-			break;
-		}
-		
-		case Fog: {
-			m_state.setFog(enable);
-			break;
-		}
-		
-		default:
-			arx_assert(false, "Unsupported render state: %d", int(renderState));
-	}
 }

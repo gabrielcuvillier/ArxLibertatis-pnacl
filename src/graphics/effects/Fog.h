@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -54,37 +54,37 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 struct EERIE_3DOBJ;
 
-struct FOG_DEF
-{
-	bool		exist;
-	Vec3f	pos;
-	Color3f	rgb;
-	float		size;
-	long		special;
-	float		scale;
-	Vec3f	move;
-	Anglef	angle;
-	float		speed;
-	float		rotatespeed;
-	long		tolive;
-	long		blend;
-	float		frequency;
+struct FOG_DEF {
+	
+	bool exist;
+	Vec3f pos;
+	Color3f rgb;
+	float size;
+	long special;
+	float scale;
+	Vec3f move;
+	Anglef angle;
+	float speed;
+	float rotatespeed;
+	long tolive;
+	long blend;
+	float frequency;
 	
 	FOG_DEF()
 		: exist(false)
-		, pos(Vec3f_ZERO)
+		, pos(0.f)
 		, rgb(Color3f::black)
 		, size(0.f)
 		, special(0)
 		, scale(0.f)
-		, move(Vec3f_ZERO)
-		, angle()
+		, move(0.f)
 		, speed(0.f)
 		, rotatespeed(0.f)
 		, tolive(0)
 		, blend(0)
 		, frequency(0.f)
 	{ }
+	
 };
 
 #define FOG_DIRECTIONAL 1
@@ -93,7 +93,6 @@ static const size_t MAX_FOG = 100;
 extern FOG_DEF fogs[MAX_FOG];
 
 void ARX_FOGS_Render();
-long ARX_FOGS_Count();
 long ARX_FOGS_GetFree();
 void ARX_FOGS_Clear();
 

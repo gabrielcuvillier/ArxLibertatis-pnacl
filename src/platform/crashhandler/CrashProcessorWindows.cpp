@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -42,7 +42,7 @@ static u64 convertFileTimeToInteger(const FILETIME & ft) {
 	ULARGE_INTEGER integer;
 	integer.LowPart = ft.dwLowDateTime;
 	integer.HighPart = ft.dwHighDateTime;
-	return integer.QuadPart ;
+	return integer.QuadPart;
 }
 
 void CrashHandlerWindows::processCrashInfo() {
@@ -65,9 +65,9 @@ void CrashHandlerWindows::processCrashInfo() {
 	if(GetProcessTimes(process, &creation, &exit, &kernel, &user)) {
 		SYSTEMTIME time;
 		GetSystemTime(&time);
-		SystemTimeToFileTime(&time, &now) ;
+		SystemTimeToFileTime(&time, &now);
 		u64 delta = convertFileTimeToInteger(now) - convertFileTimeToInteger(creation);
-		m_pCrashInfo->runningTime = double(delta) * 10e-08;
+		m_pCrashInfo->runningTime = double(delta) / 10000000;
 	}
 	
 	CloseHandle(process);

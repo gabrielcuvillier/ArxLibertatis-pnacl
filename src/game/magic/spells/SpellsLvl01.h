@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,17 +23,23 @@
 #include "game/magic/Spell.h"
 
 #include "graphics/effects/MagicMissile.h"
+#include "platform/Platform.h"
 
-class MagicSightSpell : public SpellBase {
+class MagicSightSpell arx_final : public SpellBase {
+	
 public:
+	
 	bool CanLaunch();
 	void Launch();
 	void End();
 	void Update();
+	
 };
 
-class MagicMissileSpell : public SpellBase {
+class MagicMissileSpell arx_final : public SpellBase {
+	
 public:
+	
 	MagicMissileSpell();
 	~MagicMissileSpell();
 	
@@ -42,12 +48,18 @@ public:
 	void Update();
 	
 private:
+	
 	bool m_mrCheat;
-	std::vector<CMagicMissile *> pTab;
+	audio::SourcedSample snd_loop;
+	std::vector<LightHandle> m_lights;
+	std::vector<CMagicMissile *> m_missiles;
+	
 };
 
-class IgnitSpell : public SpellBase {
+class IgnitSpell arx_final : public SpellBase {
+	
 public:
+	
 	IgnitSpell();
 	
 	void Launch();
@@ -55,29 +67,38 @@ public:
 	void Update();
 	
 private:
+	
 	Vec3f m_srcPos;
-	unsigned int m_elapsed;
 	
 	struct T_LINKLIGHTTOFX {
 		LightHandle m_effectLight;
 		int m_targetLight;
 	};
+	
 	std::vector<T_LINKLIGHTTOFX> m_lights;
+	
 };
 
-class DouseSpell : public SpellBase {
+class DouseSpell arx_final : public SpellBase {
+	
 public:
+	
 	void Launch();
 	void End();
 	void Update();
 	
 private:
+	
 	std::vector<size_t> m_lights;
+	
 };
 
-class ActivatePortalSpell : public SpellBase {
+class ActivatePortalSpell arx_final : public SpellBase {
+	
 public:
+	
 	void Launch();
+	
 };
 
 #endif // ARX_GAME_MAGIC_SPELLS_SPELLSLVL01_H

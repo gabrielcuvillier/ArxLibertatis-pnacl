@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -53,6 +53,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "animation/AnimationRender.h"
 
 #include "core/Application.h"
+#include "core/ArxGame.h"
 #include "core/Config.h"
 #include "core/Core.h"
 #include "core/GameTime.h"
@@ -85,8 +86,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 extern bool bQuickGenFirstClick;
 
-extern SavegameHandle LOADQUEST_SLOT;
-
 void ARXMenu_Private_Options_Video_SetResolution(bool fullscreen, int _iWidth, int _iHeight) {
 	
 	if(!GRenderer) {
@@ -96,7 +95,7 @@ void ARXMenu_Private_Options_Video_SetResolution(bool fullscreen, int _iWidth, i
 	config.video.resolution = Vec2i(_iWidth, _iHeight);
 	
 	if(!fullscreen) {
-		if(config.video.resolution == Vec2i_ZERO) {
+		if(config.video.resolution == Vec2i(0)) {
 			LogInfo << "Configuring automatic fullscreen resolution selection";
 		} else {
 			LogInfo << "Configuring fullscreen resolution to " << DisplayMode(config.video.resolution);
@@ -107,7 +106,7 @@ void ARXMenu_Private_Options_Video_SetResolution(bool fullscreen, int _iWidth, i
 	
 	if(window->isFullScreen() != fullscreen || fullscreen) {
 		
-		GRenderer->Clear(Renderer::ColorBuffer | Renderer::DepthBuffer);
+		GRenderer->Clear(Renderer::ColorBuffer);
 		
 		mainApp->getWindow()->showFrame();
 		
@@ -116,12 +115,13 @@ void ARXMenu_Private_Options_Video_SetResolution(bool fullscreen, int _iWidth, i
 	}
 }
 
-void ARXMenu_Options_Video_SetFogDistance(int _iFog) {
-	config.video.fogDistance = glm::clamp(_iFog, 0, 10);
+void ARXMenu_Options_Video_SetFogDistance(float distance) {
+	config.video.fogDistance = glm::clamp(distance, 0.f, 10.f);
 }
 
-void ARXMenu_Options_Video_SetDetailsQuality(int _iQuality) {
-	config.video.levelOfDetail = glm::clamp(_iQuality, 0, 2);
+void ARXMenu_Options_Video_SetDetailsQuality(int lod) {
+	
+	config.video.levelOfDetail = glm::clamp(lod, 0, 2);
 	
 	switch(config.video.levelOfDetail) {
 		case 0: {
@@ -137,45 +137,55 @@ void ARXMenu_Options_Video_SetDetailsQuality(int _iQuality) {
 			break;
 		}
 	}
+	
 }
 
-void ARXMenu_Options_Audio_SetMasterVolume(int _iVolume) {
-	_iVolume = glm::clamp(_iVolume, 0, 10);
+void ARXMenu_Options_Video_SetGamma(float gamma) {
+	config.video.gamma = glm::clamp(gamma, 0.f, 10.f);
+	mainApp->getWindow()->setGamma(1.f + (gamma / 5.f - 1.f) * 0.5f);
+}
+
+void ARXMenu_Options_Audio_SetMasterVolume(float volume) {
 	
-	float fVolume = _iVolume * 0.1f;
+	config.audio.volume = glm::clamp(volume, 0.f, 10.f);
+	
+	float fVolume = config.audio.volume * 0.1f;
 	if(config.audio.muteOnFocusLost && !mainApp->getWindow()->hasFocus()) {
 		fVolume = 0.f;
 	}
+	
 	ARX_SOUND_MixerSetVolume(ARX_SOUND_MixerMenu, fVolume);
-	config.audio.volume = _iVolume;
 }
 
-void ARXMenu_Options_Audio_SetSfxVolume(int _iVolume) {
-	_iVolume = glm::clamp(_iVolume, 0, 10);
+void ARXMenu_Options_Audio_SetSfxVolume(float volume) {
 	
-	float fVolume = _iVolume * 0.1f;
+	config.audio.sfxVolume = glm::clamp(volume, 0.f, 10.f);
+	
+	float fVolume = config.audio.sfxVolume * 0.1f;
 	ARX_SOUND_MixerSetVolume(ARX_SOUND_MixerMenuSample, fVolume);
-	config.audio.sfxVolume = _iVolume;
 }
 
-void ARXMenu_Options_Audio_SetSpeechVolume(int _iVolume) {
-	_iVolume = glm::clamp(_iVolume, 0, 10);
+void ARXMenu_Options_Audio_SetSpeechVolume(float volume) {
 	
-	float fVolume = _iVolume * 0.1f;
+	config.audio.speechVolume = glm::clamp(volume, 0.f, 10.f);
+	
+	float fVolume = config.audio.speechVolume * 0.1f;
 	ARX_SOUND_MixerSetVolume(ARX_SOUND_MixerMenuSpeech, fVolume);
-	config.audio.speechVolume = _iVolume;
 }
 
-void ARXMenu_Options_Audio_SetAmbianceVolume(int _iVolume) {
-	_iVolume = glm::clamp(_iVolume, 0, 10);
+void ARXMenu_Options_Audio_SetAmbianceVolume(float volume) {
 	
-	float fVolume = _iVolume * 0.1f;
+	config.audio.ambianceVolume = glm::clamp(volume, 0.f, 10.f);
+	
+	float fVolume = config.audio.ambianceVolume * 0.1f;
 	ARX_SOUND_MixerSetVolume(ARX_SOUND_MixerMenuAmbiance, fVolume);
-	config.audio.ambianceVolume = _iVolume;
 }
 
 void ARXMenu_Options_Audio_ApplyGameVolumes() {
-	ARX_SOUND_MixerSwitch(ARX_SOUND_MixerMenu, ARX_SOUND_MixerGame);
+	
+	ARX_SOUND_MixerPause(ARX_SOUND_MixerMenu);
+	ARX_SOUND_MixerResume(ARX_SOUND_MixerGame);
+	
 	float volume = config.audio.volume * 0.1f;
 	if(config.audio.muteOnFocusLost && !mainApp->getWindow()->hasFocus()) {
 		volume = 0.f;
@@ -192,7 +202,7 @@ void ARXMenu_Options_Audio_SetMuted(bool mute) {
 	ARX_SOUND_MixerSetVolume(ARX_SOUND_MixerGame, volume);
 }
 
-void ARXMenu_Options_Audio_SetDevice(std::string device) {
+void ARXMenu_Options_Audio_SetDevice(const std::string & device) {
 	
 	config.audio.device = device;
 	
@@ -202,65 +212,38 @@ void ARXMenu_Options_Audio_SetDevice(std::string device) {
 	 * should be able to switch backends internally.
 	 */
 	
-	ARX_SOUND_PushAnimSamples();
-	size_t ulSizeAmbiancePlayList;
-	char * pAmbiancePlayList = ARX_SOUND_AmbianceSavePlayList(ulSizeAmbiancePlayList);
+	std::vector< std::pair<res::path, size_t> > animationSamples = ARX_SOUND_PushAnimSamples();
+	
+	std::string playlist = ARX_SOUND_AmbianceSavePlayList();
 	
 	ARX_SOUND_Release();
 	ARX_SOUND_Init();
 	
-	ARX_SOUND_MixerSwitch(ARX_SOUND_MixerGame, ARX_SOUND_MixerMenu);
+	ARX_SOUND_MixerPause(ARX_SOUND_MixerGame);
+	ARX_SOUND_MixerResume(ARX_SOUND_MixerMenu);
+	
 	ARX_SOUND_PlayMenuAmbiance(AMB_MENU);
 	
 	ARXMenu_Options_Audio_SetMasterVolume(config.audio.volume);
 	ARXMenu_Options_Audio_SetSfxVolume(config.audio.sfxVolume);
 	ARXMenu_Options_Audio_SetSpeechVolume(config.audio.speechVolume);
 	ARXMenu_Options_Audio_SetAmbianceVolume(config.audio.ambianceVolume);
-
-	if(pAmbiancePlayList) {
-		ARX_SOUND_AmbianceRestorePlayList(pAmbiancePlayList, ulSizeAmbiancePlayList);
-		free(pAmbiancePlayList);
-	}
-
-	ARX_SOUND_PopAnimSamples();
-}
-
-void ARXMenu_Options_Control_SetInvertMouse(bool enable) {
-	config.input.invertMouse = enable;
-}
-
-void ARXMenu_Options_Control_SetMouseSensitivity(int sensitivity) {
-	config.input.mouseSensitivity = glm::clamp(sensitivity, 0, 10);
-	GInput->setMouseSensitivity(config.input.mouseSensitivity);
+	
+	ARX_SOUND_AmbianceRestorePlayList(playlist.data(), playlist.size());
+	
+	ARX_SOUND_PopAnimSamples(animationSamples);
 }
 
 void ARXMenu_ResumeGame() {
 	ARX_Menu_Resources_Release();
-	arxtime.resume();
+	g_gameTime.resume(GameTime::PauseMenu);
 	EERIEMouseButton = 0;
+	ARXmenu.requestMode(Mode_InGame);
 }
 
 void ARXMenu_NewQuest() {
-	MenuFader_start(true, true, AMCM_NEWQUEST);
+	MenuFader_start(Fade_In, Mode_CharacterCreation);
 	bQuickGenFirstClick = true;
 	player.gold = 0;
 	ARX_PLAYER_MakeFreshHero();
-}
-
-void ARXMenu_LoadQuest(SavegameHandle num) {
-	
-	LOADQUEST_SLOT = num;
-
-	ARX_SOUND_PlayMenu(SND_MENU_CLICK);
-	g_canResumeGame = true;
-	ARX_MENU_Clicked_QUIT();
-}
-
-void ARXMenu_SaveQuest(const std::string & name, SavegameHandle num) {
-	
-	ARX_SOUND_MixerPause(ARX_SOUND_MixerMenu);
-	
-	savegames.save(name, num.handleData(), savegame_thumbnail);
-	
-	ARX_SOUND_MixerResume(ARX_SOUND_MixerMenu);
 }

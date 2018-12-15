@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2012-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -29,8 +29,6 @@
 
 class TextureContainer;
 
-namespace gui {
-
 struct Note {
 	
 	enum Type {
@@ -43,30 +41,37 @@ struct Note {
 	};
 	
 	Note()
-		: _type(Undefined)
-		, allocatedForRatio(Vec2f_ZERO)
-		, _page(0)
-		, _pageSpacing(20)
-		, background(NULL)
-		, prevPage(NULL)
-		, nextPage(NULL)
+		: m_type(Undefined)
+		, m_currentRatio(0.f)
+		, m_currentScale(0.f)
+		, m_currentFontSize(0.f)
+		, m_currentFontWeight(0)
+		, m_page(0)
+		, m_pageSpacing(20)
+		, m_maxPages(1)
+		, m_background(NULL)
+		, m_prevPage(NULL)
+		, m_nextPage(NULL)
 	{}
 	
 	void setData(Type type, const std::string & text);
 	void clear();
 	
+	bool isOpen() { return m_type != Undefined; }
+	
 	void render();
+	bool manageActions();
 	
-	const Type & type() { return _type; }
-	const std::string & text() { return _text; }
+	const Type & type() { return m_type; }
+	const std::string & text() { return m_text; }
 	
-	size_t page() const { return _page; }
-	size_t pageCount() const { return pages.size(); }
+	size_t page() const { return m_page; }
+	size_t pageCount() const { return m_pages.size(); }
 	void setPage(size_t page);
 	
-	const Rectf & area() const { return _area; }
-	Rectf prevPageButton() const { return _page > 0 ? _prevPageButton : Rectf::ZERO; }
-	Rectf nextPageButton() const { return _page + 2 < pages.size() ? _nextPageButton : Rectf::ZERO; }
+	const Rectf & area() const { return m_area; }
+	Rectf prevPageButton() const { return m_page > 0 ? m_prevPageButton : Rectf::ZERO; }
+	Rectf nextPageButton() const { return m_page + 2 < m_pages.size() ? m_nextPageButton : Rectf::ZERO; }
 	
 private:
 	
@@ -74,26 +79,32 @@ private:
 	bool allocate();
 	void deallocate();
 	
-	Type _type;
-	std::string _text;
+	void loadTextures();
+	void calculateLayout();
+	bool splitTextToPages();
 	
-	Vec2f allocatedForRatio;
+	Type m_type;
+	std::string m_text;
 	
-	std::vector<std::string> pages;
-	size_t _page;
+	Vec2f m_currentRatio;
+	float m_currentScale;
+	float m_currentFontSize;
+	int m_currentFontWeight;
 	
-	Rectf _area;
-	Rect _textArea;
-	Rectf _prevPageButton;
-	Rectf _nextPageButton;
-	s32 _pageSpacing;
+	std::vector<std::string> m_pages;
+	size_t m_page;
 	
-	TextureContainer * background;
-	TextureContainer * prevPage;
-	TextureContainer * nextPage;
+	Rectf m_area;
+	Rect m_textArea;
+	Rectf m_prevPageButton;
+	Rectf m_nextPageButton;
+	s32 m_pageSpacing;
+
+	size_t m_maxPages;
+	
+	TextureContainer * m_background;
+	TextureContainer * m_prevPage;
+	TextureContainer * m_nextPage;
 	
 };
-
-} // namespace gui
-
 #endif // ARX_GUI_NOTE_H

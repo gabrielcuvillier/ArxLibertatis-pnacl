@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,7 +24,7 @@
 
 struct TexturedVertex;
 
-void Halo_AddVertices(TexturedVertex (&vert)[4]);
+void Halo_AddVertices(TexturedVertex (&inVerts)[4]);
 
 void Halo_Render();
 

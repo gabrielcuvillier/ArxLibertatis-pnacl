@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,8 +23,10 @@
 #include <limits>
 #include <cmath>
 
-#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/constants.hpp>
+#include <glm/gtc/quaternion.hpp>
 
+#include "math/GtxFunctions.h"
 #include "math/Types.h"
 
 inline float MAKEANGLE(float a) {
@@ -45,62 +47,42 @@ public:
 	 * Constructor.
 	 */
 	Angle()
-		: m_yaw(0)
-		, m_pitch(0)
+		: m_pitch(0)
+		, m_yaw(0)
 		, m_roll(0)
-	{}
+	{ }
 	
 	/*!
 	 * Constructor accepting initial values.
 	 */
-	Angle(T yaw, T pitch, T roll) : m_yaw(yaw), m_pitch(pitch), m_roll(roll) {}
+	Angle(T pitch, T yaw, T roll)
+		: m_pitch(pitch)
+		, m_yaw(yaw)
+		, m_roll(roll)
+	{ }
 	
-	/*!
-	 * Copy constructor.
-	 * \param other An angle to be copied.
-	 */
-	Angle(const Angle & other) : m_yaw(other.m_yaw), m_pitch(other.m_pitch), m_roll(other.m_roll) {}
-
-	explicit Angle(const glm::quat & quat) {
-		typename vec3_traits<T>::type v = glm::eulerAngles(quat);
-		m_yaw = glm::degrees(v.x);
-		m_pitch = glm::degrees(v.y);
-		m_roll = glm::degrees(v.z);
+	T getPitch() const {
+		return m_pitch;
 	}
 
 	T getYaw() const {
 		return m_yaw;
 	}
 
-	T getPitch() const {
-		return m_pitch;
-	}
-
 	T getRoll() const {
 		return m_roll;
 	}
 	
-	void setYaw(T yaw) {
-		m_yaw = yaw;
-	}
-
 	void setPitch(T pitch) {
 		m_pitch = pitch;
 	}
 
-	void setRoll(T roll) {
-		m_roll = roll;
+	void setYaw(T yaw) {
+		m_yaw = yaw;
 	}
 
-	/*!
-	 * Set this angle to the content of another angle.
-	 * \brief Assignment operator.
-	 * \param other An euler angle to be copied.
-	 * \return Reference to this object.
-	 */
-	Angle & operator=(const Angle & other) {
-		m_yaw = other.m_yaw, m_pitch = other.m_pitch, m_roll = other.m_roll;
-		return *this;
+	void setRoll(T roll) {
+		m_roll = roll;
 	}
 	
 	/*!
@@ -110,7 +92,7 @@ public:
 	 * \return A boolean, \b true if the two angles are equal(all members are equals), or \b false otherwise.
 	 */
 	bool operator==(const Angle & other) const {
-		return m_yaw == other.m_yaw && m_pitch == other.m_pitch && m_roll == other.m_roll;
+		return m_pitch == other.m_pitch && m_yaw == other.m_yaw && m_roll == other.m_roll;
 	}
 	
 	/*!
@@ -129,7 +111,7 @@ public:
 	 * \return A new angle, same as this one but with the signs of all the elements inverted.
 	 */
 	Angle operator-() const {
-		return Angle(-m_yaw, -m_pitch, -m_roll);
+		return Angle(-m_pitch, -m_yaw, -m_roll);
 	}
 	
 	/*!
@@ -139,7 +121,7 @@ public:
 	 * \return A new angle, the result of the addition of the two angles.
 	 */
 	Angle operator+(const Angle & other) const {
-		return Angle(m_yaw + other.m_yaw, m_pitch + other.m_pitch, m_roll + other.m_roll);
+		return Angle(m_pitch + other.m_pitch, m_yaw + other.m_yaw, m_roll + other.m_roll);
 	}
 	
 	/*!
@@ -149,63 +131,68 @@ public:
 	 * \return A new angle, the result of the subtraction of the two angles.
 	 */
 	Angle operator-(const Angle & other) const {
-		return Angle(m_yaw - other.m_yaw, m_pitch - other.m_pitch, m_roll - other.m_roll);
+		return Angle(m_pitch - other.m_pitch, m_yaw - other.m_yaw, m_roll - other.m_roll);
 	}
 	
 	Angle operator*(const Angle & other) const {
-		return Angle(m_yaw * other.m_yaw, m_pitch * other.m_pitch, m_roll * other.m_roll);
+		return Angle(m_pitch * other.m_pitch, m_yaw * other.m_yaw, m_roll * other.m_roll);
 	}
 	
 	Angle operator*(T scale) const {
-		return Angle(m_yaw * scale, m_pitch * scale, m_roll * scale);
+		return Angle(m_pitch * scale, m_yaw * scale, m_roll * scale);
 	}
 	
 	const Angle & operator+=(const Angle & other) {
-		m_yaw += other.m_yaw, m_pitch += other.m_pitch, m_roll += other.m_roll;
+		m_pitch += other.m_pitch, m_yaw += other.m_yaw, m_roll += other.m_roll;
 		return *this;
 	}
 	
 	const Angle & operator-=(const Angle & other) {
-		m_yaw -= other.m_yaw, m_pitch -= other.m_pitch, m_roll -= other.m_roll;
+		m_pitch -= other.m_pitch, m_yaw -= other.m_yaw, m_roll -= other.m_roll;
 		return *this;
 	}
 	
 	const Angle & operator/=(T scale) {
-		m_yaw /= scale, m_pitch /= scale, m_roll /= scale;
+		m_pitch /= scale, m_yaw /= scale, m_roll /= scale;
 		return *this;
 	}
 	
-	const Angle & operator *=(T scale) {
-		m_yaw *= scale, m_pitch *= scale, m_roll *= scale;
+	const Angle & operator*=(T scale) {
+		m_pitch *= scale, m_yaw *= scale, m_roll *= scale;
 		return *this;
 	}
 	
 	bool equalEps(const Angle & other, T pEps = std::numeric_limits<T>::epsilon()) const {
-		return m_yaw > (other.m_yaw - pEps) && m_yaw < (other.m_yaw + pEps) && m_pitch >(other.m_pitch - pEps) && m_pitch < (other.m_pitch + pEps) && m_roll >(other.m_roll - pEps) && m_roll < (other.m_roll + pEps);
+		return m_pitch > (other.m_pitch - pEps)
+		    && m_pitch < (other.m_pitch + pEps)
+		    && m_yaw   > (other.m_yaw   - pEps)
+		    && m_yaw   < (other.m_yaw   + pEps)
+		    && m_roll  > (other.m_roll  - pEps)
+		    && m_roll  < (other.m_roll  + pEps);
 	}
 	
 	void normalize() {
-		m_yaw = MAKEANGLE(m_yaw);
 		m_pitch = MAKEANGLE(m_pitch);
+		m_yaw = MAKEANGLE(m_yaw);
 		m_roll = MAKEANGLE(m_roll);
 	}
-
-	static const Angle ZERO; //!< A zero angle.
-
+	
 private:
-	T m_yaw;
+	
 	T m_pitch;
+	T m_yaw;
 	T m_roll;
+	
 };
-
-template <class T> const Angle<T> Angle<T>::ZERO(T(0), T(0), T(0));
 
 float AngleDifference(float d, float e);
 
 float InterpolateAngle(float a1, float a2, float p);
 
 inline Anglef interpolate(const Anglef & a1, const Anglef & a2, float p) {
-	return Anglef(InterpolateAngle(a1.getYaw(), a2.getYaw(), p), InterpolateAngle(a1.getPitch(), a2.getPitch(), p), InterpolateAngle(a1.getRoll(), a2.getRoll(), p));
+	return Anglef(InterpolateAngle(a1.getPitch(), a2.getPitch(), p),
+	              InterpolateAngle(a1.getYaw(), a2.getYaw(), p),
+	              InterpolateAngle(a1.getRoll(), a2.getRoll(), p));
 }
 
 //! Get the angle of the 2D vector (0,0)--(x,y), in radians.
@@ -217,6 +204,10 @@ inline float getAngle(float x, float y) {
 //! Get the angle of the 2D vector (x0,y0)--(x1,y1), in radians.
 inline float getAngle(float x0, float y0, float x1, float y1) {
 	return getAngle(x1 - x0, y1 - y0);
+}
+
+inline glm::quat quat_identity() {
+	return glm::quat(1.f, 0.f, 0.f, 0.f);
 }
 
 #endif // ARX_MATH_ANGLE_H

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -26,6 +26,8 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_SIZES_H
+#include FT_OUTLINE_H
 
 #include "graphics/Draw.h"
 #include "graphics/Renderer.h"
@@ -43,17 +45,25 @@
 //! Pre-load all visible characters below this one when creating a font object
 static const Font::Char FONT_PRELOAD_LIMIT = 127;
 
-Font::Font(const res::path & fontFile, unsigned int fontSize, FT_Face face) 
-	: info(fontFile, fontSize)
-	, referenceCount(0)
-	, face(face)
-	, textures(0) {
+Font::Font(const res::path & file, unsigned size, unsigned weight, FT_Face face)
+	: m_info(file, size, weight)
+	, m_referenceCount(0)
+	, m_size(NULL)
+	, m_textures(NULL) {
 	
-	// TODO-font: Compute optimal size using m_FTFace->bbox
+	FT_New_Size(face, &m_size);
+	
+	FT_Activate_Size(m_size);
+	
+	// Windows default is 96dpi
+	// FreeType default is 72dpi
+	FT_Set_Char_Size(m_size->face, 0, m_info.size * 64, 64, 64);
+	
+	// TODO Compute optimal size using m_FTFace->bbox
 	const unsigned int TEXTURE_SIZE = 512;
 	
 	// Insert all the glyphs into texture pages
-	textures = new PackedTexture(TEXTURE_SIZE, Image::Format_A8);
+	m_textures = new PackedTexture(TEXTURE_SIZE, Image::Format_A8);
 	
 	// Insert the replacement characters first as they may be needed if others are missing
 	insertGlyph('?');
@@ -66,15 +76,18 @@ Font::Font(const res::path & fontFile, unsigned int fontSize, FT_Face face)
 		}
 	}
 	
-	textures->upload();
+	m_textures->upload();
+	
 }
 
 Font::~Font() {
 	
-	delete textures;
+	if(m_size) {
+		FT_Done_Size(m_size);
+	}
 	
-	// Release FreeType face object.
-	FT_Done_Face(face);
+	delete m_textures;
+	
 }
 
 void Font::insertPlaceholderGlyph(Char character) {
@@ -83,125 +96,114 @@ void Font::insertPlaceholderGlyph(Char character) {
 	if(character == util::REPLACEMENT_CHAR) {
 		
 		// Use '?' as a fallback replacement character
-		arx_assert(glyphs.find('?') != glyphs.end());
-		glyphs[character] = glyphs['?'];
+		arx_assert(m_glyphs.find('?') != m_glyphs.end());
+		m_glyphs[character] = m_glyphs['?'];
 		
 	} else if(character < 32 || character == '?') {
 		
 		// Ignore non-displayable ANSI characters
-		Glyph & glyph = glyphs[character];
-		glyph.size = Vec2i_ZERO;
-		glyph.advance = Vec2f_ZERO;
+		Glyph & glyph = m_glyphs[character];
+		glyph.size = Vec2i(0);
+		glyph.advance = Vec2f(0.f);
 		glyph.lsb_delta = glyph.rsb_delta = 0;
-		glyph.draw_offset = Vec2i_ZERO;
-		glyph.uv_start = Vec2f_ZERO;
-		glyph.uv_end = Vec2f_ZERO;
+		glyph.draw_offset = Vec2i(0);
+		glyph.uv_start = Vec2f(0.f);
+		glyph.uv_end = Vec2f(0.f);
 		glyph.texture = 0;
 		
 	} else {
 		
 		LogWarning << "No glyph for character U+" << std::hex << character
 		           << " (" << util::encode<util::UTF8>(character) << ") in font "
-		           << info.name;
+		           << m_info.name;
 		
-		arx_assert(glyphs.find(util::REPLACEMENT_CHAR) != glyphs.end());
-		glyphs[character] = glyphs[util::REPLACEMENT_CHAR];
+		arx_assert(m_glyphs.find(util::REPLACEMENT_CHAR) != m_glyphs.end());
+		m_glyphs[character] = m_glyphs[util::REPLACEMENT_CHAR];
 		
 	}
 }
 
 bool Font::insertGlyph(Char character) {
 	
-	FT_Error error;
-	FT_UInt glyphIndex = FT_Get_Char_Index(face, character);
+	if(!m_size) {
+		insertPlaceholderGlyph(character);
+		return false;
+	}
+	
+	FT_UInt glyphIndex = FT_Get_Char_Index(m_size->face, character);
 	if(!glyphIndex) {
 		insertPlaceholderGlyph(character);
 		return false;
 	}
 	
-	error = FT_Load_Glyph(face, glyphIndex, FT_LOAD_FORCE_AUTOHINT);
-	if(error) {
+	FT_Int32 flags = FT_LOAD_TARGET_LIGHT;
+	if(m_info.weight != 0) {
+		flags |= FT_LOAD_FORCE_AUTOHINT;
+	}
+	if(FT_Load_Glyph(m_size->face, glyphIndex, flags)) {
 		insertPlaceholderGlyph(character);
 		return false;
 	}
 	
-	error = FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL);
-	if(error) {
+	FT_GlyphSlot ftGlyph = m_size->face->glyph;
+	
+	if(m_info.weight != 0 && ftGlyph->format == FT_GLYPH_FORMAT_OUTLINE) {
+		FT_Pos strength = FT_MulFix(m_size->face->units_per_EM, m_size->metrics.y_scale) / 24 * m_info.weight / 4;
+		FT_Outline_Embolden(&ftGlyph->outline, strength);
+	}
+	
+	if(FT_Render_Glyph(ftGlyph, FT_RENDER_MODE_NORMAL)) {
 		insertPlaceholderGlyph(character);
 		return false;
 	}
 	
 	// Fill in info for this glyph.
-	Glyph & glyph = glyphs[character];
+	Glyph & glyph = m_glyphs[character];
 	glyph.index = glyphIndex;
-	glyph.size.x = face->glyph->bitmap.width;
-	glyph.size.y = face->glyph->bitmap.rows;
-	glyph.advance.x = face->glyph->linearHoriAdvance / 65536.0f;
-	glyph.advance.y = face->glyph->linearVertAdvance / 65536.0f;
-	glyph.lsb_delta = face->glyph->lsb_delta;
-	glyph.rsb_delta = face->glyph->rsb_delta;
-	glyph.draw_offset.x = face->glyph->bitmap_left;
-	glyph.draw_offset.y = face->glyph->bitmap_top - face->glyph->bitmap.rows;
-	glyph.uv_start = Vec2f_ZERO;
-	glyph.uv_end = Vec2f_ZERO;
+	glyph.size.x = ftGlyph->bitmap.width;
+	glyph.size.y = ftGlyph->bitmap.rows;
+	glyph.advance.x = float(ftGlyph->linearHoriAdvance) / 65536.f;
+	glyph.advance.y = float(ftGlyph->linearVertAdvance) / 65536.f;
+	glyph.lsb_delta = ftGlyph->lsb_delta;
+	glyph.rsb_delta = ftGlyph->rsb_delta;
+	glyph.draw_offset.x = ftGlyph->bitmap_left;
+	glyph.draw_offset.y = ftGlyph->bitmap_top - ftGlyph->bitmap.rows;
+	glyph.uv_start = Vec2f(0.f);
+	glyph.uv_end = Vec2f(0.f);
 	glyph.texture = 0;
 	
 	// Some glyphs like spaces have a size of 0...
 	if(glyph.size.x != 0 && glyph.size.y != 0) {
 		
 		Image imgGlyph;
-		imgGlyph.Create(glyph.size.x, glyph.size.y, Image::Format_A8);
+		imgGlyph.create(size_t(glyph.size.x), size_t(glyph.size.y), Image::Format_A8);
 		
-		FT_Bitmap * srcBitmap = &face->glyph->bitmap;
-		arx_assert(srcBitmap->pitch >= 0);
-		arx_assert(unsigned(srcBitmap->pitch) == unsigned(srcBitmap->width));
+		FT_Bitmap & srcBitmap = ftGlyph->bitmap;
+		arx_assert(srcBitmap.pitch >= 0);
+		arx_assert(unsigned(srcBitmap.pitch) == unsigned(srcBitmap.width));
 		
 		// Copy pixels
-		unsigned char * src = srcBitmap->buffer;
-		unsigned char * dst = imgGlyph.GetData();
+		unsigned char * src = srcBitmap.buffer;
+		unsigned char * dst = imgGlyph.getData();
 		memcpy(dst, src, glyph.size.x * glyph.size.y);
 		
 		Vec2i offset;
-		if(!textures->insertImage(imgGlyph, glyph.texture, offset)) {
+		if(!m_textures->insertImage(imgGlyph, glyph.texture, offset)) {
 			LogWarning << "Could not upload glyph for character U+" << std::hex << character
 			           << " (" << util::encode<util::UTF8>(character) << ") in font "
-			           << info.name;
+			           << m_info.name;
 			insertPlaceholderGlyph(character);
 			return false;
 		}
 		
 		// Compute UV mapping for each glyph.
-		const float textureSize = textures->getTextureSize();
+		const float textureSize = float(m_textures->getTextureSize());
 		glyph.uv_start = Vec2f(offset) / Vec2f(textureSize);
 		glyph.uv_end = Vec2f(offset + glyph.size) / Vec2f(textureSize);
+		
 	}
 	
 	return true;
-}
-
-bool Font::writeToDisk() {
-	
-	bool ok = true;
-	
-	for(unsigned int i = 0; i < textures->getTextureCount(); ++i) {
-		Texture2D & tex = textures->getTexture(i);
-		
-		std::stringstream ss;
-		ss << face->family_name;
-		if(face->style_name != NULL) {
-			ss << "_";
-			ss << face->style_name;
-		}
-		ss << "_";
-		ss << info.size;
-		ss << "_page";
-		ss << i;
-		ss << ".png";
-		
-		ok = ok && tex.GetImage().save(ss.str());
-	}
-	
-	return ok;
 }
 
 bool Font::insertMissingGlyphs(text_iterator begin, text_iterator end) {
@@ -210,7 +212,7 @@ bool Font::insertMissingGlyphs(text_iterator begin, text_iterator end) {
 	bool changed = false;
 	
 	for(text_iterator it = begin; (chr = util::UTF8::read(it, end)) != util::INVALID_CHAR; ) {
-		if(glyphs.find(chr) == glyphs.end()) {
+		if(m_glyphs.find(chr) == m_glyphs.end()) {
 			if(chr >= FONT_PRELOAD_LIMIT && insertGlyph(chr)) {
 				changed = true;
 			}
@@ -224,33 +226,30 @@ Font::glyph_iterator Font::getNextGlyph(text_iterator & it, text_iterator end) {
 	
 	Char chr = util::UTF8::read(it, end);
 	if(chr == util::INVALID_CHAR) {
-		return glyphs.end();
+		return m_glyphs.end();
 	}
 	
-	glyph_iterator glyph = glyphs.find(chr);
-	if(glyph != glyphs.end()) {
+	glyph_iterator glyph = m_glyphs.find(chr);
+	if(glyph != m_glyphs.end()) {
 		return glyph; // an existing glyph
 	}
 	
 	if(chr < FONT_PRELOAD_LIMIT) {
 		// We pre-load all glyphs for ASCII characters, so there is no point in checking again
-		return glyphs.end();
+		return m_glyphs.end();
 	}
 	
 	if(!insertGlyph(chr)) {
 		// No new glyph was inserted but the character was mapped to an existing one
-		return glyphs.find(chr);
+		return m_glyphs.find(chr);
 	}
 	
-	arx_assert(glyphs.find(chr) != glyphs.end());
+	arx_assert(m_glyphs.find(chr) != m_glyphs.end());
 	
 	// As we need to re-upload the textures now, first check for more missing glyphs
 	insertMissingGlyphs(it, end);
 	
-	// Re-upload the changed textures
-	textures->upload();
-	
-	return glyphs.find(chr); // the newly inserted glyph
+	return m_glyphs.find(chr); // the newly inserted glyph
 }
 
 static void addGlyphVertices(std::vector<TexturedVertex> & vertices,
@@ -262,31 +261,29 @@ static void addGlyphVertices(std::vector<TexturedVertex> & vertices,
 	float vStart = glyph.uv_end.y;
 	float uEnd = glyph.uv_end.x;
 	float vEnd = glyph.uv_start.y;
-
-	Vec2f p;
-	p.x = std::floor(pos.x + glyph.draw_offset.x) - .5f;
-	p.y = std::floor(pos.y - glyph.draw_offset.y) - .5f;
-
+	
+	Vec2f p(std::floor(pos.x + glyph.draw_offset.x) - .5f, std::floor(pos.y - glyph.draw_offset.y) - .5f);
+	
 	TexturedVertex quad[4];
 	quad[0].p = Vec3f(p.x, p.y, 0);
 	quad[0].uv = Vec2f(uStart, vStart);
 	quad[0].color = color.toRGBA();
-	quad[0].rhw = 1.0f;
+	quad[0].w = 1.0f;
 
 	quad[1].p = Vec3f(p.x + w, p.y, 0);
 	quad[1].uv = Vec2f(uEnd, vStart);
 	quad[1].color = color.toRGBA();
-	quad[1].rhw = 1.0f;
+	quad[1].w = 1.0f;
 
 	quad[2].p = Vec3f(p.x + w, p.y + h, 0);
 	quad[2].uv = Vec2f(uEnd, vEnd);
 	quad[2].color = color.toRGBA();
-	quad[2].rhw = 1.0f;
+	quad[2].w = 1.0f;
 
 	quad[3].p = Vec3f(p.x, p.y + h, 0);
 	quad[3].uv = Vec2f(uStart, vEnd);
 	quad[3].color = color.toRGBA();
-	quad[3].rhw = 1.0f;
+	quad[3].w = 1.0f;
 
 	vertices.push_back(quad[0]);
 	vertices.push_back(quad[1]);
@@ -298,7 +295,9 @@ static void addGlyphVertices(std::vector<TexturedVertex> & vertices,
 }
 
 template <bool DoDraw>
-Vec2i Font::process(int x, int y, text_iterator start, text_iterator end, Color color) {
+Font::TextSize Font::process(int x, int y, text_iterator start, text_iterator end, Color color) {
+	
+	FT_Activate_Size(m_size);
 	
 	Vec2f pen(x, y);
 		
@@ -307,29 +306,28 @@ Vec2i Font::process(int x, int y, text_iterator start, text_iterator end, Color 
 	
 	if(DoDraw) {
 		// Subtract one line height (since we flipped the Y origin to be like GDI)
-		pen.y += face->size->metrics.ascender >> 6;
+		pen.y += m_size->metrics.ascender >> 6;
 	}
 	
 	FT_UInt prevGlyphIndex = 0;
 	FT_Pos prevRsbDelta = 0;
-
-	typedef std::map< unsigned int, std::vector<TexturedVertex> > MapTextureVertices;
-	MapTextureVertices mapTextureVertices;
+	
+	std::vector< std::vector<TexturedVertex> > mapTextureVertices;
 	
 	for(text_iterator it = start; it != end; ) {
 		
 		// Get glyph in glyph map
 		glyph_iterator itGlyph = getNextGlyph(it, end);
-		if(itGlyph == glyphs.end()) {
+		if(itGlyph == m_glyphs.end()) {
 			continue;
 		}
 		const Glyph & glyph = itGlyph->second;
 		
 		// Kerning
-		if(FT_HAS_KERNING(face)) {
+		if(FT_HAS_KERNING(m_size->face)) {
 			if(prevGlyphIndex != 0) {
 				FT_Vector delta;
-				FT_Get_Kerning(face, prevGlyphIndex, glyph.index, FT_KERNING_DEFAULT, &delta);
+				FT_Get_Kerning(m_size->face, prevGlyphIndex, glyph.index, FT_KERNING_DEFAULT, &delta);
 				pen.x += delta.x >> 6;
 			}
 			prevGlyphIndex = glyph.index;
@@ -345,6 +343,9 @@ Vec2i Font::process(int x, int y, text_iterator start, text_iterator end, Color 
 		
 		// Draw
 		if(DoDraw && glyph.size.x != 0 && glyph.size.y != 0) {
+			if(glyph.texture >= mapTextureVertices.size()) {
+				mapTextureVertices.resize(glyph.texture + 1);
+			}
 			addGlyphVertices(mapTextureVertices[glyph.texture], glyph, pen, color);
 		} else {
 			ARX_UNUSED(pen), ARX_UNUSED(color);
@@ -354,7 +355,7 @@ Vec2i Font::process(int x, int y, text_iterator start, text_iterator end, Color 
 		if(startX == endX) {
 			startX = glyph.draw_offset.x;
 		}
-		endX = pen.x + glyph.draw_offset.x + glyph.size.x;
+		endX = s32(pen.x) + glyph.draw_offset.x + glyph.size.x;
 		
 		// Advance
 		pen.x += glyph.advance.x;
@@ -362,49 +363,66 @@ Vec2i Font::process(int x, int y, text_iterator start, text_iterator end, Color 
 	
 	if(DoDraw && !mapTextureVertices.empty()) {
 		
+		m_textures->upload();
+		
 		UseRenderState state(render2D());
+		UseTextureState textureState(TextureStage::FilterNearest, TextureStage::WrapClamp);
 		
 		// Fixed pipeline texture stage operation
-		GRenderer->GetTextureStage(0)->setColorOp(TextureStage::ArgDiffuse);
-		GRenderer->GetTextureStage(0)->setAlphaOp(TextureStage::ArgTexture);
-
-		GRenderer->GetTextureStage(0)->setWrapMode(TextureStage::WrapClamp);
-		GRenderer->GetTextureStage(0)->setMinFilter(TextureStage::FilterNearest);
-		GRenderer->GetTextureStage(0)->setMagFilter(TextureStage::FilterNearest);
-
-		for(MapTextureVertices::const_iterator it = mapTextureVertices.begin(); it != mapTextureVertices.end(); ++it) {
-			
-			if(!it->second.empty()) {
-				GRenderer->SetTexture(0, &textures->getTexture(it->first));
-				EERIEDRAWPRIM(Renderer::TriangleList, &it->second[0], it->second.size());
+		GRenderer->GetTextureStage(0)->setColorOp(TextureStage::OpDisable);
+		
+		for(size_t texture = 0; texture < mapTextureVertices.size(); texture++) {
+			const std::vector<TexturedVertex> & vertices = mapTextureVertices[texture];
+			if(!vertices.empty()) {
+				GRenderer->SetTexture(0, &m_textures->getTexture(texture));
+				EERIEDRAWPRIM(Renderer::TriangleList, &vertices[0], vertices.size());
 			}
 		}
-					
+		
 		GRenderer->ResetTexture(0);
-		TextureStage * stage = GRenderer->GetTextureStage(0);
-		stage->setColorOp(TextureStage::OpModulate,
-		                  TextureStage::ArgTexture, TextureStage::ArgCurrent);
-		stage->setAlphaOp(TextureStage::ArgTexture);
-		stage->setWrapMode(TextureStage::WrapRepeat);
-		stage->setMinFilter(TextureStage::FilterLinear);
-		stage->setMagFilter(TextureStage::FilterLinear);
+		GRenderer->GetTextureStage(0)->setColorOp(TextureStage::OpModulate);
 		
 	}
 	
-	int sizeX = endX - startX;
-	int sizeY = face->size->metrics.height >> 6;
-	
-	return Vec2i(sizeX, sizeY);
+	return TextSize(Vec2i(x, y), startX, endX, s32(pen.x), getLineHeight());
 }
 
-void Font::draw(int x, int y, text_iterator start, text_iterator end, Color color) {
-	process<true>(x, y, start, end, color);
+Font::TextSize Font::draw(int x, int y, text_iterator start, text_iterator end, Color color) {
+	return process<true>(x, y, start, end, color);
 }
 
-Vec2i Font::getTextSize(text_iterator start, text_iterator end) {
+Font::TextSize Font::getTextSize(text_iterator start, text_iterator end) {
 	return process<false>(0, 0, start, end, Color::none);
 }
 
+Font::text_iterator Font::getPosition(text_iterator start, text_iterator end, int x) {
+	
+	if(start == end || x < 0) {
+		return start;
+	}
+	
+	int last = 0;
+	
+	for(text_iterator p = start; ; ++p) {
+		if(p + 1 != end && util::UTF8::isContinuationByte(*p)) {
+			continue;
+		}
+		int pos = getTextSize(start, p + 1).advance();
+		if(pos >= x || p + 1 == end) {
+			if(x - last <= pos - x) {
+				return p;
+			} else {
+				return p + 1;
+			}
+		}
+	}
+	
+}
+
 int Font::getLineHeight() const {
-	return face->size->metrics.height >> 6;
+	return int(m_size->metrics.height >> 6);
+}
+
+int Font::getMaxAdvance() const {
+	return int(m_size->metrics.max_advance >> 6);
 }

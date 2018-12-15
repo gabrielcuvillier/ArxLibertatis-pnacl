@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,13 +21,16 @@
 #define ARX_SCRIPT_SCRIPTEVENT_H
 
 #include <map>
+#include <string>
 
 #include "script/Script.h"
 
 struct SCRIPT_EVENT {
-	explicit SCRIPT_EVENT(const std::string & str): name(str) {}
+	explicit SCRIPT_EVENT(const std::string & str) : name(str) { }
 	std::string name;
 };
+
+extern SCRIPT_EVENT AS_EVENT[];
 
 namespace script {
 
@@ -40,21 +43,30 @@ class Command;
 
 class ScriptEvent {
 	
-public:
 	
-	static std::string getName(ScriptMessage msg, const std::string & eventname);
+public:
 	
 	static long totalCount;
 	
 	ScriptEvent();
 	virtual ~ScriptEvent();
 	
-	static ScriptResult send(EERIE_SCRIPT * es, ScriptMessage msg, const std::string & params, Entity * io, const std::string & eventname, long info = 0);
+	static ScriptResult send(const EERIE_SCRIPT * es, Entity * sender, Entity * entity, ScriptEventName event,
+	                         const ScriptParameters & parameters = ScriptParameters(), size_t position = 0);
+	
+	static ScriptResult resume(const EERIE_SCRIPT * es, Entity * entity, size_t position) {
+		return send(es, NULL, entity, SM_EXECUTELINE, ScriptParameters(), position);
+	}
 	
 	static void registerCommand(script::Command * command);
 	
 	static void init();
 	static void shutdown();
+	
+	typedef bool (*AutocompleteHandler)(void * context, const std::string & suggestion);
+	static void autocomplete(const std::string & prefix, AutocompleteHandler handler, void * context);
+	
+	static bool isCommand(const std::string & command);
 	
 private:
 	

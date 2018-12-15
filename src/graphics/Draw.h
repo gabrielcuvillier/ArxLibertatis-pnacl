@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -63,11 +63,10 @@ void EERIEDrawBitmap2DecalY(Rectf rect, float z, TextureContainer * tex, Color c
 
 void EERIEDrawSprite(const Vec3f & in, float siz, TextureContainer * tex, Color col, float Zpos);
 
-void EERIEDrawBitmap2(const Rectf & rect, float z, TextureContainer * tex, Color color);
 void EERIEDrawBitmap_uv(Rectf rect, float z, TextureContainer * tex, Color col, float u0, float v0, float u1, float v1);
 void EERIEDrawBitmapUVs(Rectf rect, float z, TextureContainer * tex, Color color, Vec2f uv0, Vec2f uv1, Vec2f uv2, Vec2f uv3);
 
-void EERIEAddBitmap(const RenderMaterial& mat, const Vec3f & p, float sx, float sy, TextureContainer * tex, Color color);
+void EERIEAddBitmap(const RenderMaterial & mat, const Vec3f & p, float sx, float sy, TextureContainer * tex, Color color);
 void EERIEAddSprite(const RenderMaterial & mat, const Vec3f & in, float siz, Color color, float Zpos, float rot = 0);
 
 #endif // ARX_GRAPHICS_DRAW_H

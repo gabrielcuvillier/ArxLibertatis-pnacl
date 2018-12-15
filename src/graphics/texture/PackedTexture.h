@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -27,13 +27,13 @@
 #include "math/Rectangle.h"
 #include "math/Vector.h"
 
-class Texture2D;
+class Texture;
 
 class PackedTexture {
 	
 public:
 	
-	PackedTexture(unsigned int textureSize, Image::Format pFormat);
+	PackedTexture(size_t textureSize, Image::Format textureFormat);
 	~PackedTexture();
 	
 	//! Reset the packed texture - remove all images
@@ -42,12 +42,12 @@ public:
 	//! Upload changed textures
 	void upload();
 	
-	bool insertImage(const Image & image, unsigned int & textureIndex, Vec2i & offset);
+	bool insertImage(const Image & image, size_t & textureIndex, Vec2i & offset);
 	
-	Texture2D & getTexture(unsigned int index);
+	Texture & getTexture(size_t index);
 	
-	unsigned int getTextureSize() const { return textureSize; }
-	size_t getTextureCount() const { return textures.size(); }
+	size_t getTextureSize() const { return m_textureSize; }
+	size_t getTextureCount() const { return m_textures.size(); }
 	
 protected:
 	
@@ -60,17 +60,17 @@ protected:
 			Node();
 			~Node();
 			
-			Node * insertImage(const Image & pImg);
+			Node * insertImage(const Image & image);
 			
 			Node * children[2];
 			Rect rect;
 			bool used;
 		};
 		
-		explicit TextureTree(unsigned int textureSize, Image::Format textureFormat);
+		explicit TextureTree(size_t textureSize, Image::Format textureFormat);
 		~TextureTree();
 		
-		Node * insertImage(const Image & pImg);
+		Node * insertImage(const Image & image);
 		
 	private:
 		
@@ -78,17 +78,16 @@ protected:
 		
 	public:
 		
-		Texture2D * texture;
+		Texture * texture;
 		bool dirty;
 	};
 	
 private:
 	
-	std::vector<TextureTree *> textures;
-	typedef std::vector<TextureTree *>::iterator texture_iterator;
+	std::vector<TextureTree *> m_textures;
 	
-	const unsigned int textureSize;
-	Image::Format textureFormat;
+	const size_t m_textureSize;
+	const Image::Format m_textureFormat;
 	
 };
 

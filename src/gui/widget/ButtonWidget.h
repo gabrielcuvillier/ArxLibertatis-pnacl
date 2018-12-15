@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,38 +20,31 @@
 #ifndef ARX_GUI_WIDGET_BUTTONWIDGET_H
 #define ARX_GUI_WIDGET_BUTTONWIDGET_H
 
-#include <boost/function.hpp>
-
 #include "gui/widget/TextWidget.h"
 #include "gui/widget/Widget.h"
+#include "platform/Platform.h"
 
 class TextureContainer;
 
-class ButtonWidget: public Widget {
+namespace res { class path; }
+
+class ButtonWidget arx_final : public Widget {
 	
 public:
-	ButtonWidget(const Vec2f & pos, const Vec2f & size, const char * texturePath);
+	
+	ButtonWidget(const Vec2f & size, const res::path & texture);
 	~ButtonWidget();
 	
-public:
-	void SetPos(Vec2f pos);
-	void AddText(const std::string & label);
-	bool OnMouseClick();
-	void Update();
-	void Render();
-	void RenderMouseOver();
-	
-	boost::function<void()> clicked;
+	void render(bool mouseOver = false);
 	
 	virtual WidgetType type() const {
 		return WidgetType_Button;
-	};
+	}
 	
 private:
-	Vec2f m_pos;
-	Vec2f m_size;
 	
 	TextureContainer * m_texture;
+	
 };
 
 #endif // ARX_GUI_WIDGET_BUTTONWIDGET_H

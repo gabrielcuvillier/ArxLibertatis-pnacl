@@ -20,6 +20,8 @@
 #ifndef ARX_GUI_BOOK_BOOK_H
 #define ARX_GUI_BOOK_BOOK_H
 
+#include "graphics/Color.h"
+#include "gui/Menu.h"
 #include "gui/Note.h"
 
 enum ARX_INTERFACE_BOOK_MODE
@@ -30,21 +32,121 @@ enum ARX_INTERFACE_BOOK_MODE
 	BOOKMODE_QUESTS
 };
 
-extern ARX_INTERFACE_BOOK_MODE g_guiBookCurrentTopTab;
+class PlayerBookPage {
+	
+public:
+	
+	void playReleaseSound();
+	void playErrorSound();
+	void manageLeftTabs(long tabNum, long & activeTab);
+	
+private:
+	
+	static const Vec2f m_activeTabOffsets[10];
+	static const Vec2f m_tabOffsets[10];
+	
+	void drawTab(long tabNum);
+	void drawActiveTab(long tabNum);
+	void checkTabClick(long tabNum, long & activeTab);
+	
+};
 
-extern long BOOKZOOM;
+static const size_t MAX_FLYOVER = 32;
 
-void ARX_INTERFACE_BookOpen();
-void ARX_INTERFACE_BookClose();
-void ARX_INTERFACE_BookToggle();
+class StatsPage : public PlayerBookPage {
+public:
+	void loadStrings();
+	
+	void manage();
+	void manageNewQuest();
+private:
+	void manageStats();
+	void RenderBookPlayerCharacter();
+	bool CheckAttributeClick(Vec2f pos, float * val, TextureContainer * tc);
+	bool CheckSkillClick(Vec2f pos, float * val, TextureContainer * tc, float oldval);
+	Color attributeModToColor(float modValue, float baseValue = 0.f);
+	
+	std::string flyover[MAX_FLYOVER];
+};
 
-ARX_INTERFACE_BOOK_MODE nextBookPage();
-ARX_INTERFACE_BOOK_MODE prevBookPage();
-void openBookPage(ARX_INTERFACE_BOOK_MODE newPage, bool toggle = false);
+class SpellsPage : public PlayerBookPage {
+public:
+	SpellsPage();
+	void manage();
+private:
+	long m_currentTab;
 
-namespace gui {
-bool manageNoteActions(Note & note);
-void updateQuestBook();
-} // namespace gui
+	void drawLeftTabs();
+	void drawSpells();
+};
+
+class MapPage : public PlayerBookPage {
+public:
+	MapPage();
+	void manage();
+	void setMapLevel(long level);
+private:
+	long m_currentLevel;
+
+	void drawLeftTabs();
+	void drawMaps();
+};
+
+class QuestBookPage : public PlayerBookPage {
+public:
+	void manage();
+	void clear();
+private:
+	Note m_questBook;
+};
+
+class PlayerBook {
+	
+public:
+	
+	StatsPage stats;
+	SpellsPage spells;
+	MapPage map;
+	QuestBookPage questBook;
+
+	ARX_INTERFACE_BOOK_MODE m_currentPage;
+
+	PlayerBook();
+	void update();
+	void manage();
+	void openPage(ARX_INTERFACE_BOOK_MODE newPage, bool toggle = false);
+	void openNextPage();
+	void openPrevPage();
+	ARX_INTERFACE_BOOK_MODE currentPage() { return m_currentPage; }
+	void forcePage(ARX_INTERFACE_BOOK_MODE page);
+	void open();
+	void close();
+	void toggle();
+	
+	void clearJournal();
+	
+	float getScale();
+	const Rectf & getArea();
+	
+private:
+	
+	Vec2f lastRatio;
+	float lastHudScale;
+	float lastScaleSetting;
+	MenuMode lastMenuMode;
+	
+	bool canOpenPage(ARX_INTERFACE_BOOK_MODE page);
+	ARX_INTERFACE_BOOK_MODE nextPage();
+	ARX_INTERFACE_BOOK_MODE prevPage();
+	void onClosePage();
+	void manageTopTabs();
+	
+	bool needsUpdate();
+	void updateRect();
+	void updateScale();
+	
+};
+
+extern PlayerBook g_playerBook;
 
 #endif // ARX_GUI_BOOK_BOOK_H

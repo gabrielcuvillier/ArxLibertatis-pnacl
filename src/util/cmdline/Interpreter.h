@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -55,9 +55,9 @@ struct type_cast;
  * This provides convenient interface for adding new option (the add) method,
  * and executing option handlers by name.
  *
- * \param StringType type of string
+ * \tparam StringType type of string
  *
- * \param TypeCast type of class that is used to convertation StringType to
+ * \tparam TypeCast type of class that is used to convertation StringType to
  *   expected type by option handler.
  */
 template <typename StringType, typename TypeCast = type_cast>
@@ -80,8 +80,6 @@ public:
 	 *                object whose class contains only one operator().
 	 *
 	 * \param option_name "Name" of this option.
-	 *
-	 * \returns none.
 	 *
 	 * \throws If an option with one of the names that are contained in op_name_t
 	 *            already exists an exception will be thrown.
@@ -111,8 +109,6 @@ public:
 	 *                object whose class contains only one operator().
 	 *
 	 * \param option_name "Name" of this option.
-	 *
-	 * \returns none.
 	 *
 	 * \throws If an option with one of the names that are contained in op_name_t
 	 *            already exists an exception will be thrown.
@@ -153,9 +149,9 @@ public:
 	 *
 	 * \param option_name Name of an option
 	 *
-	 * \param args_begin  Iterator referring to the first argument for the option.
-	 * \param args_optend Iterator referring to the end of arguments to be consumed by \ref optional.
-	 * \param args_end    Iterator referring to the past-the-end argument for the option.
+	 * \param args_begin Iterator referring to the first argument for the option.
+	 * \param args_opend Iterator referring to the end of arguments to be consumed by \ref optional.
+	 * \param args_end   Iterator referring to the past-the-end argument for the option.
 	 *
 	 * \throws If option isn't found or the handler of this options takes more
 	 *            than required arguments or they can't be converted, an exception
@@ -202,17 +198,11 @@ public:
 namespace detail {
 // visitor for command_line::interpreter.
 
-template <typename Interpreter>
 struct opname_size {
-	
-	Interpreter const * interpreter;
 	
 	size_t value;
 	
-	explicit opname_size(const Interpreter & interpreter)
-		: interpreter(&interpreter)
-		, value(0)
-	{ }
+	opname_size() : value(0) { }
 	
 	template <typename Key>
 	void operator()(Key & key) {
@@ -243,27 +233,25 @@ struct opname_size {
 	
 };
 
-template <typename Stream, typename Interpreter>
+template <typename Stream>
 struct print_op_t {
 	
-	Stream * stream_;
-	Interpreter const* interpreter;
+	Stream * m_stream;
 	
-	size_t offset;
+	size_t m_offset;
 	
-	print_op_t(Stream & stream, const Interpreter & interpreter, size_t offset)
-		: stream_(&stream)
-		, interpreter(&interpreter)
-		, offset(offset)
+	print_op_t(Stream & stream, size_t offset)
+		: m_stream(&stream)
+		, m_offset(offset)
 	{ }
 	
 	template <typename Key>
 	void align(Key & key) const {
-		opname_size<Interpreter> tmp(*interpreter);
+		opname_size tmp;
 		tmp(key);
 		
-		for(size_t i(tmp.value); i < offset; ++i)
-			(*stream_) << " ";
+		for(size_t i(tmp.value); i < m_offset; ++i)
+			(*m_stream) << " ";
 	}
 	
 	template <typename Key>
@@ -274,44 +262,44 @@ struct print_op_t {
 			return;
 		}
 		
-		(*stream_) << " ";
+		(*m_stream) << " ";
 		
 		for(; it != end; ++it) {
-			(*stream_) << " " << *it;
+			(*m_stream) << " " << *it;
 		}
 		
 		if(key.has_args()) {
 			if(key.get_arg_count() == 1 && key.is_arg_optional()) {
-				(*stream_) << "[=";
+				(*m_stream) << "[=";
 			} else {
-				(*stream_) << ' ';
+				(*m_stream) << ' ';
 			}
 			if(key.has_arg_names()) {
-				(*stream_) << key.get_arg_names();
+				(*m_stream) << key.get_arg_names();
 			} else {
 				for(size_t i = 0; i < key.get_arg_count(); i++) {
 					if(i != 0) {
-						(*stream_) << ' ';
+						(*m_stream) << ' ';
 					}
-					(*stream_) << "ARG";
+					(*m_stream) << "ARG";
 				}
 			}
 			if(key.get_arg_count() == 1 && key.is_arg_optional()) {
-				(*stream_) << "]";
+				(*m_stream) << "]";
 			}
 		}
 		
 		align(key);
-		(*stream_) << "  " << key.get_description() << std::endl;
+		(*m_stream) << "  " << key.get_description() << std::endl;
 	}
 };
 
 template <typename OStream, typename Interpreter>
 void print_op(OStream & os, const Interpreter & interpreter) {
-	opname_size<Interpreter> calc_size(interpreter);
+	opname_size calc_size;
 	interpreter.visit(calc_size);
 	
-	print_op_t<OStream, Interpreter> op(os, interpreter, calc_size.value);
+	print_op_t<OStream> op(os, calc_size.value);
 	interpreter.visit(op);
 }
 
@@ -319,7 +307,7 @@ void print_op(OStream & os, const Interpreter & interpreter) {
 
 template <typename CharType, typename StringType, typename TypeCast>
 std::basic_ostream<CharType> & operator<<(std::basic_ostream<CharType> & os,
-                                          const interpreter<StringType,TypeCast> & l) {
+                                          const interpreter<StringType, TypeCast> & l) {
 	return detail::print_op(os, l), os;
 }
 

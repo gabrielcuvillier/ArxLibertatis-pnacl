@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -36,27 +36,27 @@ typedef DWORD thread_id_type;
 #error "Threads not supported: need ARX_HAVE_PTHREADS on non-Windows systems"
 #endif
 
+#include "core/TimeTypes.h"
+
 class Thread {
-	
-private:
 	
 #if ARX_HAVE_PTHREADS
 	
-	pthread_t thread;
-	int priority;
-	bool started;
+	pthread_t m_thread;
+	int m_priority;
+	bool m_started;
 	
 	static void * entryPoint(void * param);
 	
 #elif ARX_PLATFORM == ARX_PLATFORM_WIN32
 	
-	HANDLE thread;
+	HANDLE m_thread;
 
 	static DWORD WINAPI entryPoint(LPVOID param);
 	
 #endif
 	
-	std::string threadName;
+	std::string m_threadName;
 	
 public:
 	
@@ -91,7 +91,7 @@ public:
 	/*!
 	 * \brief Suspend the current thread for a specific amount of time
 	 */
-	static void sleep(unsigned milliseconds);
+	static void sleep(PlatformDuration time);
 	
 	/*!
 	 * \brief Exit the current thread
@@ -105,6 +105,11 @@ public:
 	
 	static thread_id_type getCurrentThreadId();
 	
+	/*!
+	 * \brief Disable denormals for the current thread for faster floating point operations
+	 */
+	static void disableFloatDenormals();
+	
 protected:
 	
 	/*!
@@ -115,22 +120,20 @@ protected:
 
 class StoppableThread : public Thread {
 	
-private:
-	
-	bool stopRequested;
+	volatile bool m_stopRequested;
 	
 public:
 	
-	StoppableThread() : stopRequested(false) { }
+	StoppableThread() : m_stopRequested(false) { }
 	
 	void stop(Priority priority = Highest) {
-		stopRequested = true;
+		m_stopRequested = true;
 		setPriority(priority);
 		waitForCompletion();
 	}
 	
 	bool isStopRequested() {
-		return stopRequested;
+		return m_stopRequested;
 	}
 	
 };

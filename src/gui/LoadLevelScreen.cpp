@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -36,7 +36,7 @@ static float PROGRESS_BAR_COUNT = 0;
 static float OLD_PROGRESS_BAR_COUNT = 0;
 
 static long lastloadednum = -1;
-static TextureContainer * tc = NULL;
+static TextureContainer * g_loadingScreenImage = NULL;
 static TextureContainer * pbar = NULL;
 static long lastnum = -1;
 
@@ -56,7 +56,7 @@ void LoadLevelScreen(long num) {
 	
 	// resets status
 	if(num < -1) {
-		delete tc, tc = NULL;
+		delete g_loadingScreenImage, g_loadingScreenImage = NULL;
 		lastloadednum = -1;
 		lastnum = -1;
 		PROGRESS_BAR_TOTAL = 0;
@@ -72,27 +72,22 @@ void LoadLevelScreen(long num) {
 		return;
 	}
 	
-	static u32 last_progress_bar_update = platform::getTimeMs();
+	static PlatformInstant last_progress_bar_update = platform::getTime();
 	
 	// only update if time since last update to progress bar > 16ms
 	// and progress bar's value has actually changed
-	if (platform::getElapsedMs(last_progress_bar_update) > 16 &&
-		 OLD_PROGRESS_BAR_COUNT != PROGRESS_BAR_COUNT)
-	{
-		GRenderer->GetTextureStage(0)->setMinFilter(TextureStage::FilterLinear);
-		GRenderer->GetTextureStage(0)->setMagFilter(TextureStage::FilterLinear);
-
-		float ratio = (PROGRESS_BAR_TOTAL > 0.f ? PROGRESS_BAR_COUNT / PROGRESS_BAR_TOTAL : 0); 
-
+	PlatformInstant now = platform::getTime();
+	if(now - last_progress_bar_update > PlatformDurationMs(16) && OLD_PROGRESS_BAR_COUNT != PROGRESS_BAR_COUNT) {
+		
+		UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
+		
+		float ratio = (PROGRESS_BAR_TOTAL > 0.f ? PROGRESS_BAR_COUNT / PROGRESS_BAR_TOTAL : 0);
+		
 		ratio = glm::clamp(ratio, 0.f, 1.f);
 
-		GRenderer->Clear(Renderer::ColorBuffer | Renderer::DepthBuffer);
+		GRenderer->Clear(Renderer::ColorBuffer);
 		
-		GRenderer->SetRenderState(Renderer::DepthTest, true);
-		GRenderer->SetCulling(CullNone);
-		GRenderer->SetRenderState(Renderer::DepthWrite, true);
-		GRenderer->SetRenderState(Renderer::Fog, false);
-		GRenderer->SetRenderState(Renderer::AlphaBlending, false);
+		UseRenderState state(render2D().noBlend());
 		
 		if (num == 10) {
 			pbar = TextureContainer::LoadUI("graph/interface/menus/load_full");
@@ -101,19 +96,16 @@ void LoadLevelScreen(long num) {
 		}
 		
 		if(num != lastloadednum) {
-			delete tc, tc = NULL;
+			delete g_loadingScreenImage, g_loadingScreenImage = NULL;
 			lastloadednum = num;
-			char temp[256];
-			char tx[256];
-			GetLevelNameByNum(num, tx);
-			sprintf(temp, "graph/levels/level%s/loading", tx);
-			tc = TextureContainer::LoadUI(temp, TextureContainer::NoColorKey);
+			std::string tx = GetLevelNameByNum(num);
+			res::path image = "graph/levels/level" + tx + "/loading";
+			g_loadingScreenImage = TextureContainer::LoadUI(image, TextureContainer::NoColorKey);
 		}
 		
 		float scale = minSizeRatio();
 		
-		if(tc) {
-			GRenderer->SetRenderState(Renderer::ColorKey, false);
+		if(g_loadingScreenImage) {
 			
 			Vec2f size = (num == 10) ? Vec2f(640, 480) : Vec2f(320, 390);
 			size *= scale;
@@ -121,9 +113,8 @@ void LoadLevelScreen(long num) {
 			Vec2f pos = Vec2f(g_size.center());
 			pos += -size * 0.5f;
 			
-			EERIEDrawBitmap2(Rectf(pos, size.x, size.y), 0.001f, tc, Color::white);
+			EERIEDrawBitmap(Rectf(pos, size.x, size.y), 0.001f, g_loadingScreenImage, Color::white);
 			
-			GRenderer->SetRenderState(Renderer::ColorKey, true);
 		}
 		
 		if(pbar) {
@@ -137,7 +128,7 @@ void LoadLevelScreen(long num) {
 		mainApp->getWindow()->showFrame();
 		
 		OLD_PROGRESS_BAR_COUNT = PROGRESS_BAR_COUNT;
-		last_progress_bar_update = platform::getTimeMs();
+		last_progress_bar_update = now;
 	}
 }
 

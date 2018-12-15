@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -32,24 +32,26 @@
 
 
 FissureFx::FissureFx()
-	: ulCurrentTime(0)
-	, ulDurationIntro(1000)
-	, ulDurationRender(1000)
-	, ulDurationOuttro(1000)
+	: m_elapsed(0)
+	, m_duration(0)
+	, m_durationIntro(GameDurationMs(1000))
+	, m_durationRender(GameDurationMs(1000))
+	, m_durationOuttro(GameDurationMs(1000))
 	, m_colorBorder(Color3f::white)
 	, m_colorRays1(Color3f::white)
 	, m_colorRays2(Color3f::black)
 {
-	
+	m_duration = m_durationIntro + m_durationRender + m_durationOuttro;
 }
 
-void FissureFx::SetDuration(unsigned long alDurationIntro, unsigned long alDurationRender, unsigned long alDurationOuttro)
+void FissureFx::SetDuration(GameDuration alDurationIntro, GameDuration alDurationRender, GameDuration alDurationOuttro)
 {
-	ulDurationIntro = glm::clamp(alDurationIntro, 100ul, 100000ul);
-	ulDurationRender = glm::clamp(alDurationRender, 100ul, 100000ul);
-	ulDurationOuttro = glm::clamp(alDurationOuttro, 100ul, 100000ul);
+	m_durationIntro  = arx::clamp(alDurationIntro,  GameDurationMs(100), GameDurationMs(100000));
+	m_durationRender = arx::clamp(alDurationRender, GameDurationMs(100), GameDurationMs(100000));
+	m_durationOuttro = arx::clamp(alDurationOuttro, GameDurationMs(100), GameDurationMs(100000));
 	
-	ulCurrentTime = 0;
+	m_elapsed = 0;
+	m_duration = m_durationIntro + m_durationRender + m_durationOuttro;
 }
 
 void FissureFx::SetColorBorder(Color3f color)
@@ -67,34 +69,25 @@ void FissureFx::SetColorRays2(Color3f color)
 	m_colorRays2 = color;
 }
 
-//-----------------------------------------------------------------------------
-// RISE DEAD
-//-----------------------------------------------------------------------------
-CRiseDead::~CRiseDead() {
-}
+CRiseDead::~CRiseDead() { }
 
 CRiseDead::CRiseDead()
-	: FissureFx()
-	, m_eSrc(Vec3f_ZERO)
+	: m_eSrc(0.f)
 	, fBetaRadCos(0.f)
 	, fBetaRadSin(0.f)
-	, tex_light(NULL)
+	, tex_light(TextureContainer::Load("graph/obj3d/textures/(fx)_tsu4"))
 	, end(40 - 1)
 	, iSize(100)
 	, bIntro(true)
 	, sizeF(0)
-	, fSizeIntro(0.f)
+	, m_visibleNotches(0)
 {
-	ulCurrentTime = ulDurationIntro + ulDurationRender + ulDurationOuttro + 1;
-	
-	tex_light = TextureContainer::Load("graph/obj3d/textures/(fx)_tsu4");
+	m_elapsed = m_duration + GameDurationMs(1);
 }
 
-
-
-void CRiseDead::Create(Vec3f aeSrc, float afBeta)
-{
-	SetDuration(ulDurationIntro, ulDurationRender, ulDurationOuttro);
+void CRiseDead::Create(Vec3f aeSrc, float afBeta) {
+	
+	SetDuration(m_durationIntro, m_durationRender, m_durationOuttro);
 
 	m_eSrc = aeSrc + Vec3f(0.f, -10.f, 0.f);
 	
@@ -103,7 +96,7 @@ void CRiseDead::Create(Vec3f aeSrc, float afBeta)
 	fBetaRadSin = glm::sin(fBetaRad);
 	
 	sizeF = 0;
-	fSizeIntro = 0.0f;
+	m_visibleNotches = 0;
 	end = 40 - 1;
 	bIntro = true;
 
@@ -139,9 +132,9 @@ void CRiseDead::Create(Vec3f aeSrc, float afBeta)
 	m_stones.Init(80.f);
 }
 
-unsigned long CRiseDead::GetDuration()
+GameDuration CRiseDead::GetDuration()
 {
-	return (ulDurationIntro + ulDurationRender + ulDurationOuttro);
+	return m_duration;
 }
 
 
@@ -164,11 +157,6 @@ void CRiseDead::Split(Vec3f * v, int a, int b, float yo)
 // TODO copy-paste spell effect Fissure
 void CRiseDead::RenderFissure() {
 	
-	float ff;
-	Vec3f vt[4];
-	TexturedVertex vr[4];
-	Vec3f target;
-	
 	RenderMaterial mat;
 	mat.setCulling(CullNone);
 	mat.setDepthTest(false);
@@ -180,7 +168,9 @@ void CRiseDead::RenderFissure() {
 	//-------------------------------------------------------------------------
 	// computation des sommets
 
-	for(int i = 0; i <= std::min(end, int(fSizeIntro)); i++) {
+	for(int i = 0; i <= std::min(end, m_visibleNotches); i++) {
+		
+		float ff;
 		if(i <= end * 0.5f)
 			ff = i / (end * 0.5f);
 		else
@@ -206,23 +196,25 @@ void CRiseDead::RenderFissure() {
 	//-------------------------------------------------------------------------
 	// rendu de la fissure
 	mat.setBlendType(RenderMaterial::Opaque);
+	
+	TexturedVertexUntransformed vr[4];
 	vr[0].color = vr[1].color = vr[2].color = vr[3].color = Color::black.toRGB();
 
 	if(bIntro) {
-		for(int i = 0; i < std::min(end, (int)fSizeIntro); i++) {
-			vr[0].p = EE_RT(v1a[i]);
-			vr[1].p = EE_RT(v1b[i]);
-			vr[2].p = EE_RT(v1a[i+1]);
-			vr[3].p = EE_RT(v1b[i+1]);
+		for(int i = 0; i < std::min(end, m_visibleNotches); i++) {
+			vr[0].p = v1a[i];
+			vr[1].p = v1b[i];
+			vr[2].p = v1a[i + 1];
+			vr[3].p = v1b[i + 1];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
 	} else {
-		for(int i = 0; i < std::min(end, (int)fSizeIntro); i++) {
-			vr[0].p = EE_RT(va[i]);
-			vr[1].p = EE_RT(vb[i]);
-			vr[2].p = EE_RT(va[i+1]);
-			vr[3].p = EE_RT(vb[i+1]);
+		for(int i = 0; i < std::min(end, m_visibleNotches); i++) {
+			vr[0].p = va[i];
+			vr[1].p = vb[i];
+			vr[2].p = va[i + 1];
+			vr[3].p = vb[i + 1];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
@@ -233,27 +225,28 @@ void CRiseDead::RenderFissure() {
 	mat.setBlendType(RenderMaterial::Additive);
 	vr[0].color = vr[1].color = Color::black.toRGB();
 	vr[2].color = vr[3].color = m_colorBorder.toRGB();
-
-	for(int i = 0; i < std::min(end, (int)fSizeIntro); i++) {
+	
+	Vec3f vt[4];
+	for(int i = 0; i < std::min(end, m_visibleNotches); i++) {
+		
 		vt[2] = va[i] - (va[i] - m_eSrc) * 0.2f;
 		vt[3] = va[i + 1] - (va[i + 1] - m_eSrc) * 0.2f;
-		
-		vr[0].p = EE_RT(vt[3]);
-		vr[1].p = EE_RT(vt[2]);
-		vr[2].p = EE_RT(va[i+1]);
-		vr[3].p = EE_RT(va[i]);
+		vr[0].p = vt[3];
+		vr[1].p = vt[2];
+		vr[2].p = va[i + 1];
+		vr[3].p = va[i];
 		drawTriangle(mat, &vr[0]);
 		drawTriangle(mat, &vr[1]);
 		
 		vt[2] = vb[i] - (vb[i] - m_eSrc) * 0.2f;
 		vt[3] = vb[i + 1] - (vb[i + 1] - m_eSrc) * 0.2f;
-		
-		vr[3].p = EE_RT(vb[i]);
-		vr[2].p = EE_RT(vb[i+1]);
-		vr[1].p = EE_RT(vt[2]);
-		vr[0].p = EE_RT(vt[3]);
+		vr[3].p = vb[i];
+		vr[2].p = vb[i + 1];
+		vr[1].p = vt[2];
+		vr[0].p = vt[3];
 		drawTriangle(mat, &vr[0]);
 		drawTriangle(mat, &vr[1]);
+		
 	}
 
 	//-------------------------------------------------------------------------
@@ -263,204 +256,177 @@ void CRiseDead::RenderFissure() {
 	// texture sympa avec glow au milieu ou uv wrap
 	mat.setWrapMode(TextureStage::WrapMirror);
 	mat.setTexture(tex_light);
-
-	target.x = m_eSrc.x ;
-	target.y = m_eSrc.y + 1.5f * sizeF; 
-	target.z = m_eSrc.z ;
-
-	EE_RTP(vt[1], vr[0]);
+	
+	Vec3f target = m_eSrc + Vec3f(0.f, 1.5f * sizeF, 0.f);
+	
 	vr[0].color = vr[1].color = m_colorRays1.toRGB();
 	vr[2].color = vr[3].color = m_colorRays2.toRGB();
-
-	vr[0].uv.x = 0.f;
-	vr[0].uv.y = 1;
-	vr[1].uv.x = 1.0f;
-	vr[1].uv.y = 1;
-	vr[2].uv.x = 0.f;
-	vr[2].uv.y = 0;
-	vr[3].uv.x = 1.0f;
-	vr[3].uv.y = 0;
-
+	vr[0].uv = Vec2f(0, 1);
+	vr[1].uv = Vec2f(1, 1);
+	vr[2].uv = Vec2f(0, 0);
+	vr[3].uv = Vec2f(1, 0);
+	
 	for(int i = 0; i < end - 1; i++) {
+		
 		float t = Random::getf();
-
 		if(t <= 0.15f) {
-			if(tfRaysa[i] < 1.0f)
+			if(tfRaysa[i] < 1.f) {
 				tfRaysa[i] += 0.02f;
-
-			if(tfRaysa[i+1] < 1.0f)
-				tfRaysa[i+1] += 0.01f;
-
-			if(tfRaysa[i] > 1.0f)
-				tfRaysa[i] = 1.0f;
-
-			if(tfRaysa[i+1] > 1.0f)
-				tfRaysa[i+1] = 1.0f;
+			}
+			if(tfRaysa[i + 1] < 1.f) {
+				tfRaysa[i + 1] += 0.01f;
+			}
+			if(tfRaysa[i] > 1.f) {
+				tfRaysa[i] = 1.f;
+			}
+			if(tfRaysa[i + 1] > 1.f) {
+				tfRaysa[i + 1] = 1.f;
+			}
 		}
-
 		if(t >= 0.9f) {
-			if(tfRaysa[i] > 0.0f)
+			if(tfRaysa[i] > 0.f) {
 				tfRaysa[i] -= 0.02f;
-
-			if(tfRaysa[i+1] > 0.0f)
-				tfRaysa[i+1] -= 0.01f;
-
-			if(tfRaysa[i] < 0.0f)
+			}
+			if(tfRaysa[i + 1] > 0.f) {
+				tfRaysa[i + 1] -= 0.01f;
+			}
+			if(tfRaysa[i] < 0.f) {
 				tfRaysa[i] = 0.0f;
-
-			if(tfRaysa[i+1] < 0.0f)
-				tfRaysa[i+1] = 0.0f;
-		}
-
-		float t2 = Random::getf();
-
-		if(t2 <= 0.15f) {
-			if(tfRaysb[i] < 1.0f)
-				tfRaysb[i] += 0.02f;
-
-			if(tfRaysb[i+1] < 1.0f)
-				tfRaysb[i+1] += 0.01f;
-
-			if(tfRaysb[i] > 1.0f)
-				tfRaysb[i] = 1.0f;
-
-			if(tfRaysb[i+1] > 1.0f)
-				tfRaysb[i+1] = 1.0f;
-		}
-
-		if(t2 >= 0.9f) {
-			if(tfRaysb[i] > 0.0f)
-				tfRaysb[i] -= 0.02f;
-
-			if(tfRaysb[i+1] > 0.0f)
-				tfRaysb[i+1] -= 0.01f;
-
-			if(tfRaysb[i] < 0.0f)
-				tfRaysb[i] = 0.0f;
-
-			if(tfRaysb[i+1] < 0.0f)
-				tfRaysb[i+1] = 0.0f;
+			}
+			if(tfRaysa[i + 1] < 0.f) {
+				tfRaysa[i + 1] = 0.0f;
+			}
 		}
 		
-		if(i < fSizeIntro) {
+		float t2 = Random::getf();
+		if(t2 <= 0.15f) {
+			if(tfRaysb[i] < 1.f) {
+				tfRaysb[i] += 0.02f;
+			}
+			if(tfRaysb[i + 1] < 1.f) {
+				tfRaysb[i + 1] += 0.01f;
+			}
+			if(tfRaysb[i] > 1.f) {
+				tfRaysb[i] = 1.f;
+			}
+			if(tfRaysb[i + 1] > 1.f) {
+				tfRaysb[i + 1] = 1.f;
+			}
+		}
+		if(t2 >= 0.9f) {
+			if(tfRaysb[i] > 0.f) {
+				tfRaysb[i] -= 0.02f;
+			}
+			if(tfRaysb[i + 1] > 0.f) {
+				tfRaysb[i + 1] -= 0.01f;
+			}
+			if(tfRaysb[i] < 0.f) {
+				tfRaysb[i] = 0.f;
+			}
+			if(tfRaysb[i + 1] < 0.f) {
+				tfRaysb[i + 1] = 0.f;
+			}
+		}
+		
+		if(i < m_visibleNotches) {
 			vt[0] = va[i];
 			vt[1] = va[i + 1];
-			vt[2].x = va[i].x ;
+			vt[2].x = va[i].x;
 			vt[2].y = va[i].y + (va[i].y - target.y) * 2;
-			vt[2].z = va[i].z ;
-			vt[3].x = va[i+1].x ;
-			vt[3].y = va[i+1].y + (va[i+1].y - target.y) * 2;
-			vt[3].z = va[i+1].z ;
-
+			vt[2].z = va[i].z;
+			vt[3].x = va[i + 1].x;
+			vt[3].y = va[i + 1].y + (va[i + 1].y - target.y) * 2;
+			vt[3].z = va[i + 1].z;
 			vr[0].color = (m_colorRays1 * tfRaysa[i]).toRGB();
-			vr[1].color = (m_colorRays1* tfRaysa[i + 1]).toRGB();
+			vr[1].color = (m_colorRays1 * tfRaysa[i + 1]).toRGB();
 			vr[2].color = (m_colorRays2 * tfRaysa[i]).toRGB();
 			vr[3].color = (m_colorRays2 * tfRaysa[i + 1]).toRGB();
-			
-			vr[0].p = EE_RT(vt[0]);
-			vr[1].p = EE_RT(vt[1]);
-			vr[2].p = EE_RT(vt[2]);
-			vr[3].p = EE_RT(vt[3]);
+			vr[0].p = vt[0];
+			vr[1].p = vt[1];
+			vr[2].p = vt[2];
+			vr[3].p = vt[3];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
 		
-		if(i < fSizeIntro) {
+		if(i < m_visibleNotches) {
 			vt[0] = vb[i + 1];
 			vt[1] = vb[i];
-			vt[2].x = vb[i+1].x ;
-			vt[2].y = vb[i+1].y + (vb[i+1].y - target.y) * 2;
-			vt[2].z = vb[i+1].z ;
-			vt[3].x = vb[i].x ;
+			vt[2].x = vb[i + 1].x;
+			vt[2].y = vb[i + 1].y + (vb[i + 1].y - target.y) * 2;
+			vt[2].z = vb[i + 1].z;
+			vt[3].x = vb[i].x;
 			vt[3].y = vb[i].y + (vb[i].y - target.y) * 2;
-			vt[3].z = vb[i].z ;
-
+			vt[3].z = vb[i].z;
 			vr[0].color = (m_colorRays1 * tfRaysb[i]).toRGB();
 			vr[1].color = (m_colorRays1 * tfRaysb[i + 1]).toRGB();
 			vr[2].color = (m_colorRays2 * tfRaysb[i]).toRGB();
 			vr[3].color = (m_colorRays2 * tfRaysb[i + 1]).toRGB();
-
-			vr[0].p = EE_RT(vt[0]);
-			vr[1].p = EE_RT(vt[1]);
-			vr[2].p = EE_RT(vt[2]);
-			vr[3].p = EE_RT(vt[3]);
+			vr[0].p = vt[0];
+			vr[1].p = vt[1];
+			vr[2].p = vt[2];
+			vr[3].p = vt[3];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
+		
 	}
 }
 
-void CRiseDead::Update(float timeDelta)
+void CRiseDead::Update(GameDuration timeDelta)
 {
-	ulCurrentTime += timeDelta;
+	m_elapsed += timeDelta;
 	
 	m_stones.Update(timeDelta, m_eSrc);
 }
 
-//-----------------------------------------------------------------------------
 // render the space time tearing
-void CRiseDead::Render()
-{
-	if(ulCurrentTime >= (ulDurationIntro + ulDurationRender + ulDurationOuttro))
-		return;
+void CRiseDead::Render() {
 	
-	//-------------------------------------------------------------------------
-	// render intro (opening + rays)
-	if(ulCurrentTime < ulDurationIntro) {
-		float fOneOnDurationIntro = 1.f / (float)(ulDurationIntro);
-		
-		if(ulCurrentTime < ulDurationIntro * 0.666f) {
-			fSizeIntro = (end + 2) * fOneOnDurationIntro * (1.5f) * ulCurrentTime;
+	if(m_elapsed >= m_duration) {
+		return;
+	}
+	
+	if(m_elapsed < m_durationIntro) {
+		// Render intro (opening + rays)
+		float fOneOnDurationIntro = 1.f / toMsf(m_durationIntro);
+		if(m_elapsed < GameDurationMsf(toMsf(m_durationIntro) * 0.666f)) {
+			m_visibleNotches = int((end + 2) * fOneOnDurationIntro * (1.5f) * toMsf(m_elapsed));
 			sizeF = 1;
 		} else {
-			if(bIntro != false)
-				bIntro = false;
-
-			sizeF = (iSize) * (fOneOnDurationIntro * 3) * (ulCurrentTime - ulDurationIntro * 0.666f);
+			bIntro = false;
+			sizeF = (iSize) * (fOneOnDurationIntro * 3) * (toMsf(m_elapsed) - toMsf(m_durationIntro) * 0.666f);
 		}
-	}
-	// do nothing just render
-	else if (ulCurrentTime < (ulDurationIntro + ulDurationRender))
-	{
-	}
-	// close it all
-	else if (ulCurrentTime < (ulDurationIntro + ulDurationRender + ulDurationOuttro))
-	{
-		float fOneOnDurationOuttro = 1.f / (float)(ulDurationOuttro);
-		
-		sizeF = iSize - (iSize) * fOneOnDurationOuttro * (ulCurrentTime - (ulDurationIntro + ulDurationRender));
+	} else if(m_elapsed < m_durationIntro + m_durationRender) {
+		// Do nothing, just render
+	} else if(m_elapsed < m_duration) {
+		// Close it all
+		sizeF = iSize - (iSize) * ((m_elapsed - (m_durationIntro + m_durationRender)) / m_durationOuttro);
 	}
 	
 	RenderFissure();
 	
 	m_stones.DrawStone();
+	
 }
 
-
-
 CSummonCreature::CSummonCreature()
-	: FissureFx()
+	: m_eSrc(0.f)
 	, fBetaRadCos(0.f)
 	, fBetaRadSin(0.f)
+	, tex_light(TextureContainer::Load("graph/obj3d/textures/(fx)_tsu4"))
 	, end(0)
+	, iSize(100)
 	, bIntro(true)
 	, sizeF(0.f)
-	, fSizeIntro(0.f)
+	, m_visibleNotches(0)
 {
-	
-	m_eSrc = Vec3f_ZERO;
-	
-	ulCurrentTime = ulDurationIntro + ulDurationRender + ulDurationOuttro + 1;
-	
-	iSize = 100;
-	fOneOniSize = 1.0f / ((float) iSize);
-	
-	tex_light = TextureContainer::Load("graph/obj3d/textures/(fx)_tsu4");
+	m_elapsed = m_duration + GameDurationMs(1);
 }
 
 void CSummonCreature::Create(Vec3f aeSrc, float afBeta)
 {
-	SetDuration(ulDurationIntro, ulDurationRender, ulDurationOuttro);
+	SetDuration(m_durationIntro, m_durationRender, m_durationOuttro);
 
 	m_eSrc = aeSrc + Vec3f(0.f, -50.f, 0.f);
 	
@@ -469,7 +435,7 @@ void CSummonCreature::Create(Vec3f aeSrc, float afBeta)
 	fBetaRadSin = glm::sin(fBetaRad);
 	
 	sizeF = 0;
-	fSizeIntro = 0.0f;
+	m_visibleNotches = 0;
 	end = 40 - 1;
 	bIntro = true;
 
@@ -541,16 +507,6 @@ void CSummonCreature::Split(Vec3f * v, int a, int b, float yo)
 // TODO copy-paste spell effect Fissure
 void CSummonCreature::RenderFissure() {
 	
-	float ff;
-	Vec3f vt[4];
-	TexturedVertex vr[4];
-	Vec3f target;
-
-	Vec3f etarget;
-	etarget.x = fBetaRadCos;
-	etarget.y = 0;
-	etarget.z = fBetaRadSin;
-	
 	RenderMaterial mat;
 	mat.setCulling(CullNone);
 	mat.setDepthTest(false);
@@ -563,7 +519,9 @@ void CSummonCreature::RenderFissure() {
 	//-------------------------------------------------------------------------
 	// computation des sommets
 
-	for(int i = 0; i <= std::min(end, int(fSizeIntro)); i++) {
+	for(int i = 0; i <= std::min(end, m_visibleNotches); i++) {
+		
+		float ff;
 		if(i <= end * 0.5f)
 			ff = i / (end * 0.5f);
 		else
@@ -589,23 +547,25 @@ void CSummonCreature::RenderFissure() {
 	//-------------------------------------------------------------------------
 	// rendu de la fissure
 	mat.setBlendType(RenderMaterial::Opaque);
+	
+	TexturedVertexUntransformed vr[4];
 	vr[0].color = vr[1].color = vr[2].color = vr[3].color = Color::black.toRGB();
-
+	
 	if(bIntro) {
-		for(int i = 0; i < std::min(end, (int)fSizeIntro); i++) {
-			vr[0].p = EE_RT(v1a[i]);
-			vr[1].p = EE_RT(v1b[i]);
-			vr[2].p = EE_RT(v1a[i+1]);
-			vr[3].p = EE_RT(v1b[i+1]);
+		for(int i = 0; i < std::min(end, m_visibleNotches); i++) {
+			vr[0].p = v1a[i];
+			vr[1].p = v1b[i];
+			vr[2].p = v1a[i + 1];
+			vr[3].p = v1b[i + 1];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
 	} else {
-		for(int i = 0; i < std::min(end, (int)fSizeIntro); i++) {
-			vr[0].p = EE_RT(va[i]);
-			vr[1].p = EE_RT(vb[i]);
-			vr[2].p = EE_RT(va[i+1]);
-			vr[3].p = EE_RT(vb[i+1]);
+		for(int i = 0; i < std::min(end, m_visibleNotches); i++) {
+			vr[0].p = va[i];
+			vr[1].p = vb[i];
+			vr[2].p = va[i + 1];
+			vr[3].p = vb[i + 1];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
@@ -616,29 +576,30 @@ void CSummonCreature::RenderFissure() {
 	mat.setBlendType(RenderMaterial::Additive);
 	vr[0].color = vr[1].color = Color::black.toRGB();
 	vr[2].color = vr[3].color = m_colorBorder.toRGB();
-
-	for(int i = 0; i < std::min(end, (int)fSizeIntro); i++) {
+	
+	Vec3f vt[4];
+	for(int i = 0; i < std::min(end, m_visibleNotches); i++) {
+		
 		vt[2] = va[i] - (va[i] - m_eSrc) * 0.2f;
 		vt[3] = va[i + 1] - (va[i + 1] - m_eSrc) * 0.2f;
-		
-		vr[0].p = EE_RT(vt[3]);
-		vr[1].p = EE_RT(vt[2]);
-		vr[2].p = EE_RT(va[i+1]);
-		vr[3].p = EE_RT(va[i]);
+		vr[0].p = vt[3];
+		vr[1].p = vt[2];
+		vr[2].p = va[i + 1];
+		vr[3].p = va[i];
 		drawTriangle(mat, &vr[0]);
 		drawTriangle(mat, &vr[1]);
 		
 		vt[2] = vb[i] - (vb[i] - m_eSrc) * 0.2f;
 		vt[3] = vb[i + 1] - (vb[i + 1] - m_eSrc) * 0.2f;
-		
-		vr[3].p = EE_RT(vb[i]);
-		vr[2].p = EE_RT(vb[i+1]);
-		vr[1].p = EE_RT(vt[2]);
-		vr[0].p = EE_RT(vt[3]);
+		vr[3].p = vb[i];
+		vr[2].p = vb[i + 1];
+		vr[1].p = vt[2];
+		vr[0].p = vt[3];
 		drawTriangle(mat, &vr[0]);
 		drawTriangle(mat, &vr[1]);
+		
 	}
-
+	
 	//-------------------------------------------------------------------------
 	// rendu des faisceaux
 	// blend additif ou mul
@@ -646,12 +607,9 @@ void CSummonCreature::RenderFissure() {
 	// texture sympa avec glow au milieu ou uv wrap
 	mat.setWrapMode(TextureStage::WrapMirror);
 	mat.setTexture(tex_light);
-
-	target.x = m_eSrc.x + -fBetaRadSin * (1.5f * sizeF); 
-	target.y = m_eSrc.y;
-	target.z = m_eSrc.z + fBetaRadCos * (1.5f * sizeF); 
-
-	EE_RTP(vt[1], vr[0]);
+	
+	Vec3f target = m_eSrc.x + Vec3f(-fBetaRadSin, 0.f, fBetaRadCos) * (1.5f * sizeF);
+	
 	vr[0].color = vr[1].color = m_colorRays1.toRGB();
 	vr[2].color = vr[3].color = m_colorRays2.toRGB();
 
@@ -666,7 +624,7 @@ void CSummonCreature::RenderFissure() {
 
 	for(int i = 0; i < end - 1; i++) {
 		
-		if(i < fSizeIntro) {
+		if(i < m_visibleNotches) {
 			vt[0] = va[i];
 			vt[1] = va[i + 1];
 			vt[2] = va[i] + (va[i] - target) * 2.f;
@@ -677,15 +635,15 @@ void CSummonCreature::RenderFissure() {
 			vr[2].color = (m_colorRays2 * tfRaysa[i]).toRGB();
 			vr[3].color = (m_colorRays2 * tfRaysa[i + 1]).toRGB();
 			
-			vr[3].p = EE_RT(vt[0]);
-			vr[2].p = EE_RT(vt[1]);
-			vr[1].p = EE_RT(vt[2]);
-			vr[0].p = EE_RT(vt[3]);
+			vr[3].p = vt[0];
+			vr[2].p = vt[1];
+			vr[1].p = vt[2];
+			vr[0].p = vt[3];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
 		
-		if(i < fSizeIntro) {
+		if(i < m_visibleNotches) {
 			vt[0] = vb[i + 1];
 			vt[1] = vb[i];
 			vt[2] = vb[i + 1] + (vb[i + 1] - target) * 2.f;
@@ -696,59 +654,45 @@ void CSummonCreature::RenderFissure() {
 			vr[2].color = (m_colorRays2 * tfRaysb[i]).toRGB();
 			vr[3].color = (m_colorRays2 * tfRaysb[i + 1]).toRGB();
 			
-			vr[3].p = EE_RT(vt[0]);
-			vr[2].p = EE_RT(vt[1]);
-			vr[1].p = EE_RT(vt[2]);
-			vr[0].p = EE_RT(vt[3]);
+			vr[3].p = vt[0];
+			vr[2].p = vt[1];
+			vr[1].p = vt[2];
+			vr[0].p = vt[3];
 			drawTriangle(mat, &vr[0]);
 			drawTriangle(mat, &vr[1]);
 		}
 	}
 }
 
-void CSummonCreature::Update(float timeDelta)
+void CSummonCreature::Update(GameDuration timeDelta)
 {
-	ulCurrentTime += timeDelta;
+	m_elapsed += timeDelta;
 }
 
-//-----------------------------------------------------------------------------
 // rendu de la déchirure spatio temporelle
-void CSummonCreature::Render()
-{
-	if(ulCurrentTime >= (ulDurationIntro + ulDurationRender + ulDurationOuttro))
-		return;
+void CSummonCreature::Render() {
 	
-	//-------------------------------------------------------------------------
-	// render intro (opening + rays)
-	if(ulCurrentTime < ulDurationIntro) {
-		float fOneOnDurationIntro = 1.f / (float)(ulDurationIntro);
-		
-		if(ulCurrentTime < ulDurationIntro * 0.666f) {
-			fSizeIntro = (end + 2) * fOneOnDurationIntro * (1.5f) * ulCurrentTime;
+	if(m_elapsed >= m_duration) {
+		return;
+	}
+	
+	if(m_elapsed < m_durationIntro) {
+		// Render intro (opening + rays)
+		float fOneOnDurationIntro = 1.f / toMsf(m_durationIntro);
+		if(m_elapsed < GameDurationMsf(toMsf(m_durationIntro) * 0.666f)) {
+			m_visibleNotches = int((end + 2) * fOneOnDurationIntro * (1.5f) * toMsf(m_elapsed));
 			sizeF = 1;
 		} else {
-			if(bIntro != false)
-				bIntro = false;
-
-			sizeF = (iSize) * (fOneOnDurationIntro * 3) * (ulCurrentTime - ulDurationIntro * 0.666f);
+			bIntro = false;
+			sizeF = (iSize) * (fOneOnDurationIntro * 3) * (toMsf(m_elapsed) - toMsf(m_durationIntro) * 0.666f);
 		}
-	}
-	// do nothing just render
-	else if (ulCurrentTime < (ulDurationIntro + ulDurationRender))
-	{
-	}
-	// close it all
-	else if (ulCurrentTime < (ulDurationIntro + ulDurationRender + ulDurationOuttro))
-	{
-		float fOneOnDurationOuttro = 1.f / (float)(ulDurationOuttro);
-		
-		sizeF = iSize - (iSize) * fOneOnDurationOuttro * (ulCurrentTime - (ulDurationIntro + ulDurationRender));
+	} else if(m_elapsed < m_durationIntro + m_durationRender) {
+		// Do nothing, just render
+	} else if(m_elapsed < m_duration) {
+		// Close it all
+		sizeF = iSize - (iSize) * ((m_elapsed - (m_durationIntro + m_durationRender)) / m_durationOuttro);
 	}
 	
 	RenderFissure();
 	
-	//return (fSizeIntro / end);
 }
-
-
-

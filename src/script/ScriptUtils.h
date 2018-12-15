@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -82,29 +82,33 @@ u64 flags(const char (&flags)[N]) {
 
 class Context {
 	
-private:
-	
-	EERIE_SCRIPT * script;
-	size_t pos;
-	Entity * entity;
-	ScriptMessage message;
-	std::vector<size_t> stack;
+	const EERIE_SCRIPT * m_script;
+	size_t m_pos;
+	Entity * m_sender;
+	Entity * m_entity;
+	ScriptMessage m_message;
+	ScriptParameters m_parameters;
+	std::vector<size_t> m_stack;
 	
 public:
 	
-	explicit Context(EERIE_SCRIPT * script, size_t pos = 0, Entity * entity = NULL,
-	                 ScriptMessage msg = SM_NULL);
+	explicit Context(const EERIE_SCRIPT * script, size_t pos, Entity * sender, Entity * entity,
+	                 ScriptMessage msg, const ScriptParameters & parameters);
 	
-	std::string getStringVar(const std::string & var) const;
+	std::string getStringVar(const std::string & name) const;
 	std::string getFlags();
 	std::string getWord();
 	void skipWord();
 	
 	std::string getCommand(bool skipNewlines = true);
 	
-	void skipWhitespace(bool skipNewlines = false);
+	void skipWhitespace(bool skipNewlines = false, bool warnNewlines = false);
 	
-	Entity * getEntity() const { return entity; }
+	Entity * getSender() const { return m_sender; }
+	Entity * getEntity() const { return m_entity; }
+	ScriptMessage getMessage() const { return m_message; }
+	const ScriptParameters & getParameters() const { return m_parameters; }
+	std::string getParameter(size_t i) const { return m_parameters.get(i); }
 	
 	bool getBool();
 	
@@ -123,20 +127,17 @@ public:
 	bool jumpToLabel(const std::string & target, bool substack = false);
 	bool returnToCaller();
 	
-	EERIE_SCRIPT * getScript() const { return script; }
-	EERIE_SCRIPT * getMaster() const { return script->master ? script->master : script; }
+	const EERIE_SCRIPT * getScript() const { return m_script; }
 	
-	size_t getPosition() const { return pos; }
+	size_t getPosition() const { return m_pos; }
 	
-	ScriptMessage getMessage() const { return message; }
 	
-	friend class ::ScriptEvent;
 };
 
 class Command : private boost::noncopyable {
 	
-	const std::string name;
-	const long entityFlags;
+	const std::string m_name;
+	const long m_entityFlags;
 	
 public:
 	
@@ -146,20 +147,29 @@ public:
 		AbortAccept,
 		AbortRefuse,
 		AbortError,
+		AbortDestructive,
 		Jumped
 	};
 	
 	static const long AnyEntity = -1;
 	
 	explicit Command(const std::string & name, long entityFlags = 0)
-		: name(name), entityFlags(entityFlags) { }
+		: m_name(name), m_entityFlags(entityFlags) { }
 	
 	virtual Result execute(Context & context) = 0;
 	
+	virtual Result peek(Context & context) {
+		
+		ARX_UNUSED(context);
+		
+		return AbortDestructive;
+	}
+	
 	virtual ~Command() { }
 	
-	const std::string & getName() const { return name; }
-	long getEntityFlags() const { return entityFlags; }
+	const std::string & getName() const { return m_name; }
+	long getEntityFlags() const { return m_entityFlags; }
+	
 };
 
 bool isSuppressed(const Context & context, const std::string & command);

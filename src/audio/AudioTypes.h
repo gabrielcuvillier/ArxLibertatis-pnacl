@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -51,46 +51,22 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 namespace audio {
 
-// Default values
-const size_t DEFAULT_STREAMLIMIT = 88200; // in Bytes; ~1 second for the correct format
-
-const float DEFAULT_ENVIRONMENT_SIZE = 7.5f;
-const float DEFAULT_ENVIRONMENT_DIFFUSION = 1.f; // High density echoes
-const float DEFAULT_ENVIRONMENT_ABSORPTION = 0.05f; // Air-like absorbtion
-const float DEFAULT_ENVIRONMENT_REFLECTION_VOLUME = 0.8f;
-const float DEFAULT_ENVIRONMENT_REFLECTION_DELAY = 7.f;
-const float DEFAULT_ENVIRONMENT_REVERBERATION_VOLUME = 1.f;
-const float DEFAULT_ENVIRONMENT_REVERBERATION_DELAY = 10.f;
-const float DEFAULT_ENVIRONMENT_REVERBERATION_DECAY = 1500.f;
-const float DEFAULT_ENVIRONMENT_REVERBERATION_HFDECAY = 1200.f;
-
 const float DEFAULT_VOLUME = 1.f; // Original gain
 
 // Flags
 enum ChannelFlag {
-	FLAG_RESTART       = 0x00000001, // Force restart sample if already playing
-	FLAG_ENQUEUE       = 0x00000002, // Enqueue sample if already playing
-	FLAG_VOLUME        = 0x00000004, // Enable volume control
-	FLAG_PITCH         = 0x00000008, // Enable pitch control
-	FLAG_PAN           = 0x00000010, // Enable pan control
-	FLAG_POSITION      = 0x00000020, // Enable position control
-	FLAG_VELOCITY      = 0x00000040, // Enable velocity control
-	FLAG_DIRECTION     = 0x00000080, // Enable orientation control
-	FLAG_CONE          = 0x00000100, // Enable cone control
-	FLAG_FALLOFF       = 0x00000200, // Enable intensity control
-	FLAG_REVERBERATION = 0x00000400, // Enable environment reverberation
-	FLAG_RELATIVE      = 0x00001000, // Compute position relative to the listener
-	FLAG_AUTOFREE      = 0x00008000, // Free resource when playing is finished
+	FLAG_VOLUME        = 1 << 0,  // Enable volume control
+	FLAG_PITCH         = 1 << 1,  // Enable pitch control
+	FLAG_PAN           = 1 << 2,  // Enable pan control
+	FLAG_POSITION      = 1 << 3,  // Enable position control
+	FLAG_VELOCITY      = 1 << 4,  // Enable velocity control
+	FLAG_FALLOFF       = 1 << 7,  // Enable intensity control
+	FLAG_REVERBERATION = 1 << 8,  // Enable environment reverberation
+	FLAG_RELATIVE      = 1 << 9,  // Compute position relative to the listener
+	FLAG_AUTOFREE      = 1 << 10, // Free resource when playing is finished
 };
 DECLARE_FLAGS(ChannelFlag, ChannelFlags)
 DECLARE_FLAGS_OPERATORS(ChannelFlags)
-
-// Length units
-enum TimeUnit {
-	UNIT_MS,
-	UNIT_SAMPLES,
-	UNIT_BYTES
-};
 
 // Errors
 enum aalError {
@@ -104,36 +80,94 @@ enum aalError {
 	AAL_ERROR_HANDLE // Invalid resource handle
 };
 
-// Output format
-struct PCMFormat {
-	size_t frequency; // Samples per second
-	size_t quality; // Bits per sample
-	size_t channels; // Output channels count
+enum HRTFAttribute {
+	HRTFDisable = 0,
+	HRTFEnable = 1,
+	HRTFDefault = -1,
 };
 
-// Source cone
-struct SourceCone {
-	float inner_angle;
-	float outer_angle;
-	float outer_volume;
+enum HRTFStatus {
+	HRTFDisabled,
+	HRTFEnabled,
+	HRTFRequired,
+	HRTFForbidden,
+	HRTFUnavailable
+};
+
+enum PlayingAmbianceType {
+	PLAYING_AMBIANCE_MENU,
+	PLAYING_AMBIANCE_SCRIPT,
+	PLAYING_AMBIANCE_ZONE
+};
+
+// Output format
+struct PCMFormat {
+	u32 frequency; // Samples per second
+	u16 quality; // Bits per sample
+	u16 channels; // Output channels count
 };
 
 // Source falloff
 struct SourceFalloff {
+	
 	float start;
 	float end;
+	
+	SourceFalloff()
+		: start(0.f)
+		, end(0.f)
+	{ }
+	
 };
 
-const s32 INVALID_ID = -1;
 
-typedef s32 SourceId;
-typedef s32 SampleId;
-ARX_HANDLE_TYPEDEF(s32, MixerId, -1)
-ARX_HANDLE_TYPEDEF(s32, EnvId, -1)
-ARX_HANDLE_TYPEDEF(s32, AmbianceId, -1)
+typedef HandleType<struct SampleHandleTag,    s32, -1> SampleHandle;
+typedef HandleType<struct SourceHandleTag,    s32, -1> SourceHandle;
+
+struct SourcedSample {
+	
+	SourcedSample()
+	{ }
+	
+	SourcedSample(SourceHandle source, SampleHandle sample)
+		: m_source(source)
+		, m_sample(sample)
+	{ }
+	
+	bool operator==(const SourcedSample & rhs) const {
+		return m_source == rhs.m_source && m_sample == rhs.m_sample;
+	}
+	bool operator!=(const SourcedSample & rhs) const {
+		return m_source != rhs.m_source || m_sample != rhs.m_sample;
+	}
+	
+	SourceHandle source() const {
+		return m_source;
+	}
+	
+	SampleHandle getSampleId() const {
+		return m_sample;
+	}
+	
+	void clearSource() {
+		m_source = SourceHandle();
+	}
+	
+private:
+	
+	SourceHandle m_source;
+	SampleHandle m_sample;
+	
+};
+
+
+typedef HandleType<struct MixerIdTag,    s32, -1> MixerId;
+typedef HandleType<struct EnvIdTag,      s32, -1> EnvId;
+typedef HandleType<struct AmbianceIdTag, s32, -1> AmbianceId;
 
 // Play channel initialization parameters
 struct Channel {
+	
 	ChannelFlags flags;
 	MixerId mixer;
 	float volume;
@@ -141,9 +175,24 @@ struct Channel {
 	float pan;
 	Vec3f position;
 	Vec3f velocity;
-	Vec3f direction;
-	SourceCone cone;
 	SourceFalloff falloff;
+	
+	explicit Channel(MixerId _mixer)
+		: flags(0)
+		, mixer(_mixer)
+		, volume(0.f)
+		, pitch(0.f)
+		, pan(0.f)
+		, position(0.f)
+		, velocity(0.f)
+	{ }
+	
+};
+
+enum SourceStatus {
+	Idle,
+	Playing,
+	Paused
 };
 
 } // namespace audio

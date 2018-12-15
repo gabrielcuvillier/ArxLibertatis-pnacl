@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -43,10 +43,13 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "cinematic/CinematicKeyframer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+
+#include <boost/foreach.hpp>
 
 #include "cinematic/Cinematic.h"
 #include "cinematic/CinematicTexture.h"
@@ -55,133 +58,59 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "core/Core.h"
 #include "core/GameTime.h"
 
-static const float C_MIN_F32 = 1.175494351e-38F;
-inline bool C_NEQUAL_F32(float f1, float f2) {
-	return glm::abs(f1 - f2) >= C_MIN_F32;
+CinematicTrack * CKTrack;
+
+CinematicTrack::CinematicTrack(int endframe_, float fps_)
+	: endframe(endframe_)
+	, fps(fps_)
+{
+	currframe = 0.f;
+	pause = true;
 }
 
-CinematicTrack	* CKTrack;
-
-bool AllocTrack(int sf, int ef, float fps)
-{
+void AllocTrack(int ef, float fps) {
+	
 	if(CKTrack)
-		return false;
-
-	CKTrack = (CinematicTrack *)std::malloc(sizeof(CinematicTrack));
-
-	if(!CKTrack)
-		return false;
-
-	CKTrack->startframe = sf;
-	CKTrack->endframe = ef;
-	CKTrack->currframe = 0.f;
-	CKTrack->fps = fps;
-	CKTrack->nbkey = 0;
-	CKTrack->key = NULL;
-	CKTrack->pause = true;
-
-	return true;
+		return;
+	
+	CKTrack = new CinematicTrack(ef, fps);
 }
 
-bool DeleteTrack() {
-	
-	if(!CKTrack)
-		return false;
-	
-	free(CKTrack->key);
-	free(CKTrack);
+void DeleteTrack() {
+	delete CKTrack;
 	CKTrack = NULL;
-	
-	return true;
-}
-
-static CinematicKeyframe * SearchAndMoveKey(int f)
-{
-	CinematicKeyframe * k = CKTrack->key + CKTrack->nbkey - 1;
-	int nb = CKTrack->nbkey;
-
-	while(nb) {
-		if(f > k->frame)
-			break;
-
-		k--;
-		nb--;
-	}
-
-	nb = CKTrack->nbkey - nb;
-
-	if(nb) {
-		std::memmove((void *)(k + 2), (void *)(k + 1), sizeof(CinematicKeyframe)*nb);
-	}
-
-	return k + 1;
-}
-
-CinematicKeyframe * SearchKey(int f, int * num)
-{
-	if(!CKTrack || !CKTrack->nbkey)
-		return NULL;
-
-	CinematicKeyframe * k = CKTrack->key;
-	int nb = CKTrack->nbkey;
-
-	while(nb) {
-		if(f == k->frame) {
-			*num = CKTrack->nbkey - nb;
-			return k;
-		}
-
-		k++;
-		nb--;
-	}
-
-	return NULL;
 }
  
-static void UpDateKeyLight(int frame) {
+static void UpDateKeyLight(CinematicKeyframe * kbase) {
 	
-	CinematicKeyframe *klightprev2, *klightnext2;
-	int num;
-
-	CinematicKeyframe * k = SearchKey(frame, &num);
-	CinematicKeyframe * klightprev = k;
-	CinematicKeyframe * klightnext = k;
+	CinematicKeyframe * klightprev2, * klightnext2;
 	
-	CinematicKeyframe * kbase = k;
-	int num2 = num;
-
-	//on cherche le range de deux lights
-	//prev
-	while(num2) {
+	CinematicKeyframe * klightprev = kbase;
+	CinematicKeyframe * klightnext = kbase;
+	
+	// Look for the previous and next keyframes that change the light
+	
+	CinematicKeyframe * k = kbase;
+	while(k != &CKTrack->key.front()) {
 		k--;
-
 		if((k->fx & CinematicFxAllMask) == FX_LIGHT) {
 			klightprev = k;
 			break;
 		}
-
-		num2--;
 	}
-
-	//next
+	
 	k = kbase;
-	num2 = num;
-
-	while(num2 < (CKTrack->nbkey - 1)) {
+	while(k != &CKTrack->key.back()) {
 		k++;
-
 		if((k->fx & CinematicFxAllMask) == FX_LIGHT) {
 			klightnext = k;
 			break;
 		}
-
-		num2++;
 	}
-
-	//on crépie le range avec ces deux valeurs
+	
 	kbase->light.prev = klightprev;
 	kbase->light.next = klightnext;
-
+	
 	if((kbase->fx & CinematicFxAllMask) == FX_LIGHT) {
 		klightprev2 = klightnext2 = kbase;
 	} else {
@@ -189,188 +118,116 @@ static void UpDateKeyLight(int frame) {
 		klightprev2 = klightprev;
 		klightnext2 = klightnext;
 	}
-
-	//prev
-	k = kbase - 1;
-
-	while(k >= CKTrack->key) {
+	
+	k = kbase;
+	while(k != &CKTrack->key.front()) {
+		k--;
 		if(klightprev == kbase) {
 			k->light.intensity = -1.f;
 		}
-
 		k->light.next = klightnext2;
-
-		if((k->fx & CinematicFxAllMask) == FX_LIGHT)
+		if((k->fx & CinematicFxAllMask) == FX_LIGHT) {
 			break;
-
+		}
 		k->light.prev = klightprev;
-		k--;
 	}
-
-	//next
-	k = kbase + 1;
-
-	while(k < (CKTrack->key + CKTrack->nbkey)) {
+	
+	k = kbase;
+	while(k != &CKTrack->key.back()) {
+		k++;
 		if(klightnext == kbase) {
 			k->light.intensity = -1.f;
 		}
-
 		k->light.prev = klightprev2;
-
-		if((k->fx & CinematicFxAllMask) == FX_LIGHT)
+		if((k->fx & CinematicFxAllMask) == FX_LIGHT) {
 			break;
-
+		}
 		k->light.next = klightnext;
-		k++;
+	}
+	
+}
+
+void UpDateAllKeyLight() {
+	BOOST_FOREACH(CinematicKeyframe & key, CKTrack->key) {
+		UpDateKeyLight(&key);
 	}
 }
 
-void UpDateAllKeyLight(void)
-{
-	//update les lights
-	CinematicKeyframe * kk = CKTrack->key;
-	int nb = CKTrack->nbkey;
-
-	while(nb--) {
-		UpDateKeyLight(kk->frame);
-		kk++;
+struct HasFrame {
+	
+	explicit HasFrame(int frame) : m_frame(frame) { }
+	
+	bool operator()(const CinematicKeyframe & key) {
+		return key.frame == m_frame;
 	}
+	
+private:
+	
+	int m_frame;
+	
+};
+
+struct AfterFrame {
+	
+	explicit AfterFrame(int frame) : m_frame(frame) { }
+	
+	bool operator()(const CinematicKeyframe & key) {
+		return key.frame > m_frame;
+	}
+	
+private:
+	
+	int m_frame;
+	
+};
+
+void AddKeyLoad(const CinematicKeyframe & key) {
+	
+	if(!CKTrack || key.frame < 0 || key.frame > CKTrack->endframe) {
+		return;
+	}
+	
+	std::vector<CinematicKeyframe>::iterator i;
+	i = std::find_if(CKTrack->key.begin(), CKTrack->key.end(), HasFrame(key.frame));
+	if(i != CKTrack->key.end()) {
+		*i = key;
+		return;
+	}
+	
+	i = std::find_if(CKTrack->key.begin(), CKTrack->key.end(), AfterFrame(key.frame));
+	i = CKTrack->key.insert(i, key);
+	
 }
 
-bool AddKey(const CinematicKeyframe & key) {
-	int			num;
-
-	if(!CKTrack || (key.frame < CKTrack->startframe) || (key.frame > CKTrack->endframe))
-		return false;
-
-	CinematicKeyframe * k = SearchKey(key.frame, &num);
-	if(!k) {
-		if(!CKTrack->nbkey) {
-			CKTrack->key = k = (CinematicKeyframe *)std::malloc(sizeof(CinematicKeyframe));
-		} else {
-			CKTrack->key = (CinematicKeyframe *)std::realloc(CKTrack->key, sizeof(CinematicKeyframe) * (CKTrack->nbkey + 1));
-			k = SearchAndMoveKey(key.frame);
-		}
-
-		CKTrack->nbkey++;
-
-		k->frame = key.frame;
-	}
-
-	if(key.numbitmap > -2)
-		k->numbitmap = key.numbitmap;
-
-	if(key.fx > -2) {
-		k->fx = key.fx;
-		
-		/* TODO what was this code suppesed to achieve
-		if((key.fx > 255) && (k->fx > 0)) {
-			k->fx |= key.fx;
-		} else {
-			if((k->fx >= 255) && (key.fx >= 0)) {
-				k->fx |= key.fx;
-			} else {
-				k->fx = key.fx;
-			}
-		}
-		*/
-	}
-
-	if(key.speed > -1.f) {
-		k->speed = key.speed;
-	}
+static CinematicKeyframe * GetKey(int frame) {
 	
-	k->color = key.color;
-	k->colord = key.colord;
-	k->colorf = key.colorf;
-	
-	if(key.idsound > -2) {
-		k->idsound = key.idsound;
-	}
-
-	if(key.force > -2)
-		k->force = key.force;
-
-	k->frame = key.frame;
-	k->pos = key.pos;
-	k->angz = key.angz;
-
-	if(key.typeinterp > -2)
-		k->typeinterp = key.typeinterp;
-
-	float a = -2.f;
-
-	if(C_NEQUAL_F32(key.light.intensity, a)) {
-		k->light = key.light;
-	}
-
-	k->posgrille = key.posgrille;
-	k->angzgrille = key.angzgrille;
-	k->speedtrack = key.speedtrack;
-
-	UpDateAllKeyLight();
-
-	return true;
-}
-
-bool AddKeyLoad(const CinematicKeyframe & key) {
-	int num;
-
-	if(!CKTrack || (key.frame < CKTrack->startframe) || (key.frame > CKTrack->endframe))
-		return false;
-	
-	CinematicKeyframe * k = SearchKey(key.frame, &num);
-	if(!k) {
-		if(!CKTrack->nbkey) {
-			CKTrack->key = k = (CinematicKeyframe *)std::malloc(sizeof(CinematicKeyframe));
-		} else {
-			CKTrack->key = (CinematicKeyframe *)std::realloc(CKTrack->key, sizeof(CinematicKeyframe) * (CKTrack->nbkey + 1));
-			k = SearchAndMoveKey(key.frame);
-		}
-
-		CKTrack->nbkey++;
-	}
-	
-	*k = key;
-	
-	return true;
-}
-
-CinematicKeyframe * GetKey(int f, int * num)
-{
-	if(!CKTrack || !CKTrack->key)
+	if(!CKTrack || CKTrack->key.empty()) {
 		return NULL;
-
-	CinematicKeyframe * k = CKTrack->key + CKTrack->nbkey - 1;
-	int nb = CKTrack->nbkey;
-
-	while(nb) {
-		if(f >= k->frame) {
-			*num = nb;
-			return k;
-		}
-
-		k--;
-		nb--;
 	}
-
-	return NULL;
+	
+	std::vector<CinematicKeyframe>::iterator i;
+	i = std::find_if(CKTrack->key.begin(), CKTrack->key.end(), AfterFrame(frame));
+	
+	if(i == CKTrack->key.begin()) {
+		return NULL;
+	}
+	
+	return &*(i - 1);
 }
 
 static float GetAngleInterpolation(float d, float e) {
 	
 	float da = e - d;
-
 	if(glm::abs(da) > 180.f) {
-		if(da > 0.f)
+		if(da > 0.f) {
 			da -= 360.f;
-		else
+		} else {
 			da += 360.f;
+		}
 	}
-
+	
 	return da;
 }
-
 
 static CinematicFadeOut getFadeOut(const Cinematic & c, const CinematicKeyframe & key, const CinematicKeyframe & pos) {
 	
@@ -396,7 +253,7 @@ static CinematicFadeOut getFadeOut(const Cinematic & c, const CinematicKeyframe 
 	// Project the bitmap corners onto a 640x480 screen.
 	Vec3f s = key.posgrille - Vec3f(bitmap->m_size.x, bitmap->m_size.y, 0) * 0.5f;
 	Vec3f e = key.posgrille + Vec3f(bitmap->m_size.x, bitmap->m_size.y, 0) * 0.5f;
-	float fFOV = glm::radians(69.75);
+	float fFOV = glm::radians(69.75f);
 	float k = glm::cos(fFOV / 2) / glm::sin(fFOV / 2) * 0.5f;
 	s -= key.pos;
 	s.x = s.x * 0.75f * k * 640 / s.z;
@@ -417,7 +274,7 @@ static CinematicFadeOut getFadeOut(const Cinematic & c, const CinematicKeyframe 
 	return fade;
 }
 
-static void updateFadeOut(Cinematic * c, CinematicTrack * track, int num, float a,
+static void updateFadeOut(Cinematic * c, CinematicKeyframe * current, float a,
                           bool keyChanged) {
 	
 	if(config.interface.cinematicWidescreenMode != CinematicFadeEdges) {
@@ -432,23 +289,21 @@ static void updateFadeOut(Cinematic * c, CinematicTrack * track, int num, float 
 		return;
 	}
 	
-	CinematicKeyframe * current = &track->key[num - 1];
-	CinematicKeyframe * next = (num == track->nbkey) ? current : current + 1;
+	CinematicKeyframe * next = (current == &CKTrack->key.back()) ? current : current + 1;
 	
 	if(keyChanged) {
 		c->fadeprev = getFadeOut(*c, *current, *current);
-		if(num == track->nbkey || next->numbitmap != current->numbitmap) {
+		if(current == &CKTrack->key.back() || next->numbitmap != current->numbitmap) {
 			c->fadenext = c->fadeprev;
 		} else {
 			c->fadenext = getFadeOut(*c, *next, *next);
 		}
 		if(current->force) {
-			int next = (num == track->nbkey) ? num - 1 : num;
-			const CinematicKeyframe & key = track->key[next];
-			if(next > 0 && track->key[next - 1].typeinterp != INTERP_NO) {
-				c->m_nextFadegrille  = getFadeOut(*c, key, track->key[next - 1]);
+			CinematicKeyframe * prev = (current == &CKTrack->key.front()) ? current : current - 1;
+			if(prev->typeinterp != INTERP_NO) {
+				c->m_nextFadegrille  = getFadeOut(*c, *current, *prev);
 			} else {
-				c->m_nextFadegrille  = getFadeOut(*c, key, key);
+				c->m_nextFadegrille  = getFadeOut(*c, *current, *current);
 			}
 		} else {
 			c->m_nextFadegrille = CinematicFadeOut(0.f);
@@ -466,7 +321,18 @@ static void updateFadeOut(Cinematic * c, CinematicTrack * track, int num, float 
 	
 }
 
-static void interpolateLight(float alight, CinematicKeyframe* lightprec, Cinematic* c) {
+#if defined(_MSC_VER) && _MSC_VER >= 1800 && _MSC_VER < 1900
+/*
+ * MSVC 2013 generates a MOVAPS instruction here with an argument that is not 16-byte alligned,
+ * resulting in a crash.
+ *  https://bugs.arx-libertatis.org/arx/issues/1097
+ *
+ * This has been fixed in MSVC 2015:
+ *  https://connect.microsoft.com/VisualStudio/feedback/details/956733/
+ */
+#pragma optimize("", off)
+#endif
+static void interpolateLight(float alight, CinematicKeyframe * lightprec, Cinematic * c) {
 	
 	float unmoinsalight = 1.0f - alight;
 	
@@ -485,137 +351,114 @@ static void interpolateLight(float alight, CinematicKeyframe* lightprec, Cinemat
 	} else {
 		lend = c->m_lightd;
 	}
-
+	
 	c->m_light.pos = lend.pos * alight + ldep.pos * unmoinsalight;
 	c->m_light.fallin = alight * lend.fallin + unmoinsalight * ldep.fallin;
 	c->m_light.fallout = alight * lend.fallout + unmoinsalight * ldep.fallout;
 	c->m_light.color = lend.color * alight + ldep.color * unmoinsalight;
 	c->m_light.intensity = alight * lend.intensity + unmoinsalight * ldep.intensity;
-	c->m_light.intensiternd = alight * lend.intensiternd
-							+ unmoinsalight * ldep.intensiternd;
+	c->m_light.intensiternd = alight * lend.intensiternd + unmoinsalight * ldep.intensiternd;
+	
 }
+#if defined(_MSC_VER) && _MSC_VER >= 1800 && _MSC_VER < 1900
+#pragma optimize("", on)
+#endif
 
-void GereTrack(Cinematic * c, float fpscurr, bool resized, bool play) {
+void GereTrack(Cinematic * c, PlatformDuration frameDuration, bool resized, bool play) {
 	
-	if(!CKTrack || !CKTrack->nbkey)
+	if(!CKTrack || CKTrack->key.empty()) {
 		return;
-	
-	int num;
-	
-	if(play && CKTrack->pause)
-		return;
-	
-	if(!play && !CKTrack->pause)
-		return;
-	
-	CinematicKeyframe * current = GetKey((int) CKTrack->currframe, &num);
-
-	if(!current)
-		return;
-
-	CinematicKeyframe * next = (num == CKTrack->nbkey) ? current : current + 1;
-	
-	float a;
-	
-	if(next->frame != current->frame)
-		a = (CKTrack->currframe - (float)current->frame) / ((float)(next->frame - current->frame));
-	else
-		a = 1.f;
-	
-	float unmoinsa;
-	
-	c->a = unmoinsa = 1.0f - a;
-
-	c->numbitmap		= current->numbitmap;
-	c->m_nextNumbitmap	= next->numbitmap;
-	c->ti				= current->typeinterp;
-	c->fx				= current->fx;
-	c->m_nextFx			= next->fx;
-	c->color			= current->color;
-	c->colord			= current->colord;
-	c->colorflash		= current->colorf;
-	c->speed			= current->speed;
-	c->idsound			= current->idsound;
-	c->force			= current->force;
-	
-	CinematicKeyframe * lightprec;
-	
-	if((current->fx & CinematicFxAllMask) == FX_LIGHT) {
-		lightprec = current;
-	} else {
-		lightprec = current->light.prev;
 	}
-
+	
+	if(CKTrack->pause == play) {
+		return;
+	}
+	
+	CinematicKeyframe * current = GetKey((int) CKTrack->currframe);
+	if(!current) {
+		return;
+	}
+	
+	CinematicKeyframe * next = (current == &CKTrack->key.back()) ? current : current + 1;
+	
+	float a = 1.f;
+	if(next->frame != current->frame) {
+		a = (CKTrack->currframe - float(current->frame)) / float(next->frame - current->frame);
+	}
+	
+	c->a = 1.f - a;
+	c->numbitmap = current->numbitmap;
+	c->m_nextNumbitmap = next->numbitmap;
+	c->ti = current->typeinterp;
+	c->fx = current->fx;
+	c->m_nextFx = next->fx;
+	c->color = current->color;
+	c->colord = current->colord;
+	c->colorflash = current->colorf;
+	c->speed = current->speed;
+	c->idsound = current->idsound;
+	c->force = current->force;
+	
+	CinematicKeyframe * light = current;
+	if((current->fx & CinematicFxAllMask) != FX_LIGHT) {
+		light = current->light.prev;
+	}
+	
 	CinematicKeyframe * lightnext = current->light.next;
 	c->m_lightd = lightnext->light;
 	
-	float alight = 0;
-	
-	if(lightprec != lightnext) {
-		alight = (CKTrack->currframe - (float)lightprec->frame) / ((float)(lightnext->frame - lightprec->frame));
-
-		if(alight > 1.f)
+	float alight = 0.f;
+	if(light != lightnext) {
+		alight = (CKTrack->currframe - float(light->frame)) / float(lightnext->frame - light->frame);
+		if(alight > 1.f) {
 			alight = 1.f;
-	} else {
-		if(current == (CKTrack->key + CKTrack->nbkey - 1)) {
-			alight			= 1.f;
-		} else {
-			//alight can't be used because it is not initialized
-//ARX_BEGIN: jycorbel (2010-07-19) - Set light coeff to 0 to keep null all possibly light created from uninitialyzed var.
-/*
-alight = unmoinsalight = 0.f; //default values needed when : k->typeinterp == INTERP_BEZIER (0) || k->typeinterp == INTERP_LINEAR (1)
-consequences on light :
-				c->light : position = (0,0,0);
-				c->light : color	= (0,0,0); == BLACK
-				c->light : fallin	= fallout		= 0;
-				c->light : intensite = intensiternd	= 0;
-			arx_assert( k->typeinterp != INTERP_BEZIER && k->typeinterp != INTERP_LINEAR );
-*/
-//ARX_END: jycorbel (2010-07-19)
-			//ARX_END: jycorbel (2010-06-28)
-			c->m_lightd = current->light;
-			lightprec = current;
 		}
+	} else if(current == &CKTrack->key.back()) {
+		alight = 1.f;
+	} else {
+		// alight can't be used because it is not initialized
+		c->m_lightd = current->light;
+		light = current;
 	}
-
+	
 	c->posgrille = current->posgrille;
 	c->angzgrille = current->angzgrille;
 	c->m_nextPosgrille = next->posgrille;
 	c->m_nextAngzgrille = next->angzgrille;
 	
-	if(!play)
-		if(current->numbitmap < 0 || next->numbitmap < 0)
-			return;
+	if(!play && (current->numbitmap < 0 || next->numbitmap < 0)) {
+		return;
+	}
 	
 	switch(current->typeinterp) {
 		case INTERP_NO:
-			c->pos = current->pos;
+			c->m_pos = current->pos;
 			c->angz = current->angz;
 			c->m_nextPos = next->pos;
 			c->m_nextAngz = next->angz;
-			c->m_light = lightprec->light;
+			c->m_light = light->light;
 			c->speedtrack = current->speedtrack;
 			break;
 		case INTERP_LINEAR:
-			c->pos = next->pos * a + current->pos * unmoinsa;
+			c->m_pos = next->pos * a + current->pos * (1.f - a);
 			c->angz = current->angz + a * GetAngleInterpolation(current->angz, next->angz);
-			c->speedtrack = a * next->speedtrack + unmoinsa * current->speedtrack;
+			c->speedtrack = a * next->speedtrack + (1.f - a) * current->speedtrack;
 
-			interpolateLight(alight, lightprec, c);
+			interpolateLight(alight, light, c);
 			break;
 		case INTERP_BEZIER: {
 			if(play)
 				c->m_light = current->light;
 			
-			CinematicKeyframe * ksuivsuiv = ((num + 1) < CKTrack->nbkey) ? next + 1 : next;
-			CinematicKeyframe * kprec = (num > 1) ? current - 1 : current;
+			CinematicKeyframe * ksuivsuiv = (next == &CKTrack->key.back()) ? next : next + 1;
+			CinematicKeyframe * kprec = (current == &CKTrack->key.front()) ? current : current - 1;
 			
 			const Vec3f prevPos = kprec->pos;
 			const Vec3f currentPos = current->pos;
 			const Vec3f nextPos = next->pos;
 			const Vec3f next2Pos = ksuivsuiv->pos;
 			
-			c->pos = glm::catmullRom(prevPos, currentPos, nextPos, next2Pos, a);
+			c->m_pos = arx::catmullRom(prevPos, currentPos, nextPos, next2Pos, a);
 			
 			c->angz = current->angz + a * GetAngleInterpolation(current->angz, next->angz);
 			
@@ -634,31 +477,30 @@ consequences on light :
 			c->speedtrack = f0 * current->speedtrack + f1 * tempsp + f2 * p0sp + f3 * p1sp;
 			}
 
-			interpolateLight(alight, lightprec, c);
+			interpolateLight(alight, light, c);
 			break;
 		}
 	}
 	
-	updateFadeOut(c, CKTrack, num, a, current != c->key || (resized && play));
+	updateFadeOut(c, current, a, current != c->m_key || (resized && play));
 
-	if(current != c->key) {
-		c->key = current;
+	if(current != c->m_key) {
+		c->m_key = current;
 		c->changekey = true;
 	}
 	
 	if(play) {
 	
-	c->flTime += fpscurr;
-	CKTrack->currframe = (((float)(c->flTime)) / 1000.f) * ((float)(GetEndFrame() - GetStartFrame())) / (float)GetTimeKeyFramer();
+	c->flTime = c->flTime + frameDuration;
+	CKTrack->currframe = toMs(c->flTime) / 1000.f * float(CKTrack->endframe) / GetTimeKeyFramer();
 	
 	// TODO this assert fails if you pause the gametime before a cinematic starts and unpause after
 	arx_assert(CKTrack->currframe >= 0);
 	
 	if(CKTrack->currframe > (float)CKTrack->endframe) {
-		CKTrack->currframe = (float)CKTrack->startframe;
-		c->key = NULL;
-		arxtime.update();
-		c->flTime = arxtime.now_f();
+		CKTrack->currframe = 0;
+		c->m_key = NULL;
+		c->flTime = 0;
 	}
 	}
 }
@@ -669,55 +511,40 @@ void PlayTrack(Cinematic * c)
 		return;
 
 	CKTrack->pause = false;
-	c->flTime = 0; 
+	c->flTime = 0;
 }
 
-float GetTimeKeyFramer()
-{
-	if(!CKTrack)
+float GetTimeKeyFramer() {
+	
+	if(!CKTrack) {
 		return 0.f;
-
-	float t = 0.f;
-	CinematicKeyframe * k = CKTrack->key;
-	int nb = CKTrack->nbkey - 1;
-
-	while(nb--) {
-		CinematicKeyframe * next = k + 1;
-		t += ((float)(next->frame - k->frame)) / (CKTrack->fps * k->speedtrack);
-		k++;
 	}
-
+	
+	float t = 0.f;
+	
+	for(size_t i = 0; i + 1 < CKTrack->key.size(); i++) {
+		CinematicKeyframe & k = CKTrack->key[i];
+		CinematicKeyframe & next = CKTrack->key[i + 1];
+		t += float(next.frame - k.frame) / (CKTrack->fps * k.speedtrack);
+	}
+	
 	return t;
 }
 
-int GetStartFrame(void)
-{
-	if(!CKTrack)
+float GetTrackFPS() {
+	
+	if(!CKTrack) {
 		return -1;
-
-	return CKTrack->startframe;
-}
-
-int GetEndFrame(void)
-{
-	if(!CKTrack)
-		return -1;
-
-	return CKTrack->endframe;
-}
-
-float GetTrackFPS(void)
-{
-	if(!CKTrack)
-		return -1;
-
+	}
+	
 	return CKTrack->fps;
 }
 
-void SetCurrFrame(int frame)
-{
-	if(!CKTrack)
+void SetCurrFrame(int frame) {
+	
+	if(!CKTrack) {
 		return;
-
-	CKTrack->currframe = (float)CKTrack->startframe + (float)frame;
+	}
+	
+	CKTrack->currframe = (float)frame;
 }

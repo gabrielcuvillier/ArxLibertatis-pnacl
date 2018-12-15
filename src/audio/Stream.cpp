@@ -53,7 +53,8 @@ namespace audio {
 
 Stream * createStream(const res::path & name) {
 	
-	PakFileHandle * file = OpenResource(name, sample_path);
+	PakFileHandle * file = g_resources->open(name);
+	
 	if(!file) {
 		return NULL;
 	}
@@ -71,7 +72,7 @@ Stream * createStream(const res::path & name) {
 	return stream;
 }
 
-void deleteStream(Stream *& stream) {
+void deleteStream(Stream * & stream) {
 	PakFileHandle * file = stream->getStream();
 	delete file;
 	delete stream;

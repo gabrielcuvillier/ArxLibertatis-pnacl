@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -149,7 +149,7 @@ public:
 	 * \param len Amount of bytes to remove
 	 * In overwrite mode, the existing bytes will be overwriten with 0x00.
 	 */
-	void remove(int pos, int len=1);
+	void remove(int pos, int len = 1);
 	
 	//! Gives back a formatted image of the content of QHexEdit
 	QString toReadableString();
@@ -168,13 +168,13 @@ public:
 	QColor highlightingColor();
 	void setSelectionColor(QColor const & color);
 	QColor selectionColor();
-	void setOverwriteMode(bool readOnly);
+	void setOverwriteMode(bool overwriteMode);
 	bool overwriteMode();
 	void setReadOnly(bool readOnly);
 	bool isReadOnly();
 	const QFont & font() const;
 	void setFont(const QFont & font);
-	//! @endcond docNever
+	//! \endcond docNever
 	
 public slots:
 	
@@ -233,6 +233,7 @@ private:
 	//! \cond docNever
 	QHexEditPrivate * qHexEdit_p;
 	//! \endcond docNever
+	
 };
 
 #endif // ARX_TOOLS_CRASHREPORTER_QHEXEDIT_QHEXEDIT_H

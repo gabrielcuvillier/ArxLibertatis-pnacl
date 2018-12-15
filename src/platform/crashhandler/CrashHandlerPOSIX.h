@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,6 +19,8 @@
 
 #ifndef ARX_PLATFORM_CRASHHANDLER_CRASHHANDLERPOSIX_H
 #define ARX_PLATFORM_CRASHHANDLER_CRASHHANDLERPOSIX_H
+
+#include <string>
 
 #include "platform/crashhandler/CrashHandlerImpl.h"
 
@@ -42,6 +44,8 @@ public:
 	static CrashHandlerPOSIX & getInstance();
 	
 private:
+	
+	std::string m_arg;
 	
 	bool registerCrashHandlers();
 	void unregisterCrashHandlers();

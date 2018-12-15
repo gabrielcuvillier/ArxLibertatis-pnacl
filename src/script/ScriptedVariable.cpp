@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -69,85 +69,43 @@ public:
 		DebugScript(' ' << var << " \"" << val << '"');
 		
 		if(var.empty()) {
-			ScriptWarning << "missing var name";
+			ScriptWarning << "Missing variable name";
 			return Failed;
 		}
 		
-		EERIE_SCRIPT & es = *context.getMaster();
+		SCRIPT_VARIABLES & variables = isLocalVariable(var) ? context.getEntity()->m_variables : svar;
 		
+		SCRIPT_VAR * sv = NULL;
 		switch(var[0]) {
 			
-			case '$': { // global text
-				std::string v = context.getStringVar(val);
-				SCRIPT_VAR * sv = SETVarValueText(svar, var, v);
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var << " to \"" << v << '"';
-					return Failed;
-				}
-				sv->type = TYPE_G_TEXT;
-				break;
-			}
-			
+			case '$':      // global text
 			case '\xA3': { // local text
-				std::string v = context.getStringVar(val);
-				SCRIPT_VAR * sv = SETVarValueText(es.lvar, var, v);
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var << " to \"" << v << '"';
-					return Failed;
-				}
-				sv->type = TYPE_L_TEXT;
+				sv = SETVarValueText(variables, var, context.getStringVar(val));
 				break;
 			}
 			
-			case '#': { // global long
-				long v = (long)context.getFloatVar(val);
-				SCRIPT_VAR * sv = SETVarValueLong(svar, var, v);
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var << " to " << v;
-					return Failed;
-				}
-				sv->type = TYPE_G_LONG;
-				break;
-			}
-			
+			case '#':      // global long
 			case '\xA7': { // local long
-				long v = (long)context.getFloatVar(val);
-				SCRIPT_VAR * sv = SETVarValueLong(es.lvar, var, v);
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var << " to " << v;
-					return Failed;
-				}
-				sv->type = TYPE_L_LONG;
+				sv = SETVarValueLong(variables, var, long(context.getFloatVar(val)));
 				break;
 			}
 			
-			case '&': { // global float
-				float v = context.getFloatVar(val);
-				SCRIPT_VAR * sv = SETVarValueFloat(svar, var, v);
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var << " to " << v;
-					return Failed;
-				}
-				sv->type = TYPE_G_FLOAT;
-				break;
-			}
-			
-			case '@': { // local float
-				float v = context.getFloatVar(val);
-				SCRIPT_VAR * sv = SETVarValueFloat(es.lvar, var, v);
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var << " to " << v;
-					return Failed;
-				}
-				sv->type = TYPE_L_FLOAT;
+			case '&':      // global float
+			case '@': {    // local float
+				sv = SETVarValueFloat(variables, var, context.getFloatVar(val));
 				break;
 			}
 			
 			default: {
-				ScriptWarning << "unknown variable type: " << var;
+				ScriptWarning << "Unknown variable type: " << var;
 				return Failed;
 			}
 			
+		}
+		
+		if(!sv) {
+			ScriptWarning << "Unable to set variable " << var;
+			return Failed;
 		}
 		
 		return Success;
@@ -175,7 +133,7 @@ private:
 			case Multiply: return left * right;
 			case Divide: return (right == 0.f) ? 0.f : left / right;
 		}
-		arx_assert(false, "Invalid op used in ArithmeticCommand: %d", (int)op);
+		arx_assert_msg(false, "Invalid op used in ArithmeticCommand: %d", (int)op);
 		return 0.f;
 	}
 	
@@ -193,69 +151,45 @@ public:
 		DebugScript(' ' << var << ' ' << val);
 		
 		if(var.empty()) {
-			ScriptWarning << "missing variable name";
+			ScriptWarning << "Missing variable name";
 			return Failed;
 		}
 		
-		EERIE_SCRIPT * es = context.getMaster();
+		SCRIPT_VARIABLES & variables = isLocalVariable(var) ? context.getEntity()->m_variables : svar;
 		
+		SCRIPT_VAR * sv = NULL;
 		switch(var[0]) {
 			
-			case '$': // global text
+			case '$':      // global text
 			case '\xA3': { // local text
-				ScriptWarning << "cannot increment string variables";
+				ScriptWarning << "Cannot calculate with text variables";
 				return Failed;
 			}
 			
-			case '#':  {// global long
-				float old = (float)GETVarValueLong(svar, var);
-				SCRIPT_VAR * sv = SETVarValueLong(svar, var, (long)calculate(old, val));
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var;
-					return Failed;
-				}
-				sv->type = TYPE_G_LONG;
-				break;
-			}
-			
+			case '#':      // global long
 			case '\xA7': { // local long
-				float old = (float)GETVarValueLong(es->lvar, var);
-				SCRIPT_VAR * sv = SETVarValueLong(es->lvar, var, (long)calculate(old, val));
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var;
-					return Failed;
-				}
-				sv->type = TYPE_L_LONG;
+				long old = GETVarValueLong(variables, var);
+				sv = SETVarValueLong(variables, var, long(calculate(float(old), val)));
 				break;
 			}
 			
-			case '&': { // global float
-				float old = GETVarValueFloat(svar, var);
-				SCRIPT_VAR * sv = SETVarValueFloat(svar, var, calculate(old, val));
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var;
-					return Failed;
-				}
-				sv->type = TYPE_G_FLOAT;
-				break;
-			}
-			
+			case '&':   // global float
 			case '@': { // local float
-				float old = GETVarValueFloat(es->lvar, var);
-				SCRIPT_VAR * sv = SETVarValueFloat(es->lvar, var, calculate(old, val));
-				if(!sv) {
-					ScriptWarning << "unable to set var " << var;
-					return Failed;
-				}
-				sv->type = TYPE_L_FLOAT;
+				float old = GETVarValueFloat(variables, var);
+				sv = SETVarValueFloat(variables, var, calculate(old, val));
 				break;
 			}
 			
 			default: {
-				ScriptWarning << "unknown variable type: " << var;
+				ScriptWarning << "Unknown variable type: " << var;
 				return Failed;
 			}
 			
+		}
+		
+		if(!sv) {
+			ScriptWarning << "Unable to set variable " << var;
+			return Failed;
 		}
 		
 		return Success;
@@ -265,22 +199,19 @@ public:
 
 class UnsetCommand : public Command {
 	
-	static bool isGlobal(char c) {
-		return (c == '$' || c == '#' || c == '&');
-	}
-	
 	// TODO move to variable context
-	static bool UNSETVar(SCRIPT_VARIABLES& svf, const std::string & name) {
+	static bool UNSETVar(SCRIPT_VARIABLES & svf, const std::string & name) {
 		
 		SCRIPT_VARIABLES::iterator it;
 		for(it = svf.begin(); it != svf.end(); ++it) {
-			if(it->type != 0 && name == it->name) {
+			if(name == it->name) {
 				break;
 			}
 		}
 		
-		if(it == svf.end())
+		if(it == svf.end()) {
 			return false;
+		}
 		
 		svf.erase(it);
 		
@@ -302,11 +233,9 @@ public:
 			return Failed;
 		}
 		
-		if(isGlobal(var[0])) {
-			UNSETVar(svar, var);
-		} else {
-			UNSETVar(context.getMaster()->lvar, var);
-		}
+		SCRIPT_VARIABLES & variables = isLocalVariable(var) ? context.getEntity()->m_variables : svar;
+		
+		UNSETVar(variables, var);
 		
 		return Success;
 	}
@@ -315,11 +244,11 @@ public:
 
 class IncrementCommand : public Command {
 	
-	float diff;
+	long m_diff;
 	
 public:
 	
-	IncrementCommand(const std::string & name, float _diff) : Command(name), diff(_diff) { }
+	IncrementCommand(const std::string & name, long diff) : Command(name), m_diff(diff) { }
 	
 	Result execute(Context & context) {
 		
@@ -332,39 +261,39 @@ public:
 			return Failed;
 		}
 		
-		EERIE_SCRIPT& es = *context.getMaster();
+		SCRIPT_VARIABLES & variables = isLocalVariable(var) ? context.getEntity()->m_variables : svar;
 		
+		SCRIPT_VAR * sv = NULL;
 		switch(var[0]) {
 			
-			case '#': {
-				long ival = GETVarValueLong(svar, var);
-				SETVarValueLong(svar, var, ival + (long)diff);
-				break;
-			}
-			
+			case '$':
 			case '\xA3': {
-				long ival = GETVarValueLong(es.lvar, var);
-				SETVarValueLong(es.lvar, var, ival + (long)diff);
+				ScriptWarning << "Cannot increment text variables";
+				return Failed;
+			}
+			
+			case '#':
+			case '\xA7': {
+				sv = SETVarValueLong(variables, var, GETVarValueLong(variables, var) + m_diff);
 				break;
 			}
 			
-			case '&': {
-				float fval = GETVarValueFloat(svar, var);
-				SETVarValueFloat(svar, var, fval + diff);
-				break;
-			}
-			
+			case '&':
 			case '@': {
-				float fval = GETVarValueFloat(es.lvar, var);
-				SETVarValueFloat(es.lvar, var, fval + diff);
+				sv = SETVarValueFloat(variables, var, GETVarValueFloat(variables, var) + float(m_diff));
 				break;
 			}
 			
 			default: {
-				ScriptWarning << "can only use " << getName() << " with number variables, got " << var;
+				ScriptWarning << "Unknown variable type: " << var;
 				return Failed;
 			}
 			
+		}
+		
+		if(!sv) {
+			ScriptWarning << "Unable to set variable " << var;
+			return Failed;
 		}
 		
 		return Success;
@@ -372,7 +301,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedVariable() {
 	
@@ -382,8 +311,8 @@ void setupScriptedVariable() {
 	ScriptEvent::registerCommand(new ArithmeticCommand("mul", ArithmeticCommand::Multiply));
 	ScriptEvent::registerCommand(new ArithmeticCommand("div", ArithmeticCommand::Divide));
 	ScriptEvent::registerCommand(new UnsetCommand);
-	ScriptEvent::registerCommand(new IncrementCommand("++", 1.f));
-	ScriptEvent::registerCommand(new IncrementCommand("--", -1.f));
+	ScriptEvent::registerCommand(new IncrementCommand("++", 1));
+	ScriptEvent::registerCommand(new IncrementCommand("--", -1));
 	
 }
 

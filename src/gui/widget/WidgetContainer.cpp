@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,66 +24,61 @@
 #include "core/ArxGame.h"
 #include "graphics/DrawLine.h"
 
-WidgetContainer::WidgetContainer() {
-
-	m_widgets.clear();
-	
-	{Widget * w; BOOST_FOREACH(w, m_widgets) {
-		delete w;
-	}}
-}
+WidgetContainer::WidgetContainer() { }
 
 WidgetContainer::~WidgetContainer() {
-	
-	{Widget * w; BOOST_FOREACH(w, m_widgets) {
+	BOOST_FOREACH(Widget * w, m_widgets) {
 		delete w;
-	}}
+	}
 }
 
-void WidgetContainer::add(Widget *widget) {
+void WidgetContainer::update() {
+	BOOST_FOREACH(Widget * w, m_widgets) {
+		w->update();
+	}
+}
 
+void WidgetContainer::render(Widget * selected) {
+	BOOST_FOREACH(Widget * w, m_widgets) {
+		w->render(w == selected);
+	}
+}
+
+void WidgetContainer::add(Widget * widget) {
 	m_widgets.push_back(widget);
 }
 
-Widget * WidgetContainer::getAtPos(const Vec2f & mousePos) const {
+Widget * WidgetContainer::getWidgetAt(const Vec2f & mousePos) const {
 	
-	{Widget * w; BOOST_FOREACH(w, m_widgets) {
+	BOOST_FOREACH(Widget * widget, m_widgets) {
 		
-		if(!w->getCheck())
+		if(!widget->isEnabled()) {
 			continue;
+		}
 		
-		Widget * mouseOverWidget = w->IsMouseOver(mousePos);
-		
-		if(mouseOverWidget)
+		if(Widget * mouseOverWidget = widget->getWidgetAt(mousePos)) {
 			return mouseOverWidget;
-	}}
-
+		}
+		
+	}
+	
 	return NULL;
 }
 
-Widget * WidgetContainer::GetZoneWithID(MenuButton _iID) {
-	
-	{Widget * w; BOOST_FOREACH(w, m_widgets) {
-		if(Widget * widget = w->GetZoneWithID(_iID))
-			return widget;
-	}}
-
-	return NULL;
+void WidgetContainer::move(const Vec2f & offset) {
+	BOOST_FOREACH(Widget * w, m_widgets) {
+		w->move(offset);
+	}
 }
 
-void WidgetContainer::Move(const Vec2f & offset) {
+void WidgetContainer::drawDebug() {
 	
-	{Widget * w; BOOST_FOREACH(w, m_widgets) {
-		w->Move(offset);
-	}}
-}
-
-void WidgetContainer::drawDebug()
-{
-	if(g_debugInfo != InfoPanelGuiDebug)
+	if(g_debugInfo != InfoPanelGuiDebug) {
 		return;
+	}
 	
-	{Widget * w; BOOST_FOREACH(w, m_widgets) {
-		drawLineRectangle(Rectf(w->m_rect), 0.f, Color::red);
-	}}
+	BOOST_FOREACH(Widget * w, m_widgets) {
+		drawLineRectangle(w->m_rect, 0.f, Color::red);
+	}
+	
 }

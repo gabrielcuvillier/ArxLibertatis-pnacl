@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -46,11 +46,10 @@ class WinHTTPSession : public Session {
 	
 public:
 	
-	explicit WinHTTPSession(const std::string & userAgent) {
-		m_session = WinHttpOpen(platform::WideString(userAgent),
-		                        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
-		                        WINHTTP_NO_PROXY_BYPASS, 0);
-	};
+	explicit WinHTTPSession(const std::string & userAgent)
+		: m_session(WinHttpOpen(platform::WideString(userAgent), WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+		                        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0))
+	{ }
 	
 	~WinHTTPSession() {
 		if(m_connection) {
@@ -85,7 +84,7 @@ HINTERNET WinHTTPSession::setup(const Request & request, LPCWSTR method) {
 	
 	URL_COMPONENTS url;
 	ZeroMemory(&url, sizeof(url));
-  url.dwStructSize = sizeof(url);
+	url.dwStructSize = sizeof(url);
 	url.dwSchemeLength = url.dwHostNameLength = url.dwUrlPathLength = DWORD(-1);
 	if(WinHttpCrackUrl(wurl, 0, 0, &url) != TRUE) {
 		throw new Response("Invalid URL: \"" + request.url() + "\"");
@@ -215,7 +214,7 @@ Response * WinHTTPSession::get(const Request & request) {
 	
 	std::basic_string<WCHAR> redirect;
 	BOOL result = WinHttpSendRequest(wrequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
-	                                 WINHTTP_NO_REQUEST_DATA, 0, 0, (DWORD_PTR)&redirect);
+	                                 WINHTTP_NO_REQUEST_DATA, 0, 0, reinterpret_cast<DWORD_PTR>(&redirect));
 	if(!result) {
 		return new Response(errorString());
 	}
@@ -246,7 +245,7 @@ Response * WinHTTPSession::post(const POSTRequest & request) {
 	DWORD size = request.data().size();
 	std::basic_string<WCHAR> redirect;
 	BOOL result = WinHttpSendRequest(wrequest, headers, -1, data, size, size,
-	                                (DWORD_PTR)&redirect);
+	                                reinterpret_cast<DWORD_PTR>(&redirect));
 	if(!result) {
 		return new Response("Could not send request: " + errorString());
 	}

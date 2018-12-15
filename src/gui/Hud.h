@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -22,11 +22,10 @@
 
 #include <vector>
 
+#include "core/TimeTypes.h"
 #include "game/GameTypes.h"
 #include "gui/hud/HudCommon.h"
 #include "math/Types.h"
-
-extern bool bIsAiming;
 
 /*!
  * \brief the hit strength diamond shown at the bottom of the UI.
@@ -44,7 +43,7 @@ private:
 	
 	float m_intensity;
 	bool m_flashActive;
-	unsigned long m_flashTime;
+	PlatformDuration m_flashTime;
 	float m_flashIntensity;
 	
 public:
@@ -61,7 +60,7 @@ public:
 class BookIconGui : public HudIconBase {
 private:
 	Vec2f m_size;
-	unsigned long ulBookHaloTime;
+	PlatformDuration ulBookHaloTime;
 	
 public:
 	BookIconGui();
@@ -86,20 +85,24 @@ public:
 };
 
 class StealIconGui : public HudIconBase {
-private:
+	
 	Vec2f m_size;
-	Vec2f m_pos;
 	
 public:
+	
+	StealIconGui()
+		: m_size(0.f)
+	{ }
+	
 	void init();
 	void updateRect(const Rectf & parent);
 	void updateInput();
 	void draw();
+	
 };
 
 class LevelUpIconGui : public HudIconBase {
 private:
-	Vec2f m_pos;
 	Vec2f m_size;
 	bool m_visible;
 	
@@ -114,10 +117,9 @@ public:
 
 class PurseIconGui : public HudIconBase {
 private:
-	Vec2f m_pos;
 	Vec2f m_size;
 	
-	long m_haloTime;
+	PlatformDuration m_haloTime;
 	
 public:
 	PurseIconGui();
@@ -133,7 +135,6 @@ public:
 class CurrentTorchIconGui : public HudItem {
 private:
 	bool m_isActive;
-	Rectf m_rect;
 	TextureContainer * m_tex;
 	Vec2f m_size;
 	
@@ -169,9 +170,9 @@ public:
 class QuickSaveIconGui {
 private:
 	//! Time in ms to show the icon
-	u32 m_duration;
-	//! Remaining time for the quick sive icon
-	unsigned m_remainingTime;
+	GameDuration m_duration;
+	//! Remaining time for the quick save icon
+	GameDuration m_remainingTime;
 	
 public:
 	QuickSaveIconGui();
@@ -231,13 +232,13 @@ public:
 	void draw();
 };
 
-//The cogwheel icon that shows up when switching from mouseview to interaction mode.
+// The cogwheel icon that shows up when switching from mouseview to interaction mode.
 class MecanismIcon : public HudItem {
 private:
 	Vec2f m_iconSize;
 	TextureContainer * m_tex;
 	Color m_color;
-	long m_timeToDraw;
+	GameDuration m_timeToDraw;
 	long m_nbToDraw;
 	
 public:
@@ -316,7 +317,7 @@ public:
 	ActiveSpellsGui();
 	
 	void init();
-	void update(Rectf parent);
+	void update(const Rectf & parent);
 	void updateInput(const Vec2f & mousePos);
 	void draw();
 	
@@ -325,6 +326,9 @@ private:
 	Vec2f m_slotSize;
 	Vec2f m_spacerSize;
 	Vec2f m_slotSpacerSize;
+	bool m_flickNow;
+	PlatformDuration m_flickTime;
+	PlatformDuration m_flickInterval;
 	
 	std::vector<ActiveSpellIconSlot> m_slots;
 	
@@ -365,7 +369,8 @@ public:
 	StealthGauge();
 	
 	void init();
-	void update(const Rectf & parent);
+	void updateRect(const Rectf & parent);
+	void update();
 	void draw();
 };
 
@@ -377,7 +382,7 @@ enum FadeDirection {
 class PlayerInterfaceFader {
 private:
 	long m_direction;
-	float m_current;
+	PlatformDuration m_current;
 	
 public:
 	PlayerInterfaceFader();
@@ -391,6 +396,7 @@ public:
 class HudRoot : public HudItem {
 public:
 	void setScale(float scale);
+	float getScale();
 	
 	void init();
 	void updateInput();

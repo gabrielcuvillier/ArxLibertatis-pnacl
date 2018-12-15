@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -36,8 +36,8 @@ extern ARX_NECKLACE necklace;
 void NecklaceInit();
 void ReleaseNecklace();
 
-void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos);
+void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos, Rectf rect, float scale);
 
-}
+} // namespace gui
 
 #endif // ARX_GUI_BOOK_NECKLACE_H

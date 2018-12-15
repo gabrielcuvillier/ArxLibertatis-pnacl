@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -25,12 +25,17 @@
 #include <string>
 #include <ctime>
 
+#include <boost/iterator/counting_iterator.hpp>
+#include <boost/iterator/transform_iterator.hpp>
+
 #include "graphics/image/Image.h"
 #include "io/fs/FilePath.h"
 #include "io/resource/ResourcePath.h"
 #include "util/HandleType.h"
 
-ARX_HANDLE_TYPEDEF(long, SavegameHandle, -1);
+typedef HandleType<struct SavegameHandleTag, long, -1> SavegameHandle;
+
+extern const fs::path SAVEGAME_NAME;
 
 struct SaveGame {
 	
@@ -44,55 +49,57 @@ struct SaveGame {
 	long level;
 	std::time_t stime;
 	
-	std::string time;
-	
 	SaveGame()
 		: quicksave(false)
 		, level(0)
 		, stime(0)
-	{}
+	{ }
+	
 };
 
 //! Central management of the list of savegames.
 class SaveGameList {
 	
+	struct IndexToHandle {
+		typedef SavegameHandle result_type;
+		SavegameHandle operator()(size_t index) const {
+			return SavegameHandle(long(index));
+		}
+	};
+	
+	typedef boost::counting_iterator<size_t> iterator_base;
+	
 public:
 	
-	typedef std::vector<SaveGame>::const_iterator iterator;
+	typedef boost::transform_iterator<IndexToHandle, iterator_base> iterator;
+	typedef boost::transform_iterator<IndexToHandle, iterator_base> const_iterator;
 	
 	//! Update the savegame list. This is automatically called by save() and remove()
 	void update(bool verbose = false);
 	
 	/*! Save the current game state
 	 * \param name The name of the new savegame.
-	 * \param overwrite A savegame to overwrite with this save or end()
+	 * \param overwrite A savegame to overwrite with this save or SavegameHandle()
 	 * \return true if the game was successfully saved.
 	 */
-	bool save(const std::string & name, iterator overwrite, const Image & thumbnail = Image());
-	
-	/*! Save the current game state
-	 * \param name The name of the new savegame.
-	 * \param overwrite A savegame to overwrite with this save or end()
-	 * \return true if the game was successfully saved.
-	 */
-	bool save(const std::string & name, size_t overwrite = size_t(-1), const Image & th = Image()) {
-		return save(name, (overwrite == size_t(-1)) ? end() : begin() + overwrite, th);
-	}
+	bool save(const std::string & name, SavegameHandle overwrite = SavegameHandle(),
+	          const Image & thumbnail = Image());
 	
 	//! Perform a quicksave: Maintain a number of quicksave slots and always overwrite the oldest one.
 	bool quicksave(const Image & thumbnail = Image());
 	
 	//! Return the newest savegame or end() if there is no savegame.
-	iterator quickload();
+	SavegameHandle quickload();
 	
 	//! Delete the given savegame. This removes the actual on-disk files.
 	void remove(SavegameHandle handle);
 	
-	iterator begin() const { return savelist.begin(); }
-	iterator end() const { return savelist.end(); }
+	iterator begin() const { return iterator(iterator_base(0), IndexToHandle()); }
+	iterator end() const { return iterator(iterator_base(size()), IndexToHandle()); }
 	
 	size_t size() const { return savelist.size(); }
-	const SaveGame & operator[](size_t index) const { return savelist[index]; }
+	bool empty() const { return savelist.empty(); }
+	const SaveGame & operator[](SavegameHandle handle) const { return savelist[size_t(handle.handleData())]; }
 	
 private:
 	

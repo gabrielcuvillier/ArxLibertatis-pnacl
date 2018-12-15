@@ -18,7 +18,7 @@
 # SDL2_BUILDING_LIBRARY Don't link against SDL2main - this means the user is responsible
 #                       for abstracting their own main() from OS-specific entry points.
 #
-# For OS X, this module will automatically add the -framework Cocoa on your behalf.
+# For macOS, this module will automatically add the -framework Cocoa on your behalf.
 #
 # $SDL2DIR is an environment variable that would
 # correspond to the ./configure --prefix=$SDL2DIR
@@ -28,14 +28,14 @@
 # Modified by Eric Wing.
 # Added code to assist with automated building by using environmental variables
 # and providing a more controlled/consistent search behavior.
-# Added new modifications to recognize OS X frameworks and
+# Added new modifications to recognize macOS frameworks and
 # additional Unix paths (FreeBSD, etc).
 # Also corrected the header search path to follow "proper" SDL guidelines.
 # Added a search for SDL2main which is needed by some platforms.
 # Added a search for threads which is needed by some platforms.
 # Added needed compile switches for MinGW.
 #
-# On OSX, this will prefer the Framework version (if found) over others.
+# On macOS, this will prefer the Framework version (if found) over others.
 # People will have to manually change the cache values of
 # SDL2_LIBRARY to override this selection or set the CMake environment
 # CMAKE_INCLUDE_PATH to modify the search paths.
@@ -102,7 +102,7 @@ find_library(SDL2_LIBRARY
 		${_PC_SDL2_LIBRARY_DIRS}
 		"${_SDL2_BASE_DIR}/lib"
 	PATH_SUFFIXES lib64 lib
-	PATHS ${SDL2_SEARCH_PATHS}
+	PATHS ${_SDL2_SEARCH_PATHS}
 	DOC "The SDL2 library"
 )
 mark_as_advanced(SDL2_LIBRARY)
@@ -149,6 +149,11 @@ if(UNIX AND NOT DEFINED SDL2_VERSION_STRING AND _PC_SDL2_FOUND)
 	set(SDL2_VERSION_STRING "${_PC_SDL2_VERSION}")
 endif()
 
+if(SDL2_VERSION_STRING VERSION_EQUAL 2.0.9)
+	# Workaround for https://bugzilla.libsdl.org/show_bug.cgi?id=4362
+	set(SDL2_INCLUDE_DIR "${CMAKE_CURRENT_LIST_DIR}/SDL-2.0.9" "${SDL2_INCLUDE_DIR}")
+endif()
+
 
 include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(SDL2 REQUIRED_VARS SDL2_LIBRARY SDL2_INCLUDE_DIR
@@ -176,7 +181,7 @@ if(SDL2_LIBRARY)
 			list(APPEND SDL2_LIBRARIES ${SDL2MAIN_LIBRARY})
 	endif()
 	
-	# For OS X, SDL2 uses Cocoa as a backend so it must link to Cocoa.
+	# For macOS, SDL2 uses Cocoa as a backend so it must link to Cocoa.
 	if(APPLE)
 		list(APPEND SDL2_LIBRARIES "-framework Cocoa")
 	endif()

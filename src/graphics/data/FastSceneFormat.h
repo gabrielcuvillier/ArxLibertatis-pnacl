@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -48,7 +48,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "platform/Platform.h"
 
 
-#pragma pack(push,1)
+#pragma pack(push, 1)
 
 
 const float FTS_VERSION = 0.141f;
@@ -71,11 +71,11 @@ struct UNIQUE_HEADER3 {
 };
 
 struct FAST_VERTEX {
-	f32	sy;
-	f32	ssx;
-	f32	ssz;
-	f32	stu;
-	f32	stv;
+	f32 sy;
+	f32 ssx;
+	f32 ssz;
+	f32 stu;
+	f32 stv;
 };
 
 struct FAST_EERIEPOLY {
@@ -110,6 +110,10 @@ struct FAST_TEXTURE_CONTAINER {
 	char fic[256];
 };
 
+enum FastAnchorFlag {
+	FastAnchorFlagBlocked = 1 << 3
+};
+
 struct FAST_ANCHOR_DATA {
 	SavedVec3 pos;
 	f32 radius;
@@ -136,7 +140,7 @@ struct SAVE_EERIEPOLY {
 	SavedVec3 norm;
 	SavedVec3 norm2;
 	SavedTextureVertex v[4];
-	SavedTextureVertex tv[4];
+	char unused[32 * 4];
 	SavedVec3 nrml[4];
 	s32 tex;
 	SavedVec3 center;
@@ -163,19 +167,10 @@ struct FAST_EP_DATA {
 	
 	operator EP_DATA() const {
 		EP_DATA b;
-		b.p.x = px;
-		b.p.y = py;
+		b.tile.x = px;
+		b.tile.y = py;
 		b.idx = idx;
-		b.padd = padd;
 		return b;
-	}
-	
-	FAST_EP_DATA & operator=(const EP_DATA & a) {
-		px = a.p.x;
-		py = a.p.y;
-		idx = a.idx;
-		padd = a.padd;
-		return *this;
 	}
 	
 };

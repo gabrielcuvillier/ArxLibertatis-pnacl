@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -50,8 +50,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <stddef.h>
 #include <string>
 
+#include "core/TimeTypes.h"
 #include "graphics/Color.h"
 #include "graphics/data/Mesh.h"
+#include "gui/debug/DebugKeys.h"
 #include "io/resource/ResourcePath.h"
 #include "math/Types.h"
 
@@ -59,7 +61,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 class TextureContainer;
 struct EERIE_3DOBJ;
-struct EERIE_MULTI3DSCENE;
 
 const size_t MAX_GOLD_COINS_VISUALS = 7;
 extern TextureContainer * GoldCoinsTC[MAX_GOLD_COINS_VISUALS];
@@ -68,18 +69,10 @@ extern TextureContainer * TC_smoke;
 
 extern EERIE_3DOBJ * cameraobj;
 extern EERIE_3DOBJ * markerobj;
-extern Vec3f lastteleport;
-extern EERIE_CAMERA bookcam;
 extern Vec2s DANAEMouse;
-extern EERIE_CAMERA subj;
 extern Vec3f g_moveto;
-extern Vec2s STARTDRAG;
+extern Vec2s g_dragStartPos;
 extern EERIE_3DOBJ * GoldCoinsObj[MAX_GOLD_COINS_VISUALS];
-extern Vec3f Mscenepos;
-#if BUILD_EDIT_LOADSAVE
-extern EERIE_MULTI3DSCENE * mse;
-extern long ADDED_IO_NOT_SAVED;
-#endif
 extern Entity * COMBINE;
 extern res::path LastLoadedScene;
 
@@ -87,14 +80,13 @@ extern std::string TELEPORT_TO_LEVEL;
 extern std::string TELEPORT_TO_POSITION;
 
 extern float PULSATE;
+
 extern float g_framedelay;
 
 extern bool g_requestLevelInit;
 
 extern long CURRENTLEVEL;
 extern long TELEPORT_TO_ANGLE;
-
-extern float GLOBAL_SLOWDOWN;
 
 inline float bowZoomFromDuration(float duration) {
 	return duration / 710.f;
@@ -115,23 +107,18 @@ inline Vec2f RATIO_2(const Vec2f & in) {
 class Image;
 extern Image savegame_thumbnail;
 
-extern float Original_framedelay;
-extern bool LOADEDD;
+enum ChangeLevelIcon {
+	NoChangeLevel,
+	ConfirmChangeLevel,
+	ChangeLevelNow
+};
+extern ChangeLevelIcon CHANGE_LEVEL_ICON;
 
-extern bool g_debugToggles[10];
-extern bool g_debugTriggers[10];
-extern u32 g_debugTriggersTime[10];
-static const u32 g_debugTriggersDecayDuration = 200;
-extern float g_debugValues[10];
+extern Vec3f LastValidPlayerPos;
 
-extern long		CHANGE_LEVEL_ICON;
+void SetEditMode();
 
-void SetEditMode(long ed, const bool stop_sound = true);
-
-void SendGameReadyMsg();
-void ARX_SetAntiAliasing();
 void DANAE_StartNewQuest();
-void DanaeRestoreFullScreen();
 bool AdjustUI();
 
 void levelInit();
@@ -142,9 +129,12 @@ void ManageCombatModeAnimations();
 void ManageCombatModeAnimationsEND();
 void ManageNONCombatModeAnimations();
 
+/*!
+ * Returns IO under cursor, be it in inventories or in scene
+ * Returns NULL if no IO under cursor
+ */
 Entity * FlyingOverObject(const Vec2s & pos);
 
 void runGame();
-
 
 #endif // ARX_CORE_CORE_H

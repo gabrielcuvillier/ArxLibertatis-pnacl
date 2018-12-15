@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,6 +23,10 @@
 class Entity;
 class TextureContainer;
 
+bool cursorIsSpecial();
+void cursorSetInteraction();
+void cursorSetRedistribute(long value);
+
 extern TextureContainer * cursorMovable;
 
 enum EntityMoveCursor {
@@ -35,8 +39,8 @@ extern EntityMoveCursor CANNOT_PUT_IT_HERE;
 
 void cursorTexturesInit();
 
-bool Manage3DCursor(Entity * io, bool simulate);
+bool Manage3DCursor(Entity * io, bool simulate, bool draginter = false);
 
-void ARX_INTERFACE_RenderCursor(bool flag = false);
+void ARX_INTERFACE_RenderCursor(bool flag, bool draginter = false);
 
 #endif // ARX_GUI_CURSOR_H

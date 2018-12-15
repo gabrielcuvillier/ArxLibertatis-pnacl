@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,32 +20,36 @@
 #include "gui/menu/MenuCursor.h"
 
 #include "core/Core.h"
+#include "core/GameTime.h"
 
 #include "graphics/Draw.h"
 #include "graphics/DrawLine.h"
 #include "graphics/Renderer.h"
 #include "graphics/texture/TextureStage.h"
 
+#include "gui/Interface.h"
+
 #include "input/Input.h"
 
 extern TextureContainer * scursor[];
 
-CursorTrail::CursorTrail() {
-	m_storedTime = 0;
-	iNbOldCoord = 0;
-	iMaxOldCoord = 40;
-}
+CursorTrail::CursorTrail()
+	: m_storedTime(0)
+	, iNbOldCoord(0)
+	, iMaxOldCoord(40)
+{ }
 
 void CursorTrail::reset() {
 	iNbOldCoord = 0;
 }
 
-void CursorTrail::add(float time, const Vec2s & pos)
+void CursorTrail::add(PlatformDuration time, const Vec2s & pos)
 {
 	iOldCoord[iNbOldCoord] = pos;
 	
-	const float targetFPS = 61.f;
-	const float targetDelay = 1000.f / targetFPS;
+	const s64 targetFPS = 61;
+	const PlatformDuration targetDelay = PlatformDurationUs((1000 * 1000) / targetFPS);
+	
 	m_storedTime += time;
 	if(m_storedTime > targetDelay) {
 		m_storedTime = std::min(targetDelay, m_storedTime - targetDelay);
@@ -65,7 +69,9 @@ void CursorTrail::draw() {
 
 bool CursorTrail::ComputePer(const Vec2s & p1, const Vec2s & p2, TexturedVertex * v1, TexturedVertex * v2, float size) {
 	
-	Vec2f sTemp((float)(p2.x - p1.x), (float)(p2.y - p1.y));
+	Vec2f p1f = Vec2f(p1);
+	
+	Vec2f sTemp = Vec2f(p2) - p1f;
 	float fTemp = sTemp.x;
 	sTemp.x = -sTemp.y;
 	sTemp.y = fTemp;
@@ -78,10 +84,10 @@ bool CursorTrail::ComputePer(const Vec2s & p1, const Vec2s & p2, TexturedVertex 
 
 	v1->p.x = sTemp.x * fMag;
 	v1->p.y = sTemp.y * fMag;
-	v2->p.x = ((float)p1.x) - v1->p.x;
-	v2->p.y = ((float)p1.y) - v1->p.y;
-	v1->p.x += (float)p1.x;
-	v1->p.y += (float)p1.y;
+	v2->p.x = p1f.x - v1->p.x;
+	v2->p.y = p1f.y - v1->p.y;
+	v1->p.x += p1f.x;
+	v1->p.y += p1f.y;
 
 	return true;
 }
@@ -99,13 +105,12 @@ void CursorTrail::DrawLine2D(float _fSize, Color3f color) {
 	
 	Color3f currentColor = incColor;
 	
-	GRenderer->SetBlendFunc(BlendDstColor, BlendInvDstColor);
+	UseRenderState state(render2D().blend(BlendDstColor, BlendInvDstColor));
 	GRenderer->ResetTexture(0);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
 	
 	TexturedVertex v[4];
 	v[0].p.z = v[1].p.z = v[2].p.z = v[3].p.z = 0.f;
-	v[0].rhw = v[1].rhw = v[2].rhw = v[3].rhw = 1.f;
+	v[0].w = v[1].w = v[2].w = v[3].w = 1.f;
 	
 	v[0].color = v[2].color = currentColor.toRGB();
 	
@@ -134,7 +139,6 @@ void CursorTrail::DrawLine2D(float _fSize, Color3f color) {
 		
 	}
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
 }
 
 
@@ -143,43 +147,37 @@ MenuCursor::MenuCursor()
 {
 	exited = true;
 	
-	bMouseOver=false;
+	bMouseOver = false;
 	
-	m_currentFrame=0;
-	lFrameDiff = 0.f;
+	m_currentFrame = 0;
+	lFrameDiff = 0;
 }
 
-MenuCursor::~MenuCursor()
-{
-}
+MenuCursor::~MenuCursor() { }
 
 void MenuCursor::SetMouseOver() {
-	bMouseOver=true;
+	bMouseOver = true;
 }
 
-void MenuCursor::DrawOneCursor(const Vec2s& mousePos) {
+void MenuCursor::DrawOneCursor(const Vec2s & mousePos) {
 	
 	if(!GInput->isMouseInWindow()) {
 		return;
 	}
 	
-	GRenderer->GetTextureStage(0)->setMinFilter(TextureStage::FilterNearest);
-	GRenderer->GetTextureStage(0)->setMagFilter(TextureStage::FilterNearest);
-	GRenderer->GetTextureStage(0)->setWrapMode(TextureStage::WrapClamp);
-
-	EERIEDrawBitmap2(Rectf(Vec2f(mousePos), m_size.x, m_size.y),
-	                 0.00000001f, scursor[m_currentFrame], Color::white);
-
-	GRenderer->GetTextureStage(0)->setMinFilter(TextureStage::FilterLinear);
-	GRenderer->GetTextureStage(0)->setMagFilter(TextureStage::FilterLinear);
-	GRenderer->GetTextureStage(0)->setWrapMode(TextureStage::WrapRepeat);
+	UseTextureState textureState(getInterfaceTextureFilter(), TextureStage::WrapClamp);
+	
+	float scale = getInterfaceScale(config.interface.cursorScale, config.interface.cursorScaleInteger);
+	EERIEDrawBitmap(Rectf(Vec2f(mousePos), m_size.x * scale, m_size.y * scale),
+	                0.00000001f, scursor[m_currentFrame], Color::white);
+	
 }
 
 void MenuCursor::reset() {
 	trail.reset();
 }
 
-void MenuCursor::update(float time) {
+void MenuCursor::update() {
 	
 	bool inWindow = GInput->isMouseInWindow();
 	if(inWindow && exited) {
@@ -190,21 +188,19 @@ void MenuCursor::update(float time) {
 	
 	Vec2s iDiff = m_size / Vec2s(2);
 	
-	trail.add(time, GInput->getMousePosAbs() + iDiff);
+	trail.add(g_platformTime.lastFrameDuration(), GInput->getMousePosition() + iDiff);
 }
 
-
-extern float ARXDiffTimeMenu;
 
 void MenuCursor::DrawCursor() {
 	
 	trail.draw();
 	
-	DrawOneCursor(GInput->getMousePosAbs());
-
-	lFrameDiff += ARXDiffTimeMenu;
-
-	if(lFrameDiff > 70.f) {
+	DrawOneCursor(GInput->getMousePosition());
+	
+	lFrameDiff += g_platformTime.lastFrameDuration();
+	
+	if(lFrameDiff > PlatformDurationMs(70)) {
 		if(bMouseOver) {
 			if(m_currentFrame < 4) {
 				m_currentFrame++;
@@ -213,21 +209,22 @@ void MenuCursor::DrawCursor() {
 					m_currentFrame--;
 				}
 			}
-			bMouseOver=false;
+			bMouseOver = false;
 		} else {
 			if(m_currentFrame > 0) {
 				m_currentFrame++;
-
-				if(m_currentFrame > 7)
-					m_currentFrame=0;
+				if(m_currentFrame > 7) {
+					m_currentFrame = 0;
+				}
 			}
 		}
-
-		lFrameDiff = 0.f;
+		lFrameDiff = 0;
 	}
-
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
+	
 }
+
+MenuCursor * pMenuCursor = NULL;
+
 
 ThumbnailCursor g_thumbnailCursor;
 

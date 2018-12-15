@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -48,54 +48,54 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "platform/Time.h"
 
-GameTime arxtime;
+PlatformTime g_platformTime;
+
+GameTime g_gameTime;
+
+void PlatformTime::updateFrame() {
+	
+	PlatformInstant currentTime = platform::getTime();
+	
+	if(m_frameStartTime == 0) {
+		m_frameStartTime = currentTime;
+	}
+	arx_assert(currentTime >= m_frameStartTime);
+	
+	m_lastFrameDuration = currentTime - m_frameStartTime;
+	
+	// Limit simulation time per frame
+	m_lastFrameDuration = std::min(m_lastFrameDuration, PlatformDurationMs(100));
+	
+	m_frameStartTime = currentTime;
+}
 
 GameTime::GameTime() {
-	
-	// TODO can't call init from constructor platform::getTimeUs() requires init
-	// potential out-of-order construction resulting in a divide-by-zero
-	start_time         = 0;
-	pause_time         = 0;
-	paused             = false;
-	m_now_us           = 0;
-	frame_time_us      = 0;
-	last_frame_time_us = 0;
-	frame_delay_ms     = 0.0f;
+	reset(0);
 }
 
-void GameTime::init() {
-	
-	start_time         = platform::getTimeUs();
-	pause_time         = 0;
-	paused             = false;
-	m_now_us           = 0;
-	frame_time_us      = 0;
-	last_frame_time_us = 0;
-	frame_delay_ms     = 0.0f;
+void GameTime::reset(const GameInstant time) {
+	m_now = time;
+	m_lastFrameDuration = 0;
+	m_speed = 1.f;
+	m_paused = PauseInitial;
 }
 
-void GameTime::pause() {
-	if(!is_paused()) {
-		pause_time = platform::getTimeUs();
-		paused     = true;
+void GameTime::update(PlatformDuration frameDuration) {
+	
+	GameDuration delta = GameDurationUs(toUs(frameDuration));
+	
+	arx_assert(delta >= 0);
+	
+	if(m_speed != 1.f) {
+		delta -= GameDurationMsf(toMsf(delta) * (1.f - m_speed));
 	}
-}
-
-void GameTime::resume() {
-	if(is_paused()) {
-		start_time += platform::getElapsedUs(pause_time);
-		pause_time = 0;
-		paused     = false;
+	
+	arx_assert(delta >= 0);
+	
+	if(isPaused()) {
+		delta = 0;
 	}
-}
-
-void GameTime::force_time_restore(const unsigned long time) {
 	
-	u64 requested_time = u64(time * 1000);
-	
-	start_time = platform::getElapsedUs(requested_time);
-	m_now_us = requested_time;
-	
-	pause_time = 0;
-	paused     = false;
+	m_lastFrameDuration = delta;
+	m_now += delta;
 }

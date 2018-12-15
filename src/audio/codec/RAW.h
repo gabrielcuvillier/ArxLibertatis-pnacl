@@ -58,20 +58,16 @@ class CodecRAW : public Codec {
 public:
 	
 	CodecRAW();
-	~CodecRAW();
 	
 	aalError setHeader(void * header);
 	void setStream(PakFileHandle * stream);
 	aalError setPosition(size_t position);
 	
-	size_t getPosition();
-	
-	aalError read(void * buffer, size_t to_read, size_t & read);
+	aalError read(void * buffer, size_t bufferSize, size_t & read);
 	
 private:
 	
-	PakFileHandle * stream;
-	size_t cursor;
+	PakFileHandle * m_stream;
 	
 };
 

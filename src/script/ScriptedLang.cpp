@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -55,8 +55,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "script/ScriptUtils.h"
 
 
-extern SCRIPT_EVENT AS_EVENT[];
-
 namespace script {
 
 namespace {
@@ -76,6 +74,8 @@ public:
 		return Success;
 	}
 	
+	Result peek(Context & context) { return execute(context); }
+	
 };
 
 class GotoCommand : public Command {
@@ -84,7 +84,7 @@ class GotoCommand : public Command {
 	
 public:
 	
-	GotoCommand(std::string command, bool _sub = false) : Command(command), sub(_sub) { }
+	GotoCommand(const std::string & command, bool _sub = false) : Command(command), sub(_sub) { }
 	
 	Result execute(Context & context) {
 		
@@ -94,7 +94,7 @@ public:
 		
 		if(!sub) {
 			size_t pos = context.skipCommand();
-			if(pos != (size_t)-1) {
+			if(pos != size_t(-1)) {
 				ScriptWarning << "unexpected text at " << pos;
 			}
 		}
@@ -107,6 +107,8 @@ public:
 		return Jumped;
 	}
 	
+	Result peek(Context & context) { return execute(context); }
+	
 };
 
 class AbortCommand : public Command {
@@ -115,7 +117,7 @@ class AbortCommand : public Command {
 	
 public:
 	
-	AbortCommand(std::string command, Result _result) : Command(command), result(_result) { }
+	AbortCommand(const std::string & command, Result _result) : Command(command), result(_result) { }
 	
 	Result execute(Context & context) {
 		
@@ -125,6 +127,8 @@ public:
 		
 		return result;
 	}
+	
+	Result peek(Context & context) { return execute(context); }
 	
 };
 
@@ -168,6 +172,8 @@ public:
 		return Success;
 	}
 	
+	Result peek(Context & context) { return execute(context); }
+	
 };
 
 class SetMainEventCommand : public Command {
@@ -182,7 +188,9 @@ public:
 		
 		DebugScript(' ' << event);
 		
-		ARX_SCRIPT_SetMainEvent(context.getEntity(), event);
+		if(context.getEntity()) {
+			context.getEntity()->mainevent = ScriptEventName::parse(event);
+		}
 		
 		return Success;
 	}
@@ -217,14 +225,14 @@ public:
 			return Failed;
 		}
 		
-		EERIE_SCRIPT * script = context.getMaster();
+		Entity * entity = context.getEntity();
 		if(start) {
-			script->timers[t] = arxtime.now_ul();
-			if(script->timers[t] == 0) {
-				script->timers[t] = 1;
+			entity->m_scriptTimers[t] = g_gameTime.now();
+			if(entity->m_scriptTimers[t] == 0) {
+				entity->m_scriptTimers[t] = GameInstantMs(1);
 			}
 		} else {
-			script->timers[t] = 0;
+			entity->m_scriptTimers[t] = 0;
 		}
 		
 		return Success;
@@ -268,7 +276,7 @@ public:
 			groupname = context.getStringVar(context.getWord());
 		}
 		
-		std::string event = context.getWord();
+		std::string eventname = context.getWord();
 		
 		std::string zonename;
 		if(zone) {
@@ -284,27 +292,26 @@ public:
 		if(!group && !zone && !radius) {
 			target = context.getStringVar(context.getWord());
 			
-			// TODO(broken-scripts) work around broken scripts 
+			// TODO(broken-scripts) work around broken scripts
 			for(size_t i = 0; i < SM_MAXCMD; i++) {
 				if(target == AS_EVENT[i].name.c_str() + 3) {
-					std::swap(target, event);
+					std::swap(target, eventname);
 					break;
 				}
 			}
 		}
 		
-		std::string params = context.getWord();
+		ScriptParameters parameters = ScriptParameters::parse(context.getWord());
 		
 		if(radius) {
-			DebugScript(' ' << event << (params.empty() ? "" : " \"" + params + '"') << " to " << (group ? "group " + groupname : "everyone") << " in radius " << rad);
+			DebugScript(' ' << eventname << ' ' << parameters << " to " << (group ? "group " + groupname : "everyone") << " in radius " << rad);
 		} else if(zone) {
-			DebugScript(' ' << event << (params.empty() ? "" : " \"" + params + '"') << " to " << (group ? "group " + groupname : "everyone") << " in zone " << zonename);
+			DebugScript(' ' << eventname << ' ' << parameters << " to " << (group ? "group " + groupname : "everyone") << " in zone " << zonename);
 		} else {
-			DebugScript(' ' << event << (params.empty() ? "" : " \"" + params + '"') << " to " << target);
+			DebugScript(' ' << eventname << ' ' << parameters << " to " << target);
 		}
 		
-		Entity * oes = EVENT_SENDER;
-		EVENT_SENDER = context.getEntity();
+		ScriptEventName event = ScriptEventName::parse(eventname);
 		
 		Entity * io = context.getEntity();
 		
@@ -314,8 +321,7 @@ public:
 				const EntityHandle handle = EntityHandle(l);
 				Entity * e = entities[handle];
 				
-				if(!e || e == io
-				   || (e->ioflags & (IO_CAMERA|IO_MARKER))) {
+				if(!e || e == io || (e->ioflags & (IO_CAMERA | IO_MARKER))) {
 					continue;
 				}
 				
@@ -326,15 +332,14 @@ public:
 				if(((sendto & SEND_NPC) && (e->ioflags & IO_NPC))
 				   || ((sendto & SEND_FIX) && (e->ioflags & IO_FIX))
 				   || ((sendto & SEND_ITEM) && (e->ioflags & IO_ITEM))) {
-					
 					Vec3f _pos  = GetItemWorldPosition(e);
 					Vec3f _pos2 = GetItemWorldPosition(io);
-					
 					if(!fartherThan(_pos, _pos2, rad)) {
 						io->stat_sent++;
-						Stack_SendIOScriptEvent(e, SM_NULL, params, event);
+						Stack_SendIOScriptEvent(context.getEntity(), e, event, parameters);
 					}
 				}
+				
 			}
 			
 		} else if(zone) { // SEND EVENT TO ALL OBJECTS IN A ZONE
@@ -342,7 +347,6 @@ public:
 			ARX_PATH * ap = ARX_PATH_GetAddressByName(zonename);
 			if(!ap) {
 				ScriptWarning << "unknown zone: " << zonename;
-				EVENT_SENDER = oes;
 				return Failed;
 			}
 			
@@ -350,7 +354,7 @@ public:
 				const EntityHandle handle = EntityHandle(l);
 				Entity * e = entities[handle];
 				
-				if(!e || (e->ioflags & (IO_CAMERA|IO_MARKER))) {
+				if(!e || (e->ioflags & (IO_CAMERA | IO_MARKER))) {
 					continue;
 				}
 				
@@ -361,14 +365,13 @@ public:
 				if(((sendto & SEND_NPC) && (e->ioflags & IO_NPC))
 				   || ((sendto & SEND_FIX) && (e->ioflags & IO_FIX))
 				   || ((sendto & SEND_ITEM) && (e->ioflags & IO_ITEM))) {
-					
 					Vec3f _pos = GetItemWorldPosition(e);
-					
 					if(ARX_PATH_IsPosInZone(ap, _pos)) {
 						io->stat_sent++;
-						Stack_SendIOScriptEvent(e, SM_NULL, params, event);
+						Stack_SendIOScriptEvent(context.getEntity(), e, event, parameters);
 					}
 				}
+				
 			}
 			
 		} else if(group) { // sends an event to all members of a group
@@ -386,7 +389,8 @@ public:
 				}
 				
 				io->stat_sent++;
-				Stack_SendIOScriptEvent(e, SM_NULL, params, event);
+				Stack_SendIOScriptEvent(context.getEntity(), e, event, parameters);
+				
 			}
 			
 		} else { // single object event
@@ -394,15 +398,13 @@ public:
 			Entity * t = entities.getById(target, io);
 			if(!t) {
 				DebugScript(": target does not exist");
-				EVENT_SENDER = oes;
 				return Failed;
 			}
 			
 			io->stat_sent++;
-			Stack_SendIOScriptEvent(t, SM_NULL, params, event);
+			Stack_SendIOScriptEvent(context.getEntity(), t, event, parameters);
+			
 		}
-		
-		EVENT_SENDER = oes;
 		
 		return Success;
 	}
@@ -411,23 +413,9 @@ public:
 
 class SetEventCommand : public Command {
 	
-	typedef std::map<std::string, DisabledEvent> Events;
-	Events events;
-	
 public:
 	
-	SetEventCommand() : Command("setevent") {
-		events["collide_npc"] = DISABLE_COLLIDE_NPC;
-		events["chat"] = DISABLE_CHAT;
-		events["hit"] = DISABLE_HIT;
-		events["inventory2_open"] = DISABLE_INVENTORY2_OPEN;
-		events["detectplayer"] = DISABLE_DETECT;
-		events["hear"] = DISABLE_HEAR;
-		events["aggression"] = DISABLE_AGGRESSION;
-		events["main"] = DISABLE_MAIN;
-		events["cursormode"] = DISABLE_CURSORMODE;
-		events["explorationmode"] = DISABLE_EXPLORATIONMODE;
-	}
+	SetEventCommand() : Command("setevent") { }
 	
 	Result execute(Context & context) {
 		
@@ -436,16 +424,16 @@ public:
 		
 		DebugScript(' ' << name << ' ' << enable);
 		
-		Events::const_iterator it = events.find(name);
-		if(it == events.end()) {
-			ScriptWarning << "unknown event: " << name;
+		DisabledEvents mask = ScriptEventName::parse(name).toDisabledEventsMask();
+		if(!mask) {
+			ScriptWarning << "cannot disable event: " << name;
 			return Failed;
 		}
 		
 		if(enable) {
-			context.getMaster()->allowevents &= ~it->second;
+			context.getEntity()->m_disabledEvents &= ~mask;
 		} else {
-			context.getMaster()->allowevents |= it->second;
+			context.getEntity()->m_disabledEvents |= mask;
 		}
 		
 		return Success;
@@ -460,15 +448,12 @@ class IfCommand : public Command {
 		
 		char c = (var.empty() ? '\0' : var[0]);
 		
-		EERIE_SCRIPT * es = context.getMaster();
-		Entity * io = context.getEntity();
-		
 		switch(c) {
 			
 			case '^': {
 				
 				long l;
-				switch(getSystemVar(es, io, var, s, &f, &l)) {
+				switch(getSystemVar(context, var, s, &f, &l)) {
 					
 					case TYPE_TEXT: return TYPE_TEXT;
 					
@@ -479,12 +464,9 @@ class IfCommand : public Command {
 						return TYPE_FLOAT;
 					}
 					
-					default: {
-						ARX_DEAD_CODE();
-						return TYPE_TEXT;
-					}
-					
 				}
+				
+				arx_unreachable();
 			}
 			
 			case '#': {
@@ -493,7 +475,7 @@ class IfCommand : public Command {
 			}
 			
 			case '\xA7': {
-				f = GETVarValueLong(es->lvar, var);
+				f = GETVarValueLong(context.getEntity()->m_variables, var);
 				return TYPE_FLOAT;
 			}
 			
@@ -503,7 +485,7 @@ class IfCommand : public Command {
 			}
 			
 			case '@': {
-				f = GETVarValueFloat(es->lvar, var);
+				f = GETVarValueFloat(context.getEntity()->m_variables, var);
 				return TYPE_FLOAT;
 			}
 			
@@ -513,7 +495,7 @@ class IfCommand : public Command {
 			}
 			
 			case '\xA3': {
-				s = GETVarValueText(es->lvar, var);
+				s = GETVarValueText(context.getEntity()->m_variables, var);
 				return TYPE_TEXT;
 			}
 			
@@ -533,30 +515,30 @@ class IfCommand : public Command {
 	
 	class Operator {
 		
-		std::string name;
-		ValueType type;
+		std::string m_name;
+		ValueType m_type;
 		
 	public:
 		
-		Operator(const std::string & _name, ValueType _type) : name(_name), type(_type) { }
+		Operator(const std::string & name, ValueType type) : m_name(name), m_type(type) { }
 		
 		virtual ~Operator() { }
 		
 		virtual bool number(const Context & context, float left, float right) {
 			ARX_UNUSED(left), ARX_UNUSED(right);
-			ScriptWarning << "operator " << name << " is not aplicable to numbers";
+			ScriptWarning << "operator " << m_name << " is not aplicable to numbers";
 			return true;
 		}
 		
 		virtual bool text(const Context & context, const std::string & left, const std::string & right) {
 			ARX_UNUSED(left), ARX_UNUSED(right);
-			ScriptWarning << "operator " << name << " is not aplicable to text";
+			ScriptWarning << "operator " << m_name << " is not aplicable to text";
 			return false;
 		}
 		
 		std::string getName() { return "if"; }
-		const std::string & getOperator() { return name; }
-		ValueType getType() { return type; }
+		const std::string & getOperator() { return m_name; }
+		ValueType getType() { return m_type; }
 		
 	};
 	
@@ -673,7 +655,8 @@ class IfCommand : public Command {
 		IsInOperator() : Operator("isin", TYPE_TEXT) { }
 		
 		bool text(const Context & context, const std::string & needle, const std::string & haystack) {
-			return ARX_UNUSED(context), (haystack.find(needle) != std::string::npos);
+			ARX_UNUSED(context);
+			return haystack.find(needle) != std::string::npos;
 		}
 		
 	};
@@ -685,11 +668,13 @@ class IfCommand : public Command {
 		EqualOperator() : Operator("==", TYPE_FLOAT) { }
 		
 		bool text(const Context & context, const std::string & left, const std::string & right) {
-			return ARX_UNUSED(context), (left == right);
+			ARX_UNUSED(context);
+			return left == right;
 		}
 		
 		bool number(const Context & context, float left, float right) {
-			return ARX_UNUSED(context), (left == right);
+			ARX_UNUSED(context);
+			return left == right;
 		}
 		
 	};
@@ -701,11 +686,13 @@ class IfCommand : public Command {
 		NotEqualOperator() : Operator("!=", TYPE_FLOAT) { }
 		
 		bool text(const Context & context, const std::string & left, const std::string & right) {
-			return ARX_UNUSED(context), (left != right);
+			ARX_UNUSED(context);
+			return left != right;
 		}
 		
 		bool number(const Context & context, float left, float right) {
-			return ARX_UNUSED(context), (left != right);
+			ARX_UNUSED(context);
+			return left != right;
 		}
 		
 	};
@@ -717,7 +704,8 @@ class IfCommand : public Command {
 		LessEqualOperator() : Operator("<=", TYPE_FLOAT) { }
 		
 		bool number(const Context & context, float left, float right) {
-			return ARX_UNUSED(context), (left <= right);
+			ARX_UNUSED(context);
+			return left <= right;
 		}
 		
 	};
@@ -729,7 +717,8 @@ class IfCommand : public Command {
 		LessOperator() : Operator("<", TYPE_FLOAT) { }
 		
 		bool number(const Context & context, float left, float right) {
-			return ARX_UNUSED(context), (left < right);
+			ARX_UNUSED(context);
+			return left < right;
 		}
 		
 	};
@@ -741,7 +730,8 @@ class IfCommand : public Command {
 		GreaterEqualOperator() : Operator(">=", TYPE_FLOAT) { }
 		
 		bool number(const Context & context, float left, float right) {
-			return ARX_UNUSED(context), (left >= right);
+			ARX_UNUSED(context);
+			return left >= right;
 		}
 		
 	};
@@ -753,7 +743,8 @@ class IfCommand : public Command {
 		GreaterOperator() : Operator(">", TYPE_FLOAT) { }
 		
 		bool number(const Context & context, float left, float right) {
-			return ARX_UNUSED(context), (left > right);
+			ARX_UNUSED(context);
+			return left > right;
 		}
 		
 	};
@@ -823,6 +814,8 @@ public:
 		return Success;
 	}
 	
+	Result peek(Context & context) { return execute(context); }
+	
 };
 
 class ElseCommand : public Command {
@@ -840,18 +833,17 @@ public:
 		return Success;
 	}
 	
+	Result peek(Context & context) { return execute(context); }
+	
 };
 
-}
+} // anonymous namespace
 
-static const std::string getName() {
+static std::string getName() {
 	return "timer";
 }
 
-void timerCommand(const std::string & timer, Context & context) {
-	
-	// Checks if the timer is named by caller or if it needs a default name
-	std::string timername = timer.empty() ? ARX_SCRIPT_Timer_GetDefaultName() : timer;
+void timerCommand(const std::string & name, Context & context) {
 	
 	bool mili = false, idle = false;
 	HandleFlags("mi") {
@@ -861,48 +853,43 @@ void timerCommand(const std::string & timer, Context & context) {
 	
 	std::string command = context.getWord();
 	
-	Entity * io = context.getEntity();
-	
 	if(command == "kill_local") {
 		DebugScript(" kill_local");
-		ARX_SCRIPT_Timer_Clear_All_Locals_For_IO(io);
+		ARX_SCRIPT_Timer_Clear_All_Locals_For_IO(context.getEntity());
 		return;
 	}
 	
-	ARX_SCRIPT_Timer_Clear_By_Name_And_IO(timername, io);
+	if(!name.empty()) {
+		ARX_SCRIPT_Timer_Clear_By_Name_And_IO(name, context.getEntity());
+	}
 	if(command == "off") {
-		DebugScript(timername << " off");
+		if(name.empty()) {
+			ScriptWarning << "Cannot turn off unamed timers";
+		}
+		DebugScript(name << " off");
 		return;
 	}
 	
 	long count = (long)context.getFloatVar(command);
-	long millisecons = (long)context.getFloat();
+	long interval = (long)context.getFloat();
 	
 	if(!mili) {
-		millisecons *= 1000;
+		// Seconds → millisecons
+		interval *= 1000;
 	}
 	
-	DebugScript(timername << ' ' << options << ' ' << count << ' ' << millisecons);
+	std::string timername = name.empty() ? getDefaultScriptTimerName(context.getEntity()) : name;
+	DebugScript(timername << ' ' << options << ' ' << count << ' ' << interval);
 	
 	size_t pos = context.skipCommand();
 	
-	long num = ARX_SCRIPT_Timer_GetFree();
-	if(num == -1) {
-		ScriptError << "no free timer available";
-		return;
-	}
-	
-	ActiveTimers++;
-	scr_timer[num].es = context.getScript();
-	scr_timer[num].exist = 1;
-	scr_timer[num].io = io;
-	scr_timer[num].msecs = millisecons;
-	scr_timer[num].name = timername;
-	scr_timer[num].pos = pos;
-	scr_timer[num].tim = arxtime.now_ul();
-	scr_timer[num].times = count;
-	
-	scr_timer[num].flags = (idle && io) ? 1 : 0;
+	SCR_TIMER & timer = createScriptTimer(context.getEntity(), timername);
+	timer.es = context.getScript();
+	timer.interval = GameDurationMs(interval);
+	timer.pos = pos;
+	timer.start = g_gameTime.now();
+	timer.count = count;
+	timer.idle = idle;
 	
 }
 

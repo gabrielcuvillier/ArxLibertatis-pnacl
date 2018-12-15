@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,20 +24,28 @@
 
 #include "gui/widget/Widget.h"
 
-class WidgetContainer
-{
+class WidgetContainer {
+	
 public:
-	std::vector<Widget *> m_widgets;
-public:
+	
 	WidgetContainer();
 	virtual ~WidgetContainer();
 	
-	void add(Widget * widget);
-	Widget * getAtPos(const Vec2f & mousePos) const;
+	void update();
+	void render(Widget * selected = NULL);
 	
-	Widget * GetZoneWithID(MenuButton zoneId);
-	void Move(const Vec2f & offset);
+	void add(Widget * widget);
+	Widget * getWidgetAt(const Vec2f & mousePos) const;
+	
+	void move(const Vec2f & offset);
 	void drawDebug();
+	
+	const std::vector<Widget *> & widgets() const { return m_widgets; }
+	
+private:
+	
+	std::vector<Widget *> m_widgets;
+	
 };
 
 #endif // ARX_GUI_WIDGET_WIDGETCONTAINER_H

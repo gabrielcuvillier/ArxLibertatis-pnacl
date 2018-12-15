@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -32,7 +32,14 @@ bool initLocalisation();
  * \param name The string to be looked up
  * \return The localized string based on the currently loaded locale file
  */
-std::string getLocalised( const std::string& name, const std::string& default_value = "" );
+std::string getLocalised(const std::string & name);
+
+/*!
+ * Returns the localized string for the given key name
+ * \param name The string to be looked up
+ * \return The localized string based on the currently loaded locale file
+ */
+std::string getLocalised(const std::string & name, const std::string & default_value);
 
 long getLocalisedKeyCount(const std::string & sectionname);
 

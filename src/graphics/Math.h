@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -53,28 +53,13 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <boost/numeric/conversion/cast.hpp>
 
-#include <glm/gtx/norm.hpp>
-#include <glm/gtx/spline.hpp>
+#include "math/GtxFunctions.h"
 
 #include "graphics/GraphicsTypes.h"
 #include "graphics/data/Mesh.h"
 #include "math/Random.h"
 #include "platform/Platform.h"
 
-/*!
- * Generate a random vertor with independently unform distributed components.
- *
- * \param min minimum value for all components (default: 0.f)
- * \param max maximum value for all components (default: 1.f)
- */
-inline Vec3f randomVec(float min = 0.f, float max = 1.f) {
-	float range = max - min;
-	return Vec3f(Random::getf() * range + min, Random::getf() * range + min, Random::getf() * range + min);
-}
-
-inline Vec3f randomVec3f() {
-	return Vec3f(Random::getf(), Random::getf(), Random::getf());
-}
 
 inline Color3f randomColor3f() {
 	return Color3f(Random::getf(), Random::getf(), Random::getf());
@@ -99,19 +84,6 @@ inline u8 clipByte255(int value) {
 	return static_cast<u8>(value);
 }
 
-//! Clamp a value to the range [0, 255]
-inline u8 clipByte(int value) {
-	
-	// clamp negative values to zero
-	value &= -(int)!(value < 0);
-	
-	return clipByte255(value);
-}
-
-inline long F2L_RoundUp(float val) {
-	return static_cast<long>(std::ceil(val));
-}
-
 bool CylinderInCylinder(const Cylinder & cyl1, const Cylinder & cyl2);
 bool SphereInCylinder(const Cylinder & cyl1, const Sphere & s);
 
@@ -120,7 +92,7 @@ inline T reinterpret(O v) {
 	ARX_STATIC_ASSERT(sizeof(T) == sizeof(O), "can only reinterpret to type of same size");
 	T t;
 	memcpy(&t, &v, sizeof(T));
-	return t; 
+	return t;
 }
 
 inline float ffsqrt(float f) {
@@ -131,15 +103,15 @@ inline float ffsqrt(float f) {
  * Obtain the approximated inverse of the square root of a float.
  * \brief  This code compute a fast 1 / sqrtf(v) approximation.
  * \note   Originaly from Matthew Jones (Infogrames).
- * \param  pValue  a float, the number we want the square root.
- * \return The square root of \a fValue, as a float.
+ * \param  value a float, the number we want the square root.
+ * \return The square root of \a value, as a float.
  */
 inline float FastRSqrt(float value) {
 	
 	s32 intval = reinterpret<s32, f32>(value);
 	
 	const int MAGIC_NUMBER = 0x5f3759df;
-			
+	
 	float half = value * 0.5f;
 	intval = MAGIC_NUMBER - (intval >> 1);
 	
@@ -171,7 +143,7 @@ void GenerateMatrixUsingVector(glm::mat4x4 & matrix, const Vec3f & vect, float r
 
 // QUATERNION Funcs/Defs
 
-glm::quat Quat_Slerp(const glm::quat & from, glm::quat to, float t);
+glm::quat Quat_Slerp(const glm::quat & from, glm::quat to, float ratio);
 
 glm::quat QuatFromAngles(const Anglef & angle);
 glm::mat4 toRotationMatrix(const Anglef & angle);
@@ -184,21 +156,9 @@ std::pair<Vec3f, Vec3f> angleToFrontUpVec(const Anglef & angle);
 
 // VECTORS Functions
 
-inline void ZRotatePoint(Vec3f * in, Vec3f * out, float c, float s) {
-	*out = Vec3f(in->x * c + in->y * s, in->y * c - in->x * s, in->z);
-}
-
-inline void YRotatePoint(Vec3f * in, Vec3f * out, float c, float s) {
-	*out = Vec3f(in->x * c + in->z * s, in->y, in->z * c - in->x * s);
-}
-
-inline void XRotatePoint(Vec3f * in, Vec3f * out, float c, float s) {
-	*out = Vec3f(in->x, in->y * c - in->z * s, in->y * s + in->z * c);
-}
-
-Vec3f VRotateX(const Vec3f in, const float angle);
-Vec3f VRotateY(const Vec3f in, const float angle);
-Vec3f VRotateZ(const Vec3f in, const float angle);
+Vec3f VRotateX(Vec3f in, float angle);
+Vec3f VRotateY(Vec3f in, float angle);
+Vec3f VRotateZ(Vec3f in, float angle);
 
 // Rotates counterclockwise zero at (0, 0, 1);
 Vec3f angleToVectorXZ(float angleDegrees);
@@ -208,18 +168,11 @@ Vec3f angleToVectorXZ_180offset(float angleDegrees);
 
 Vec3f angleToVector(const Anglef & angle);
 
-Vec3f CalcFaceNormal(const TexturedVertex * v);
-Vec3f CalcObjFaceNormal(const Vec3f & v0, const Vec3f & v1, const Vec3f & v2);
+Vec3f CalcFaceNormal(const Vec3f * v);
 bool Triangles_Intersect(const EERIE_TRI & v, const EERIE_TRI & u);
 
 inline float square(float x) {
 	return x * x;
-}
-
-//! \return vertical angle in radians
-inline float focalToFov(float focal) {
-	static const float imagePlaneHeight = 480;
-	return 2 * glm::atan(imagePlaneHeight / (2 * focal));
 }
 
 /*!
@@ -227,7 +180,7 @@ inline float focalToFov(float focal) {
  * may use an approximative way of computing sqrt !
  */
 inline float fdist(const Vec3f & from, const Vec3f & to) {
-	return ffsqrt(glm::distance2(from, to));
+	return ffsqrt(arx::distance2(from, to));
 }
 
 /*!
@@ -235,7 +188,7 @@ inline float fdist(const Vec3f & from, const Vec3f & to) {
  * may use an approximative way of computing sqrt !
  */
 inline float fdist(const Vec2f & from, const Vec2f & to) {
-	return ffsqrt(glm::distance2(from, to));
+	return ffsqrt(arx::distance2(from, to));
 }
 
 inline bool PointInCylinder(const Cylinder & cyl, const Vec3f & pt) {
@@ -250,11 +203,7 @@ inline bool PointInCylinder(const Cylinder & cyl, const Vec3f & pt) {
 		return false;
 	}
 	
-	if(!fartherThan(Vec2f(cyl.origin.x, cyl.origin.z), Vec2f(pt.x, pt.z), cyl.radius)) {
-		return true;
-	}
-	
-	return false;
+	return !fartherThan(Vec2f(cyl.origin.x, cyl.origin.z), Vec2f(pt.x, pt.z), cyl.radius);
 }
 
 inline long PointInUnderCylinder(const Cylinder & cyl, const Vec3f & pt) {
@@ -272,7 +221,10 @@ inline long PointInUnderCylinder(const Cylinder & cyl, const Vec3f & pt) {
 	return 0;
 }
 
-
+template <typename T>
+T positive_modulo(T a, T b) {
+	return (a % b) + T(a < 0) * b;
+}
 
 
 #ifdef ARX_DEBUG

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -95,8 +95,14 @@ public:
 	void assign(const char * utf8) { assign(utf8, std::strlen(utf8)); }
 	void assign(const std::string & utf8) { assign(utf8.data(), utf8.length()); }
 	
-	WideString & operator=(const char * utf8) { assign(utf8); return *this; }
-	WideString & operator=(const std::string & utf8) { assign(utf8); return *this; }
+	WideString & operator=(const char * utf8) {
+		assign(utf8);
+		return *this;
+	}
+	WideString & operator=(const std::string & utf8) {
+		assign(utf8);
+		return *this;
+	}
 	
 	std::string toUTF8() const;
 	static std::string toUTF8(const WCHAR * string, size_t length);

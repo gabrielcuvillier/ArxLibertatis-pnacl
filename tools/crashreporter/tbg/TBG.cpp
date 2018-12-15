@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -29,14 +29,13 @@
 #include <QXmlStreamReader>
 #include <QtConcurrentRun>
 
-#include "boost/scoped_ptr.hpp"
-
 #if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0)
 #include <QUrlQuery>
 #else
 typedef QUrl QUrlQuery;
 #endif
 
+#include <boost/scoped_ptr.hpp>
 #include <boost/range/size.hpp>
 
 #include "crashreporter/tbg/HTTPClient.h"
@@ -78,7 +77,7 @@ static std::string qUrlQueryToPostData(const QUrlQuery & query) {
 #endif
 }
 
-http::Response * Server::wait(QFuture<http::Response *> future) {
+http::Response * Server::wait(const QFuture<http::Response *> & future) {
 	
 	QEventLoop loop;
 	

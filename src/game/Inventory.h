@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <stddef.h>
 #include <string>
 #include <ostream>
+#include <utility>
 
 #include "game/GameTypes.h"
 #include "math/Types.h"
@@ -55,6 +56,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 class Entity;
 
 struct INVENTORY_SLOT {
+	
 	Entity * io;
 	bool show;
 	
@@ -62,9 +64,11 @@ struct INVENTORY_SLOT {
 		: io(NULL)
 		, show(false)
 	{}
+	
 };
 
 struct INVENTORY_DATA {
+	
 	Entity * io;
 	Vec2s m_size;
 	INVENTORY_SLOT slot[20][20];
@@ -72,8 +76,8 @@ struct INVENTORY_DATA {
 	INVENTORY_DATA()
 		: io(NULL)
 		, m_size(Vec2s(0, 0))
-		, slot()
 	{}
+	
 };
 
 const size_t INVENTORY_BAGS = 3;
@@ -81,13 +85,12 @@ const size_t INVENTORY_X = 16;
 const size_t INVENTORY_Y = 3;
 
 // TODO this should be completely wrapped in PlayerInventory!
-extern INVENTORY_SLOT inventory[INVENTORY_BAGS][INVENTORY_X][INVENTORY_Y];
+extern INVENTORY_SLOT g_inventory[INVENTORY_BAGS][INVENTORY_X][INVENTORY_Y];
 
 extern INVENTORY_DATA * SecondaryInventory;
 extern INVENTORY_DATA * TSecondaryInventory;
 extern Entity * DRAGINTER;
 extern Entity * ioSteal;
-extern long InventoryY;
 
 inline Vec2s inventorySizeFromTextureSize(Vec2i size) {
 	return Vec2s(glm::clamp((size + Vec2i(31, 31)) / Vec2i(32, 32), Vec2i(1, 1), Vec2i(3, 3)));
@@ -103,14 +106,13 @@ struct InventoryPos {
 	index_type y;
 	
 	InventoryPos()
-		: io()
-		, bag(0)
+		: bag(0)
 		, x(0)
 		, y(0)
-	{}
+	{ }
 	
-	InventoryPos(long io, index_type bag, index_type x, index_type y)
-		: io(io), bag(bag), x(x), y(y) { }
+	InventoryPos(long io_, index_type bag_, index_type x_, index_type y_)
+		: io(io_), bag(bag_), x(x_), y(y_) { }
 	
 	//! \return true if this is a valid position
 	operator bool() const {
@@ -173,7 +175,7 @@ public:
 	static Pos remove(const Entity * item);
 	
 	static Entity * get(const Pos & pos) {
-		return pos ? inventory[pos.bag][pos.x][pos.y].io : NULL;
+		return pos ? g_inventory[pos.bag][pos.x][pos.y].io : NULL;
 	}
 	
 };
@@ -251,7 +253,7 @@ void ARX_INVENTORY_Declare_InventoryIn(Entity * io);
 
 void PutInFrontOfPlayer(Entity * io);
 
-Vec3f GetItemWorldPosition(Entity * io);
+Vec3f GetItemWorldPosition(const Entity * io);
 Vec3f GetItemWorldPositionSound(const Entity * io);
 
 Entity * GetInventoryObj_INVENTORYUSE(const Vec2s & pos);
@@ -263,7 +265,7 @@ void CleanInventory();
 void SendInventoryObjectCommand(const std::string & _lpszText, ScriptMessage _lCommand);
 void PutInInventory();
 bool TakeFromInventory(const Vec2s & pos);
-Entity * GetFromInventory(const Vec2s & pos);
+std::pair<Entity *, int> GetFromInventory(const Vec2s & pos);
 bool IsInPlayerInventory(Entity * io);
 bool IsInSecondaryInventory(Entity * io);
 bool InInventoryPos(const Vec2s & pos);

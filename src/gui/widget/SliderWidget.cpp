@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,47 +19,50 @@
 
 #include "gui/widget/SliderWidget.h"
 
+#include <algorithm>
+
 #include "core/Core.h"
 #include "graphics/DrawLine.h"
 #include "graphics/Renderer.h"
 #include "graphics/data/TextureContainer.h"
 #include "gui/MenuPublic.h"
 #include "gui/menu/MenuCursor.h"
+#include "gui/widget/ButtonWidget.h"
+#include "gui/widget/TextWidget.h"
 #include "input/Input.h"
-#include "scene/GameSound.h"
 
-SliderWidget::SliderWidget(const Vec2f & unscaled)
-	: Widget()
+SliderWidget::SliderWidget(const Vec2f & size, Font * font, const std::string & label)
+	: m_label(new TextWidget(font, label))
+	, m_left(new ButtonWidget(Vec2f(size.y), "graph/interface/menus/menu_slider_button_left"))
+	, m_right(new ButtonWidget(Vec2f(size.y), "graph/interface/menus/menu_slider_button_right"))
+	, m_textureOff(TextureContainer::Load("graph/interface/menus/menu_slider_off"))
+	, m_textureOn(TextureContainer::Load("graph/interface/menus/menu_slider_on"))
+	, m_slider(10 * size.y / 2, size.y)
+	, m_minimum(0)
+	, m_value(0)
 {
-	m_id = BUTTON_INVALID;
 	
-	Vec2f pos = RATIO_2(unscaled);
+	m_label->forceDisplay(TextWidget::Dynamic);
 	
-	Vec2f buttonSize = Vec2f(16, 16);
+	arx_assert(m_textureOff);
+	arx_assert(m_textureOn);
 	
-	pLeftButton = new ButtonWidget(unscaled, buttonSize, "graph/interface/menus/menu_slider_button_left");
-	pRightButton = new ButtonWidget(unscaled, buttonSize, "graph/interface/menus/menu_slider_button_right");
-	pTex1 = TextureContainer::Load("graph/interface/menus/menu_slider_on");
-	pTex2 = TextureContainer::Load("graph/interface/menus/menu_slider_off");
-	arx_assert(pTex1);
-	arx_assert(pTex2);
+	float minWidth = m_left->m_rect.width() + m_slider.width() + m_right->m_rect.width();
+	m_rect = Rectf(std::max(minWidth, size.x), std::max(m_slider.height(), m_label->m_rect.height()));
 	
-	m_minimum = 0;
-	m_value = 0;
-
-	m_rect.left   = pos.x;
-	m_rect.top    = pos.y;
-	m_rect.right  = pos.x + pLeftButton->m_rect.width() + pRightButton->m_rect.width() + 10 * std::max(pTex1->m_size.x, pTex2->m_size.x);
-	m_rect.bottom = pos.y + std::max(pLeftButton->m_rect.height(), pRightButton->m_rect.height());
+	m_right->setPosition(Vec2f(m_rect.right - m_right->m_rect.width(),
+	                           m_rect.center().y - m_right->m_rect.height() / 2));
+	m_slider.moveTo(Vec2f(m_right->m_rect.left - m_slider.width(),
+	                      m_rect.center().y - m_slider.height() / 2));
+	m_left->setPosition(Vec2f(m_slider.left - m_left->m_rect.width(),
+	                          m_rect.center().y - m_left->m_rect.height() / 2));
 	
-	pRightButton->Move(Vec2f(pLeftButton->m_rect.width() + 10 * std::max(pTex1->m_size.x, pTex2->m_size.x), 0));
-
-	pRef = this;
 }
 
 SliderWidget::~SliderWidget() {
-	delete pLeftButton;
-	delete pRightButton;
+	delete m_label;
+	delete m_left;
+	delete m_right;
 }
 
 void SliderWidget::setMinimum(int minimum) {
@@ -67,114 +70,91 @@ void SliderWidget::setMinimum(int minimum) {
 	m_value = std::max(m_minimum, m_value);
 }
 
-void SliderWidget::Move(const Vec2f & offset) {
-	Widget::Move(offset);
-	pLeftButton->Move(offset);
-	pRightButton->Move(offset);
+void SliderWidget::move(const Vec2f & offset) {
+	Widget::move(offset);
+	m_label->move(offset);
+	m_left->move(offset);
+	m_slider.move(offset);
+	m_right->move(offset);
 }
 
-void SliderWidget::EmptyFunction() {
+void SliderWidget::hover() {
 
-	//Touche pour la selection
-	if(GInput->isKeyPressedNowPressed(Keyboard::Key_LeftArrow)) {
-		m_value--;
-
-		if(m_value <= m_minimum)
-			m_value = m_minimum;
-	} else {
-		if(GInput->isKeyPressedNowPressed(Keyboard::Key_RightArrow)) {
-			m_value++;
-
-			if(m_value >= 10)
-				m_value = 10;
-		}
+	if(GInput->isKeyPressedNowPressed(Keyboard::Key_LeftArrow) || GInput->getMouseWheelDir() < 0) {
+		newValue(m_value - 1);
+	} else if(GInput->isKeyPressedNowPressed(Keyboard::Key_RightArrow) || GInput->getMouseWheelDir() > 0) {
+		newValue(m_value + 1);
 	}
+	
 }
 
-bool SliderWidget::OnMouseClick() {
+bool SliderWidget::click() {
 	
-	ARX_SOUND_PlayMenu(SND_MENU_CLICK);
-
-	const Vec2f cursor = Vec2f(GInput->getMousePosAbs());
+	bool result = Widget::click();
+	
+	const Vec2f cursor = Vec2f(GInput->getMousePosition());
 	
 	if(m_rect.contains(cursor)) {
-		if(pLeftButton->m_rect.contains(cursor)) {
-			m_value--;
-			if(m_value <= m_minimum)
-				m_value = m_minimum;
-		}
-		
-		if(pRightButton->m_rect.contains(cursor)) {
-			m_value++;
-			if(m_value >= 10)
-				m_value = 10;
+		if(m_left->m_rect.contains(cursor)) {
+			newValue(m_value - 1);
+		} else if(m_right->m_rect.contains(cursor)) {
+			newValue(m_value + 1);
+		} else if(m_slider.contains(cursor)) {
+			newValue(int(glm::round((cursor.x - m_slider.left) / m_slider.width() * 10)));
+		} else {
+			newValue((m_value + 1) % 11);
 		}
 	}
+	
+	return result;
+}
+
+void SliderWidget::update() {
+	
+	m_left->update();
+	m_right->update();
+	
+}
+
+void SliderWidget::render(bool mouseOver) {
+	
+	m_label->render(mouseOver);
+	
+	const Vec2f cursor = Vec2f(GInput->getMousePosition());
+	
+	if(m_enabled) {
+		m_left->render(m_left->m_rect.contains(cursor));
+		m_right->render(m_right->m_rect.contains(cursor));
+	}
+	
+	UseRenderState state(render2D().blendAdditive());
+	
+	Rectf rect(m_slider.topLeft(), m_slider.width() / 10, m_slider.height());
+	
+	for(int i = 0; i < 10; i++) {
+		TextureContainer * texture = (i < m_value) ? m_textureOn : m_textureOff;
+		Color color = m_enabled ? Color::white : Color::gray(0.25f);
+		EERIEDrawBitmap(rect, 0, texture, color);
+		if(m_enabled && m_slider.contains(cursor) && cursor.x > rect.center().x) {
+			EERIEDrawBitmap(rect, 0, texture, color);
+		}
+		rect.move(m_slider.width() / 10, 0.f);
+	}
+	
+}
+
+void SliderWidget::newValue(int value) {
+	
+	value = arx::clamp(value, m_minimum, 10);
+	
+	if(value == m_value) {
+		return;
+	}
+	
+	m_value = value;
 	
 	if(valueChanged) {
 		valueChanged(m_value);
 	}
 	
-	return false;
-}
-
-void SliderWidget::Update() {
-	
-	pLeftButton->Update();
-	pRightButton->Update();
-	pRightButton->SetPos(m_rect.topLeft());
-
-
-	float fWidth = pLeftButton->m_rect.width() + RATIO_X(10 * std::max(pTex1->m_size.x, pTex2->m_size.x)) ;
-	pRightButton->Move(Vec2f(fWidth, 0));
-
-	m_rect.right = m_rect.left + pLeftButton->m_rect.width() + pRightButton->m_rect.width() + RATIO_X(10*std::max(pTex1->m_size.x, pTex2->m_size.x));
-
-	m_rect.bottom = m_rect.top + std::max(pLeftButton->m_rect.height(), pRightButton->m_rect.height());
-}
-
-void SliderWidget::Render() {
-
-	pLeftButton->Render();
-	pRightButton->Render();
-
-	Vec2f pos(m_rect.left + pLeftButton->m_rect.width(), m_rect.top);
-	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	
-	for(int i = 0; i < 10; i++) {
-		TextureContainer * pTex = (i < m_value) ? pTex1 : pTex2;
-		Rectf rect = Rectf(pos, RATIO_X(pTex->m_size.x), RATIO_Y(pTex->m_size.y));
-		
-		EERIEDrawBitmap2(rect, 0, pTex, Color::white);
-		
-		pos.x += rect.width();
-	}
-
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
-}
-
-extern MenuCursor * pMenuCursor;
-
-void SliderWidget::RenderMouseOver() {
-
-	pMenuCursor->SetMouseOver();
-
-	const Vec2f cursor = Vec2f(GInput->getMousePosAbs());
-
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	
-	if(m_rect.contains(cursor)) {
-		if(pLeftButton->m_rect.contains(cursor)) {
-			pLeftButton->Render();
-		}
-		
-		if(pRightButton->m_rect.contains(cursor)) {
-			pRightButton->Render();
-		}
-	}
-	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
 }

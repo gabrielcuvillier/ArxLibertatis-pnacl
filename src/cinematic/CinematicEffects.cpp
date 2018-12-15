@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -47,48 +47,28 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "cinematic/Cinematic.h"
 #include "cinematic/CinematicKeyframer.h"
+#include "cinematic/CinematicTexture.h"
 
 #include "core/Core.h"
 
+#include "game/Camera.h"
+
 #include "graphics/Math.h"
 #include "graphics/Draw.h"
-#include "cinematic/CinematicTexture.h"
 #include "graphics/data/TextureContainer.h"
 #include "graphics/texture/TextureStage.h"
 
-float		FlashAlpha;
-int			TotOldPos;
+float FlashAlpha;
+int TotOldPos;
 
 static const int NBOLDPOS = 10;
 static Vec3f OldPos[NBOLDPOS];
 static float OldAz[NBOLDPOS];
 
-/*---------------------------------------------------------------------------------*/
-Color FX_FadeIN(float a, Color color, Color colord)
-{
-	float r = (color.r - colord.r) * a + colord.r;
-	float g = (color.g - colord.g) * a + colord.g;
-	float b = (color.b - colord.b) * a + colord.b;
-	
-	return Color(u8(r), u8(g), u8(b), 0);
-
-}
-/*---------------------------------------------------------------------------------*/
-Color FX_FadeOUT(float a, Color color, Color colord)
-{
-	a = 1.f - a;
-	
-	float r = (color.r - colord.r) * a + colord.r;
-	float g = (color.g - colord.g) * a + colord.g;
-	float b = (color.b - colord.b) * a + colord.b;
-
-	return Color(u8(r), u8(g), u8(b), 0);
-}
-
 static float LastTime;
 
-bool FX_Blur(Cinematic *c, CinematicBitmap *tb, EERIE_CAMERA &camera)
-{
+bool FX_Blur(Cinematic * c, CinematicBitmap * tb, Camera & camera) {
+	
 	if(c->numbitmap < 0 || !tb)
 		return false;
 
@@ -100,25 +80,26 @@ bool FX_Blur(Cinematic *c, CinematicBitmap *tb, EERIE_CAMERA &camera)
 
 	if((GetTimeKeyFramer() - LastTime) < 0.40f) {
 		LastTime = GetTimeKeyFramer();
-		OldPos[TotOldPos] = c->pos;
+		OldPos[TotOldPos] = c->m_pos;
 		OldAz[TotOldPos] = c->angz;
 		TotOldPos++;
 	}
 
 	float alpha = 32.f;
 	float dalpha = (127.f / NBOLDPOS);
-	Vec3f *pos = OldPos;
-	float *az = OldAz;
+	Vec3f * pos = OldPos;
+	float * az = OldAz;
 	int nb = TotOldPos;
 
 	while(nb) {
-		camera.orgTrans.pos = *pos;
-		camera.angle.setYaw(0);
+		camera.m_pos = *pos;
 		camera.angle.setPitch(0);
+		camera.angle.setYaw(0);
 		camera.angle.setRoll(*az);
 		PrepareCamera(&camera, g_size);
 		
-		Color col = Color(255, 255, 255, int(alpha));
+		Color col = Color::white;
+		col.a = u8(alpha);
 		DrawGrille(tb, col, 0, NULL, c->posgrille, c->angzgrille, c->fadegrille);
 
 		alpha += dalpha;
@@ -130,7 +111,6 @@ bool FX_Blur(Cinematic *c, CinematicBitmap *tb, EERIE_CAMERA &camera)
 	return true;
 }
 
-//POST FX
 bool FX_FlashBlanc(Vec2f size, float speed, Color color, float fps, float currfps) {
 	
 	if(FlashAlpha < 0.f)
@@ -139,25 +119,23 @@ bool FX_FlashBlanc(Vec2f size, float speed, Color color, float fps, float currfp
 	if(FlashAlpha == 0.f)
 		FlashAlpha = 1.f;
 	
-	GRenderer->GetTextureStage(0)->setColorOp(TextureStage::ArgDiffuse);
-	GRenderer->GetTextureStage(0)->setAlphaOp(TextureStage::ArgDiffuse);
-	GRenderer->SetBlendFunc(BlendSrcAlpha, BlendOne);
+	UseRenderState state(render2D().blendAdditive());
+	GRenderer->ResetTexture(0);
 	
-	color.a = 255.f * FlashAlpha;
-	ColorRGBA col = color.toRGBA();
+	ColorRGBA col = (color * FlashAlpha).toRGB();
 	
 	TexturedVertex v[4];
 	v[0].p = Vec3f(0.f, 0.f, 0.01f);
-	v[0].rhw = 1.f;
+	v[0].w = 1.f;
 	v[0].color = col;
 	v[1].p = Vec3f(size.x - 1.f, 0.f, 0.01f);
-	v[1].rhw = 1.f;
+	v[1].w = 1.f;
 	v[1].color = col;
 	v[2].p = Vec3f(0.f, size.y - 1.f, 0.01f);
-	v[2].rhw = 1.f;
+	v[2].w = 1.f;
 	v[2].color = col;
 	v[3].p = Vec3f(size.x - 1.f, size.y - 1.f, 0.01f);
-	v[3].rhw = 1.f;
+	v[3].w = 1.f;
 	v[3].color = col;
 	
 	FlashAlpha -= speed * fps / currfps;
@@ -167,24 +145,17 @@ bool FX_FlashBlanc(Vec2f size, float speed, Color color, float fps, float currfp
 	return true;
 }
 
-/*---------------------------------------------------------------------------------*/
-float	DreamAng, DreamAng2;
-float	DreamTable[64*64*2];
-/*---------------------------------------------------------------------------------*/
+float DreamAng, DreamAng2;
+float DreamTable[64 * 64 * 2];
+
 void FX_DreamPrecalc(CinematicBitmap * bi, float amp, float fps) {
 	
 	float a = DreamAng;
 	float a2 = DreamAng2;
 	
-	Vec2f s;
-	s.x = bi->m_count.x * std::cos(glm::radians(0.f));
-	s.y = bi->m_count.y * std::cos(glm::radians(0.f));
+	Vec2i n = bi->m_count * s32(2) + Vec2i(2);
 	
-	Vec2i n;
-	n.x = (bi->m_count.x + 1) << 1;
-	n.y = (bi->m_count.y + 1) << 1;
-	
-	Vec2f nn = Vec2f(n) + s;
+	Vec2f nn = Vec2f(n) + Vec2f(bi->m_count);
 	
 	Vec2f o;
 	o.x = amp * ((2 * (std::sin(nn.x / 20) + std::sin(nn.x * nn.y / 2000)
@@ -200,18 +171,15 @@ void FX_DreamPrecalc(CinematicBitmap * bi, float amp, float fps) {
 	while(n.y) {
 		n.x = ((bi->m_count.x * bi->grid.m_scale) + 1);
 		while(n.x) {
-			s.x = bi->m_count.x * std::cos(glm::radians(a));
-			s.y = bi->m_count.y * std::cos(glm::radians(a2));
 			a -= 15.f;
 			a2 += 8.f;
 			
-			nn.x = ((float)n.x) + s.x;
-			nn.y = ((float)n.y) + s.y;
+			nn = Vec2f(n) + Vec2f(bi->m_count) * Vec2f(std::cos(glm::radians(a)), std::cos(glm::radians(a2)));
 			
-			*t++ = (float)(-o.x + amp * ((2 * (std::sin(nn.x / 20) + std::sin(nn.x * nn.y / 2000)
+			*t++ = (-o.x + amp * ((2 * (std::sin(nn.x / 20) + std::sin(nn.x * nn.y / 2000)
 			                                  + std::sin((nn.x + nn.y) / 100) + std::sin((nn.y - nn.x) / 70) + std::sin((nn.x + 4 * nn.y) / 70)
 			                                  + 2 * std::sin(hypotf(256 - nn.x, (150 - nn.y / 8)) / 40)))));
-			*t++ = (float)(-o.y + amp * (((std::cos(nn.x / 31) + std::cos(nn.x * nn.y / 1783) +
+			*t++ = (-o.y + amp * (((std::cos(nn.x / 31) + std::cos(nn.x * nn.y / 1783) +
 			                              + 2 * std::cos((nn.x + nn.y) / 137) + std::cos((nn.y - nn.x) / 55) + 2 * std::cos((nn.x + 8 * nn.y) / 57)
 			                              + std::cos(hypotf(384 - nn.x, (274 - nn.y / 9)) / 51)))));
 			

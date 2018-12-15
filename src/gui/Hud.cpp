@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -48,6 +48,7 @@
 
 #include "gui/Cursor.h"
 #include "gui/Interface.h"
+#include "gui/Notification.h"
 #include "gui/Speech.h"
 #include "gui/book/Book.h"
 #include "gui/hud/HudCommon.h"
@@ -56,23 +57,26 @@
 
 #include "input/Input.h"
 
+#include "math/RandomVector.h"
+
 #include "scene/GameSound.h"
 #include "scene/Interactive.h"
 
 extern bool WILLRETURNTOFREELOOK;
 
-bool bIsAiming = false;
+static const int indicatorVertSpacing = 30;
+static const int indicatorHorizSpacing = 20;
 
-
-static void DrawItemPrice() {
+static void DrawItemPrice(float scale) {
 	
-	Entity *temp = SecondaryInventory->io;
+	Entity * temp = SecondaryInventory->io;
 	if(temp->ioflags & IO_SHOP) {
 		Vec2f pos = Vec2f(DANAEMouse);
-		pos += Vec2f(0, -10);
+		pos += Vec2f(60, -10) * scale;
 		
 		if(g_secondaryInventoryHud.containsPos(DANAEMouse)) {
-			long amount=ARX_INTERACTIVE_GetPrice(FlyingOverIO,temp);
+			
+			long amount = ARX_INTERACTIVE_GetPrice(FlyingOverIO, temp);
 			// achat
 			float famount = amount - amount * player.m_skillFull.intuition * 0.005f;
 			// check should always be OK because amount is supposed positive
@@ -80,14 +84,9 @@ static void DrawItemPrice() {
 
 			Color color = (amount <= player.gold) ? Color::green : Color::red;
 			
-			ARX_INTERFACE_DrawNumber(pos, amount, 6, color, 1.f);
+			ARX_INTERFACE_DrawNumber(pos, amount, color, scale);
 		} else if(g_playerInventoryHud.containsPos(DANAEMouse)) {
-			long amount = static_cast<long>( ARX_INTERACTIVE_GetPrice( FlyingOverIO, temp ) / 3.0f );
-			// achat
-			float famount = amount + amount * player.m_skillFull.intuition * 0.005f;
-			// check should always be OK because amount is supposed positive
-			amount = checked_range_cast<long>( famount );
-
+			long amount = ARX_INTERACTIVE_GetSellValue(FlyingOverIO, temp);
 			if(amount) {
 				Color color = Color::red;
 				
@@ -96,22 +95,24 @@ static void DrawItemPrice() {
 
 					color = Color::green;
 				}
-				ARX_INTERFACE_DrawNumber(pos, amount, 6, color, 1.f);
+				ARX_INTERFACE_DrawNumber(pos, amount, color, scale);
 			}
 		}
 	}
 }
 
-
 HitStrengthGauge::HitStrengthGauge()
 	: m_emptyTex(NULL)
 	, m_fullTex(NULL)
 	, m_hitTex(NULL)
+	, m_size(122.f, 70.f)
+	, m_hitSize(172.f, 130.f)
+	, m_hitRect(Rectf::ZERO)
 	, m_intensity(0.f)
 	, m_flashActive(false)
 	, m_flashTime(0)
 	, m_flashIntensity(0.f)
-{}
+{ }
 
 void HitStrengthGauge::init() {
 	m_emptyTex = TextureContainer::LoadUI("graph/interface/bars/aim_empty");
@@ -120,9 +121,6 @@ void HitStrengthGauge::init() {
 	arx_assert(m_emptyTex);
 	arx_assert(m_fullTex);
 	arx_assert(m_hitTex);
-	
-	m_size = Vec2f(122.f, 70.f);
-	m_hitSize = Vec2f(172.f, 130.f);
 }
 
 void HitStrengthGauge::requestFlash(float flashIntensity) {
@@ -140,29 +138,21 @@ void HitStrengthGauge::updateRect(const Rectf & parent) {
 
 void HitStrengthGauge::update() {
 	
-	if(player.m_aimTime == 0) {
+	if(!player.isAiming()) {
 		m_intensity = 0.2f;
 	} else {
 		float j;
 		if(player.m_bowAimRatio > 0) {
 			j = player.m_bowAimRatio;
 		} else {
-			const unsigned long delta = arxtime.now_ul() - player.m_aimTime;
-			
-			//TODO global
-			bIsAiming = delta > 0;
-			
-			float at = delta * (1.f+(1.f-GLOBAL_SLOWDOWN));
-			float aim = static_cast<float>(player.Full_AimTime);
-			j=at/aim;
+			j = player.m_aimTime / player.Full_AimTime;
 		}
 		m_intensity = glm::clamp(j, 0.2f, 1.f);
 	}
 	
 	if(m_flashActive) {
-		float fCalc = m_flashTime + Original_framedelay;
-		m_flashTime = checked_range_cast<unsigned long>(fCalc);
-		if(m_flashTime >= 500) {
+		m_flashTime += g_platformTime.lastFrameDuration();
+		if(m_flashTime >= PlatformDurationMs(500)) {
 			m_flashActive = false;
 			m_flashTime = 0;
 		}
@@ -170,22 +160,22 @@ void HitStrengthGauge::update() {
 }
 
 void HitStrengthGauge::draw() {
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	EERIEDrawBitmap(m_rect, 0.0001f, m_fullTex, Color3f::gray(m_intensity).to<u8>());
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
+	{
+		UseRenderState state(render2D().blendAdditive());
+		EERIEDrawBitmap(m_rect, 0.0001f, m_fullTex, Color::gray(m_intensity));
+	}
+	
 	EERIEDrawBitmap(m_rect, 0.0001f, m_emptyTex, Color::white);
 	
 	if(m_flashActive && player.m_skillFull.etheralLink >= 40) {
 		
 		float j = 1.0f - m_flashIntensity;
-		Color col = (j < 0.5f) ? Color3f(j*2.0f, 1, 0).to<u8>() : Color3f(1, m_flashIntensity, 0).to<u8>();
+		Color col = (j < 0.5f) ? Color::rgb(j * 2.f, 1.f, 0.f) : Color::rgb(1.f, m_flashIntensity, 0.f);
 		
-		GRenderer->SetBlendFunc(BlendOne, BlendOne);
-		GRenderer->SetRenderState(Renderer::AlphaBlending, true);
+		UseRenderState state(render2D().blendAdditive());
 		EERIEDrawBitmap(m_hitRect, 0.0001f, m_hitTex, col);
-		GRenderer->SetRenderState(Renderer::AlphaBlending, false);
+		
 	}
 }
 
@@ -222,10 +212,9 @@ void BookIconGui::MakeBookFX() {
 }
 
 BookIconGui::BookIconGui()
-	: HudIconBase()
-	, m_size(Vec2f(32, 32))
+	: m_size(Vec2f(32, 32))
 	, ulBookHaloTime(0)
-{}
+{ }
 
 void BookIconGui::init() {
 	m_tex = TextureContainer::LoadUI("graph/interface/icons/book");
@@ -253,9 +242,8 @@ void BookIconGui::update(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_TopRight, m_size * m_scale, Anchor_BottomRight);
 	
 	if(m_haloActive) {
-		float fCalc = ulBookHaloTime + Original_framedelay;
-		ulBookHaloTime = checked_range_cast<unsigned long>(fCalc);
-		if(ulBookHaloTime >= 3000) { // ms
+		ulBookHaloTime += g_platformTime.lastFrameDuration();
+		if(ulBookHaloTime >= PlatformDurationMs(3000)) { // ms
 			m_haloActive = false;
 		}
 	}
@@ -265,10 +253,10 @@ void BookIconGui::updateInput() {
 	m_isSelected = m_rect.contains(Vec2f(DANAEMouse));
 	
 	if(m_isSelected) {
-		SpecialCursor = CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 
 		if(eeMouseDown1()) {
-			ARX_INTERFACE_BookToggle();
+			g_playerBook.toggle();
 		}
 		return;
 	}
@@ -287,64 +275,60 @@ void BackpackIconGui::update(const Rectf & parent) {
 
 void BackpackIconGui::updateInput() {
 	
-	static unsigned long flDelay = 0;
+	static PlatformInstant flDelay = 0;
 	
 	// Check for backpack Icon
 	if(m_rect.contains(Vec2f(DANAEMouse))) {
 		if(eeMouseUp1() && playerInventory.insert(DRAGINTER)) {
-			ARX_SOUND_PlayInterface(SND_INVSTD);
+			ARX_SOUND_PlayInterface(g_snd.INVSTD);
 			Set_DragInter(NULL);
 		}
 	}
 	
-	if(m_rect.contains(Vec2f(DANAEMouse)) || flDelay) {
+	if(m_rect.contains(Vec2f(DANAEMouse)) || flDelay != 0) {
 		eMouseState = MOUSE_IN_INVENTORY_ICON;
-		SpecialCursor = CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 		
 		
 		if(eeMouseDoubleClick1()) {
-			ARX_SOUND_PlayInterface(SND_BACKPACK, Random::getf(0.9f, 1.1f));
+			ARX_SOUND_PlayInterface(g_snd.BACKPACK, Random::getf(0.9f, 1.1f));
 			
 			playerInventory.optimize();
 			
 			flDelay = 0;
-		} else if(eeMouseDown1() || flDelay) {
-			if(!flDelay) {
-				arxtime.update();
-				flDelay = arxtime.now_ul();
+		} else if(eeMouseDown1() || flDelay != 0) {
+			if(flDelay == 0) {
+				flDelay = g_platformTime.frameStart();
 				return;
-			} else {
-				arxtime.update();
-				if(arxtime.now_ul() - flDelay < 300) {
-					return;
-				} else {
-					flDelay = 0;
-				}
 			}
+			if(g_platformTime.frameStart() - flDelay < PlatformDurationMs(300)) {
+				return;
+			}
+			flDelay = 0;
 			
 			if(player.Interface & INTER_INVENTORYALL) {
-				ARX_SOUND_PlayInterface(SND_BACKPACK, Random::getf(0.9f, 1.1f));
-				bInventoryClosing = true;
+				ARX_SOUND_PlayInterface(g_snd.BACKPACK, Random::getf(0.9f, 1.1f));
+				g_playerInventoryHud.close();
 			} else {
-				bInverseInventory=!bInverseInventory;
-				lOldTruePlayerMouseLook=TRUE_PLAYER_MOUSELOOK_ON;
+				bInverseInventory = !bInverseInventory;
+				lOldTruePlayerMouseLook = TRUE_PLAYER_MOUSELOOK_ON;
 			}
 		} else if(eeMouseDown2()) {
-			ARX_INTERFACE_BookClose();
+			g_playerBook.close();
 			ARX_INVENTORY_OpenClose(NULL);
 			
 			if(player.Interface & INTER_INVENTORYALL) {
-				bInventoryClosing = true;
+				g_playerInventoryHud.close();
 			} else {
 				if(player.Interface & INTER_INVENTORY) {
-					ARX_SOUND_PlayInterface(SND_BACKPACK, Random::getf(0.9f, 1.1f));
-					bInventoryClosing = true;
+					ARX_SOUND_PlayInterface(g_snd.BACKPACK, Random::getf(0.9f, 1.1f));
+					g_playerInventoryHud.close();
 					bInventorySwitch = true;
 				} else {
-					ARX_SOUND_PlayInterface(SND_BACKPACK, Random::getf(0.9f, 1.1f));
+					ARX_SOUND_PlayInterface(g_snd.BACKPACK, Random::getf(0.9f, 1.1f));
 					player.Interface |= INTER_INVENTORYALL;
 					
-					InventoryY = 121 * player.bag;
+					g_playerInventoryHud.resetPos();
 					
 					ARX_INTERFACE_NoteClose();
 					
@@ -385,28 +369,31 @@ void StealIconGui::updateInput() {
 	// steal
 	if(player.Interface & INTER_STEAL) {
 		if(m_rect.contains(Vec2f(DANAEMouse))) {
-			eMouseState=MOUSE_IN_STEAL_ICON;
-			SpecialCursor=CURSOR_INTERACTION_ON;
+			
+			eMouseState = MOUSE_IN_STEAL_ICON;
+			cursorSetInteraction();
 			
 			if(eeMouseDown1()) {
 				ARX_INVENTORY_OpenClose(ioSteal);
 				
-				if(player.Interface&(INTER_INVENTORY | INTER_INVENTORYALL)) {
-					ARX_SOUND_PlayInterface(SND_BACKPACK, Random::getf(0.9f, 1.1f));
+				if(player.Interface & (INTER_INVENTORY | INTER_INVENTORYALL)) {
+					ARX_SOUND_PlayInterface(g_snd.BACKPACK, Random::getf(0.9f, 1.1f));
 				}
 				
 				if(SecondaryInventory) {
-					SendIOScriptEvent(ioSteal, SM_STEAL);
-					
-					bForceEscapeFreeLook=true;
-					lOldTruePlayerMouseLook=!TRUE_PLAYER_MOUSELOOK_ON;
+					SendIOScriptEvent(entities.player(), ioSteal, SM_STEAL);
+					bForceEscapeFreeLook = true;
+					lOldTruePlayerMouseLook = !TRUE_PLAYER_MOUSELOOK_ON;
 				}
 			}
 			
-			if(DRAGINTER == NULL)
+			if(DRAGINTER == NULL) {
 				return;
+			}
+			
 		}
 	}
+	
 }
 
 void StealIconGui::draw() {
@@ -416,11 +403,9 @@ void StealIconGui::draw() {
 
 
 LevelUpIconGui::LevelUpIconGui()
-	: HudIconBase()
-	, m_pos(0.f, 0.f)
-	, m_size(32.f, 32.f)
+	: m_size(32.f, 32.f)
 	, m_visible(false)
-{}
+{ }
 
 void LevelUpIconGui::init() {
 	m_tex = TextureContainer::LoadUI("graph/interface/icons/lvl_up");
@@ -441,14 +426,13 @@ void LevelUpIconGui::updateInput() {
 	m_isSelected = m_rect.contains(Vec2f(DANAEMouse));
 	
 	if(m_isSelected) {
-		SpecialCursor = CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 		
 		if(eeMouseDown1()) {
-			ARX_INTERFACE_BookOpen();
+			g_playerBook.open();
 		}
 	}
 }
-
 
 void LevelUpIconGui::draw() {
 	if(!m_visible)
@@ -457,23 +441,16 @@ void LevelUpIconGui::draw() {
 	HudIconBase::draw();
 }
 
-
 PurseIconGui::PurseIconGui()
-	: HudIconBase()
-	, m_pos()
-	, m_size()
+	: m_size(32.f, 32.f)
 	, m_haloTime(0)
-{}
+{ }
 
 void PurseIconGui::init() {
 	m_tex = TextureContainer::LoadUI("graph/interface/inventory/gold");
 	arx_assert(m_tex);
-	m_size = Vec2f(32.f, 32.f);
-	
 	m_haloColor = Color3f(0.9f, 0.9f, 0.1f);
-	
 	m_haloActive = false;
-	m_haloTime = 0;
 }
 
 void PurseIconGui::requestHalo() {
@@ -484,11 +461,9 @@ void PurseIconGui::requestHalo() {
 void PurseIconGui::update(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_TopRight, m_size * m_scale, Anchor_BottomRight);
 	
-	//A halo is drawn on the character's stats icon (book) when leveling up, for example.
 	if(m_haloActive) {
-		float fCalc = m_haloTime + Original_framedelay;
-		m_haloTime = checked_range_cast<unsigned long>(fCalc);
-		if(m_haloTime >= 1000) { // ms
+		m_haloTime += g_platformTime.lastFrameDuration();
+		if(m_haloTime >= PlatformDurationMs(1000)) {
 			m_haloActive = false;
 		}
 	}
@@ -501,7 +476,7 @@ void PurseIconGui::updateInput() {
 		m_isSelected = m_rect.contains(Vec2f(DANAEMouse));
 		
 		if(m_isSelected) {
-			SpecialCursor = CURSOR_INTERACTION_ON;
+			cursorSetInteraction();
 			
 			if(   player.gold > 0
 			   && !GInput->actionPressed(CONTROLS_CUST_MAGICMODE)
@@ -519,28 +494,23 @@ void PurseIconGui::updateInput() {
 }
 
 void PurseIconGui::draw() {
+	
 	HudIconBase::draw();
 	
 	if(m_isSelected) {
-		Vec2f numberPos = m_rect.topLeft();
-		numberPos += Vec2f(-30 * m_scale, -15 * m_scale);
-		
-		ARX_INTERFACE_DrawNumber(numberPos, player.gold, 6, Color::white, m_scale);
+		Vec2f numberPos = m_rect.topRight() + Vec2f(0.f, -15 * m_scale);
+		ARX_INTERFACE_DrawNumber(numberPos, player.gold, Color::white, m_scale);
 	}
+	
 }
-
 
 CurrentTorchIconGui::CurrentTorchIconGui()
-	: HudItem()
-	, m_isActive(false)
-	, m_rect()
+	: m_isActive(false)
 	, m_tex(NULL)
-	, m_size()
-{}
+	, m_size(32.f, 64.f)
+{ }
 
-void CurrentTorchIconGui::init() {
-	m_size = Vec2f(32.f, 64.f);
-}
+void CurrentTorchIconGui::init() { }
 
 bool CurrentTorchIconGui::isVisible() {
 	return !(player.Interface & INTER_COMBATMODE) && player.torch;
@@ -548,12 +518,10 @@ bool CurrentTorchIconGui::isVisible() {
 
 void CurrentTorchIconGui::updateRect(const Rectf & parent) {
 	
-	float secondaryInventoryX = g_secondaryInventoryHud.m_fadePosition + 110.f;
-	
 	m_rect = createChild(parent, Anchor_TopLeft, m_size * m_scale, Anchor_BottomLeft);
 	
-	if(m_rect.left < secondaryInventoryX) {
-		m_rect.move(secondaryInventoryX, 0.f);
+	if(g_secondaryInventoryHud.rect().overlaps(m_rect)) {
+		m_rect.move(g_secondaryInventoryHud.rect().right, 0.f);
 	}
 }
 
@@ -562,15 +530,18 @@ void CurrentTorchIconGui::updateInput() {
 		
 		if(m_rect.contains(Vec2f(DANAEMouse))) {
 			eMouseState = MOUSE_IN_TORCH_ICON;
-			SpecialCursor = CURSOR_INTERACTION_ON;
+			cursorSetInteraction();
 			
 			if(!DRAGINTER && !PLAYER_MOUSELOOK_ON && DRAGGING) {
 				Entity * io = player.torch;
 				player.torch->show = SHOW_FLAG_IN_SCENE;
-				ARX_SOUND_PlaySFX(SND_TORCH_END);
-				ARX_SOUND_Stop(SND_TORCH_LOOP);
+				
+				ARX_SOUND_PlaySFX(g_snd.TORCH_END);
+				ARX_SOUND_Stop(player.torch_loop);
+				player.torch_loop = audio::SourcedSample();
+				
 				player.torch = NULL;
-				lightHandleGet(torchLightHandle)->exist = 0;
+				lightHandleGet(torchLightHandle)->m_exists = false;
 				io->ignition = 1;
 				Set_DragInter(io);
 			} else {
@@ -592,8 +563,8 @@ void CurrentTorchIconGui::update() {
 	if(!isVisible())
 		return;
 	
-	if((player.Interface & INTER_NOTE) && TSecondaryInventory != NULL
-	   && (openNote.type() == gui::Note::BigNote || openNote.type() == gui::Note::Book)) {
+	if(g_note.isOpen() && TSecondaryInventory != NULL
+	   && (g_note.type() == Note::BigNote || g_note.type() == Note::Book)) {
 		m_isActive = false;
 		return;
 	}
@@ -611,22 +582,8 @@ void CurrentTorchIconGui::update() {
 
 void CurrentTorchIconGui::createFireParticle() {
 	
-	PARTICLE_DEF * pd = createParticle();
-	if(!pd) {
-		return;
-	}
-	
-	Vec2f pos = m_rect.topLeft() + Vec2f(Random::getf(9.f, 12.f), Random::getf(0.f, 6.f)) * m_scale;
-	
-	pd->special = FIRE_TO_SMOKE;
-	pd->ov = Vec3f(pos, 0.0000001f);
-	pd->move = Vec3f(Random::getf(-1.5f, 1.5f), Random::getf(-6.f, -5.f), 0.f) * m_scale;
-	pd->scale = Vec3f(1.8f, 1.8f, 1.f);
-	pd->tolive = Random::getu(500, 900);
-	pd->tc = fire2;
-	pd->rgb = Color3f(1.f, .6f, .5f);
-	pd->siz = 14.f * m_scale;
-	pd->is2D = true;
+	Vec2f pos = m_rect.topLeft() + arx::linearRand(Vec2f(9.f, 0.f), Vec2f(12.f, 6.f)) * m_scale;
+	spawn2DFireParticle(pos, m_scale);
 }
 
 void CurrentTorchIconGui::draw() {
@@ -637,26 +594,26 @@ void CurrentTorchIconGui::draw() {
 	EERIEDrawBitmap(m_rect, 0.001f, m_tex, Color::white);
 }
 
-
 ChangeLevelIconGui::ChangeLevelIconGui()
 	: m_tex(NULL)
+	, m_size(32.f, 32.f)
 	, m_intensity(1.f)
-{}
+{ }
 
 void ChangeLevelIconGui::init() {
 	m_tex = TextureContainer::LoadUI("graph/interface/icons/change_lvl");
 	arx_assert(m_tex);
-	m_size = Vec2f(32.f, 32.f);
 }
 
 bool ChangeLevelIconGui::isVisible() {
-	return CHANGE_LEVEL_ICON > -1;
+	return CHANGE_LEVEL_ICON != NoChangeLevel;
 }
 
 void ChangeLevelIconGui::update(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_TopRight, m_size * m_scale, Anchor_TopRight);
 	
-	m_intensity = 0.9f - std::sin(arxtime.get_frame_time() * 0.02f) * 0.5f + Random::getf(0.f, 0.1f);
+	float wave = timeWaveSin(g_gameTime.now(), GameDurationMsf(314.159f));
+	m_intensity = 0.9f - wave * 0.5f + Random::getf(0.f, 0.1f);
 	m_intensity = glm::clamp(m_intensity, 0.f, 1.f);
 }
 
@@ -665,19 +622,19 @@ void ChangeLevelIconGui::draw() {
 	if(!isVisible())
 		return;
 	
-	EERIEDrawBitmap(m_rect, 0.0001f, m_tex, Color3f::gray(m_intensity).to<u8>());
+	EERIEDrawBitmap(m_rect, 0.0001f, m_tex, Color::gray(m_intensity));
 	
 	if(m_rect.contains(Vec2f(DANAEMouse))) {
-		SpecialCursor=CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 		if(eeMouseUp1()) {
-			CHANGE_LEVEL_ICON = 200;
+			CHANGE_LEVEL_ICON = ChangeLevelNow;
 		}
 	}
 }
 
 
 QuickSaveIconGui::QuickSaveIconGui()
-	: m_duration(1000)
+	: m_duration(GameDurationMs(1000))
 	, m_remainingTime(0)
 {}
 
@@ -690,9 +647,9 @@ void QuickSaveIconGui::hide() {
 }
 
 void QuickSaveIconGui::update() {
-	if(m_remainingTime) {
-		if(m_remainingTime > unsigned(g_framedelay)) {
-			m_remainingTime -= unsigned(g_framedelay);
+	if(m_remainingTime != 0) {
+		if(m_remainingTime > g_gameTime.lastFrameDuration()) {
+			m_remainingTime -= g_gameTime.lastFrameDuration();
 		} else {
 			m_remainingTime = 0;
 		}
@@ -700,32 +657,29 @@ void QuickSaveIconGui::update() {
 }
 
 void QuickSaveIconGui::draw() {
-	if(!m_remainingTime) {
+	
+	if(m_remainingTime == 0) {
 		return;
 	}
 	
+	UseRenderState state(render2D().blend(BlendSrcColor, BlendOne).alphaCutout());
+	
 	// Flash the icon twice, starting at about 0.7 opacity
-	float step = 1.f - float(m_remainingTime) * (1.f / m_duration);
+	float step = 1.f - (m_remainingTime / m_duration);
 	float alpha = std::min(1.f, 0.6f * (std::sin(step * (7.f / 2.f * glm::pi<float>())) + 1.f));
 	
 	TextureContainer * tex = TextureContainer::LoadUI("graph/interface/icons/menu_main_save");
 	arx_assert(tex);
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetBlendFunc(BlendSrcColor, BlendOne);
-	
 	Vec2f size = Vec2f(tex->size());
-	EERIEDrawBitmap2(Rectf(Vec2f(0, 0), size.x, size.y), 0.f, tex, Color::gray(alpha));
+	EERIEDrawBitmap(Rectf(Vec2f(0, 0), size.x, size.y), 0.f, tex, Color::gray(alpha));
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
 }
 
-
 MemorizedRunesHud::MemorizedRunesHud()
-	: HudIconBase()
-	, m_size()
+	: m_size(0.f)
 	, m_count(0)
-{}
+{ }
 
 void MemorizedRunesHud::update(const Rectf & parent) {
 	int count = 0;
@@ -760,8 +714,7 @@ void MemorizedRunesHud::draw() {
 				bHalo = true;
 			} else {
 				player.SpellToMemorize.iSpellSymbols[i] = SpellSymbol[i];
-				
-				for(int j = i+1; j < 6; j++) {
+				for(int j = i + 1; j < 6; j++) {
 					player.SpellToMemorize.iSpellSymbols[j] = RUNE_NONE;
 				}
 			}
@@ -771,24 +724,23 @@ void MemorizedRunesHud::draw() {
 			Vec2f size = Vec2f(32.f, 32.f) * m_scale;
 			Rectf rect = Rectf(pos, size.x, size.y);
 			
-			TextureContainer *tc = gui::necklace.pTexTab[player.SpellToMemorize.iSpellSymbols[i]];
-			
-			EERIEDrawBitmap2(rect, 0, tc, Color::white);
+			TextureContainer * tc = gui::necklace.pTexTab[player.SpellToMemorize.iSpellSymbols[i]];
 			
 			if(bHalo) {
 				ARX_INTERFACE_HALO_Render(Color3f(0.2f, 0.4f, 0.8f), HALO_ACTIVE, tc->getHalo(), pos, Vec2f(m_scale));
 			}
 			
+			EERIEDrawBitmap(rect, 0, tc, Color::white);
+			
 			if(!player.hasRune(player.SpellToMemorize.iSpellSymbols[i])) {
-				GRenderer->SetBlendFunc(BlendInvDstColor, BlendOne);
-				GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-				EERIEDrawBitmap2(rect, 0, cursorMovable, Color3f::gray(.8f).to<u8>());
-				GRenderer->SetRenderState(Renderer::AlphaBlending, false);
+				UseRenderState state(render2D().blend(BlendInvDstColor, BlendOne).alphaCutout());
+				EERIEDrawBitmap(rect, 0, cursorMovable, Color::gray(0.8f));
 			}
+			
 			pos.x += 32 * m_scale;
 		}
 	}
-	if(arxtime.now_f() - player.SpellToMemorize.lTimeCreation > 30000) {
+	if(g_gameTime.now() - player.SpellToMemorize.lTimeCreation > GameDurationMs(30000)) {
 		player.SpellToMemorize.bSpell = false;
 	}
 }
@@ -810,6 +762,10 @@ void HealthGauge::init() {
 
 void HealthGauge::updateRect(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_BottomLeft, m_size * m_scale, Anchor_BottomLeft);
+	
+	// Red gauge texures have a 2 pixel gap at the bottom,
+	// tweak the position to hide it
+	m_rect.move(0, 2.f * m_scale);
 }
 
 void HealthGauge::update() {
@@ -817,9 +773,8 @@ void HealthGauge::update() {
 	m_amount = player.lifePool.current / player.Full_maxlife;
 	
 	if(player.poison > 0.f) {
-		float val = std::min(player.poison, 0.2f) * 255.f * 5.f;
-		long g = val;
-		m_color = Color(u8(255 - g), u8(g) , 0);
+		float val = std::min(player.poison, 0.2f) * 5.f;
+		m_color = Color::rgb(1.f - val, val, 0.f);
 	} else {
 		m_color = Color::red;
 	}
@@ -831,7 +786,7 @@ void HealthGauge::updateInput(const Vec2f & mousePos) {
 			if(eeMouseDown1()) {
 				std::stringstream ss;
 				ss << checked_range_cast<int>(player.lifePool.current);
-				ARX_SPEECH_Add(ss.str());
+				notification_add(ss.str());
 			}
 		}
 	}
@@ -845,12 +800,11 @@ void HealthGauge::draw() {
 
 
 ManaGauge::ManaGauge()
-	: HudItem()
-	, m_size(33.f, 80.f)
+	: m_size(33.f, 80.f)
 	, m_emptyTex(NULL)
 	, m_filledTex(NULL)
 	, m_amount(0.f)
-{}
+{ }
 
 void ManaGauge::init() {
 	m_emptyTex = TextureContainer::LoadUI("graph/interface/bars/empty_gauge_blue");
@@ -872,7 +826,7 @@ void ManaGauge::updateInput(const Vec2f & mousePos) {
 			if(eeMouseDown1()) {
 				std::stringstream ss;
 				ss << checked_range_cast<int>(player.manaPool.current);
-				ARX_SPEECH_Add(ss.str());
+				notification_add(ss.str());
 			}
 		}
 	}
@@ -886,12 +840,11 @@ void ManaGauge::draw() {
 
 
 MecanismIcon::MecanismIcon()
-	: HudItem()
-	, m_iconSize(32.f, 32.f)
+	: m_iconSize(32.f, 32.f)
 	, m_tex(NULL)
 	, m_timeToDraw(0)
 	, m_nbToDraw(0)
-{}
+{ }
 
 void MecanismIcon::init() {
 	m_tex = TextureContainer::LoadUI("graph/interface/cursors/mecanism");
@@ -907,34 +860,36 @@ void MecanismIcon::reset() {
 
 void MecanismIcon::update() {
 	m_color = Color::white;
-	if(m_timeToDraw > 300) {
+	if(m_timeToDraw > GameDurationMs(300)) {
 		m_color = Color::black;
-		if(m_timeToDraw > 400) {
-			m_timeToDraw=0;
+		if(m_timeToDraw > GameDurationMs(400)) {
+			m_timeToDraw = 0;
 			m_nbToDraw++;
 		}
 	}
-	m_timeToDraw += static_cast<long>(g_framedelay);
+	m_timeToDraw += g_gameTime.lastFrameDuration();
 	
 	m_rect = createChild(Rectf(g_size), Anchor_TopLeft, m_iconSize * m_scale, Anchor_TopLeft);
 }
 
 void MecanismIcon::draw() {
+	
 	if(m_nbToDraw >= 3) {
 		return;
 	}
+	
+	UseRenderState state(render2D().blendAdditive());
 	
 	EERIEDrawBitmap(m_rect, 0.01f, m_tex, m_color);
 }
 
 
 ScreenArrows::ScreenArrows()
-	: HudItem()
-	, m_horizontalArrowSize(8, 16)
+	: m_horizontalArrowSize(8, 16)
 	, m_verticalArrowSize(16, 8)
 	, m_arrowLeftTex(NULL)
 	, fArrowMove(0.f)
-{}
+{ }
 
 void ScreenArrows::init() {
 	m_arrowLeftTex = TextureContainer::LoadUI("graph/interface/icons/arrow_left");
@@ -947,9 +902,9 @@ void ScreenArrows::update() {
 		return;
 	}
 	
-	fArrowMove += .5f * g_framedelay;
+	fArrowMove += .5f * toMs(g_platformTime.lastFrameDuration());
 	if(fArrowMove > 180.f) {
-		fArrowMove=0.f;
+		fArrowMove = 0.f;
 	}
 	
 	float fMove = glm::abs(glm::sin(glm::radians(fArrowMove))) * m_horizontalArrowSize.x * m_scale * .5f;
@@ -959,6 +914,7 @@ void ScreenArrows::update() {
 	m_right  = createChild(parent, Anchor_RightCenter,  m_horizontalArrowSize * m_scale, Anchor_RightCenter);
 	m_top    = createChild(parent, Anchor_TopCenter,    m_verticalArrowSize * m_scale,   Anchor_TopCenter);
 	m_bottom = createChild(parent, Anchor_BottomCenter, m_verticalArrowSize * m_scale,   Anchor_BottomCenter);
+	
 }
 
 void ScreenArrows::draw() {
@@ -967,7 +923,9 @@ void ScreenArrows::draw() {
 		return;
 	}
 	
-	Color lcolor = Color3f::gray(.5f).to<u8>();
+	UseRenderState state(render2D().blendAdditive());
+	
+	Color lcolor = Color::gray(0.5f);
 	
 	EERIEDrawBitmap(m_left, 0.01f, m_arrowLeftTex, lcolor);
 	EERIEDrawBitmapUVs(m_right,  .01f, m_arrowLeftTex, lcolor, Vec2f(1.f, 0.f), Vec2f(0.f, 0.f), Vec2f(1.f, 1.f), Vec2f(0.f, 1.f));
@@ -985,11 +943,11 @@ void PrecastSpellsGui::PrecastSpellIconSlot::update(const Rectf & rect, TextureC
 
 void PrecastSpellsGui::PrecastSpellIconSlot::updateInput() {
 	if(m_rect.contains(Vec2f(DANAEMouse))) {
-		SpecialCursor = CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 		
 		if(eeMouseUp1()) {
 			if(Precast[m_precastIndex.handleData()].typ >= 0) {
-				ARX_SPEECH_Add(spellicons[Precast[m_precastIndex.handleData()].typ].name);
+				notification_add(spellicons[Precast[m_precastIndex.handleData()].typ].name);
 			}
 		}
 		
@@ -1001,28 +959,14 @@ void PrecastSpellsGui::PrecastSpellIconSlot::updateInput() {
 
 void PrecastSpellsGui::PrecastSpellIconSlot::draw() {
 	EERIEDrawBitmap(m_rect, 0.01f, m_tc, m_color);
-	
-	GRenderer->SetBlendFunc(BlendZero, BlendOne);
-	
-	Rectf rect2 = m_rect;
-	rect2.move(-1, -1);
-	EERIEDrawBitmap(rect2, 0.0001f, m_tc, m_color);
-	
-	Rectf rect3 = m_rect;
-	rect3.move(1, 1);
-	EERIEDrawBitmap(rect3, 0.0001f, m_tc, m_color);
-	
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
 }
 
 PrecastSpellsGui::PrecastSpellsGui()
-	: HudItem()
-{
-	m_iconSize = Vec2f(48, 48) / Vec2f(2);
-}
+	: m_iconSize(24.f, 24.f)
+{ }
 
 bool PrecastSpellsGui::isVisible() {
-	return !(player.Interface & INTER_INVENTORYALL) && !(player.Interface & INTER_MAP);
+	return !(player.Interface & INTER_PLAYERBOOK);
 }
 
 void PrecastSpellsGui::updateRect(const Rectf & parent) {
@@ -1030,6 +974,10 @@ void PrecastSpellsGui::updateRect(const Rectf & parent) {
 	Vec2f size = m_iconSize * Vec2f(Precast.size(), 1);
 	
 	m_rect = createChild(parent, Anchor_BottomRight, size * m_scale, Anchor_BottomLeft);
+	
+	if(g_playerInventoryHud.rect().overlaps(m_rect + Vec2f(0.0f, indicatorVertSpacing))) {
+		m_rect.move(0.0f, g_playerInventoryHud.rect().top - parent.bottom - indicatorVertSpacing);
+	}
 }
 
 void PrecastSpellsGui::update() {
@@ -1048,19 +996,19 @@ void PrecastSpellsGui::update() {
 		
 		float val = intensity;
 		
-		if(precastSlot.launch_time > 0 && (arxtime.now_f() >= precastSlot.launch_time)) {
-			float tt = (arxtime.now_f() - precastSlot.launch_time) * (1.0f/1000);
+		if(precastSlot.launch_time > 0 && g_gameTime.now() >= precastSlot.launch_time) {
+			float tt = (g_gameTime.now() - precastSlot.launch_time) / GameDurationMs(1000);
 			
 			if(tt > 1.f)
 				tt = 1.f;
 			
 			val *= (1.f - tt);
 		}
-
-		Color color = Color3f(0, val * (1.0f/2), val).to<u8>();
+		
+		Color color = Color::rgb(0, val * 0.5f, val);
 		
 		Rectf childRect = createChild(m_rect, Anchor_BottomLeft, m_iconSize * m_scale, Anchor_BottomLeft);
-		childRect.move(i * 33 * m_scale, 0);
+		childRect.move(i * m_iconSize.x * m_scale, 0);
 		
 		SpellType typ = precastSlot.typ;
 		
@@ -1078,8 +1026,8 @@ void PrecastSpellsGui::update() {
 }
 
 void PrecastSpellsGui::draw() {
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
+	
+	UseRenderState state(render2D().blendAdditive());
 	
 	std::vector<PrecastSpellIconSlot>::iterator itr;
 	for(itr = m_icons.begin(); itr != m_icons.end(); ++itr) {
@@ -1094,16 +1042,16 @@ void ActiveSpellsGui::ActiveSpellIconSlot::updateInput(const Vec2f & mousePos) {
 		return;
 	
 	if(m_rect.contains(mousePos)) {
-		SpecialCursor = CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 		
 		if(eeMouseUp1()) {
 			if(spells[spellIndex]->m_type >= 0) {
-				ARX_SPEECH_Add(spellicons[spells[spellIndex]->m_type].name);
+				notification_add(spellicons[spells[spellIndex]->m_type].name);
 			}
 		}
 		
 		if(eeMouseDoubleClick1()) {
-			ARX_SOUND_PlaySFX(SND_MAGIC_FIZZLE);
+			ARX_SOUND_PlaySFX(g_snd.MAGIC_FIZZLE);
 			spells.endSpell(spells[spellIndex]);
 		}
 	}
@@ -1118,23 +1066,33 @@ void ActiveSpellsGui::ActiveSpellIconSlot::draw() {
 }
 
 ActiveSpellsGui::ActiveSpellsGui()
-	: HudItem()
-	, m_texUnknown(NULL)
-{}
+	: m_texUnknown(NULL)
+	, m_slotSize(24.f, 24.f)
+	, m_spacerSize(60.f, 50.f)
+	, m_slotSpacerSize(0.f, 9.f)
+	, m_flickNow(false)
+	, m_flickTime(0)
+	, m_flickInterval(PlatformDurationMsf(1000.0f / 60.0f))
+{ }
 
 void ActiveSpellsGui::init() {
 	m_texUnknown = TextureContainer::Load("graph/interface/icons/spell_unknown");
 	arx_assert(m_texUnknown);
-	
-	m_slotSize = Vec2f(24.f, 24.f);
-	m_spacerSize = Vec2f(60.f, 50.f);
-	m_slotSpacerSize = Vec2f(0.f, 9.f);
 }
 
-void ActiveSpellsGui::update(Rectf parent) {
+void ActiveSpellsGui::update(const Rectf & parent) {
 	
 	float intensity = 1.f - PULSATE * 0.5f;
 	intensity = glm::clamp(intensity, 0.f, 1.f);
+	
+	m_flickTime += g_platformTime.lastFrameDuration();
+	
+	if(m_flickTime >= m_flickInterval) {
+		m_flickNow = !m_flickNow;
+		while(m_flickTime >= m_flickInterval) {
+			m_flickTime -= m_flickInterval;
+		}
+	}
 	
 	m_slots.clear();
 	
@@ -1163,8 +1121,7 @@ void ActiveSpellsGui::updateInput(const Vec2f & mousePos) {
 
 void ActiveSpellsGui::draw() {
 	
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
+	UseRenderState state(render2D().blendAdditive());
 	
 	BOOST_FOREACH(ActiveSpellIconSlot & slot, m_slots) {
 		slot.draw();
@@ -1176,7 +1133,7 @@ void ActiveSpellsGui::spellsByPlayerUpdate(float intensity) {
 		SpellBase * spell = spells[SpellHandle(i)];
 		
 		if(   spell
-		   && spell->m_caster == PlayerEntityHandle
+		   && spell->m_caster == EntityHandle_Player
 		   && spellicons[spell->m_type].m_hasDuration
 		) {
 			ManageSpellIcon(*spell, intensity, false);
@@ -1187,14 +1144,15 @@ void ActiveSpellsGui::spellsByPlayerUpdate(float intensity) {
 void ActiveSpellsGui::spellsOnPlayerUpdate(float intensity) {
 	for(size_t i = 0; i < MAX_SPELLS; i++) {
 		SpellBase * spell = spells[SpellHandle(i)];
-		if(!spell)
-			continue;
-		
-		if(std::find(spell->m_targets.begin(), spell->m_targets.end(), PlayerEntityHandle) == spell->m_targets.end()) {
+		if(!spell) {
 			continue;
 		}
 		
-		if(spell->m_caster != PlayerEntityHandle && spellicons[spell->m_type].m_hasDuration) {
+		if(std::find(spell->m_targets.begin(), spell->m_targets.end(), EntityHandle_Player) == spell->m_targets.end()) {
+			continue;
+		}
+		
+		if(spell->m_caster != EntityHandle_Player && spellicons[spell->m_type].m_hasDuration) {
 			ManageSpellIcon(*spell, intensity, true);
 		}
 	}
@@ -1202,20 +1160,17 @@ void ActiveSpellsGui::spellsOnPlayerUpdate(float intensity) {
 
 void ActiveSpellsGui::ManageSpellIcon(SpellBase & spell, float intensity, bool flag) {
 	
-	
-	Color color = (flag) ? Color3f(intensity, 0, 0).to<u8>() : Color3f::gray(intensity).to<u8>();
+	Color color = (flag) ? Color::rgb(intensity, 0, 0) : Color::gray(intensity);
 	
 	bool flicker = true;
 	
 	if(spell.m_hasDuration) {
-		if(player.manaPool.current < 20 || spell.m_timcreation + spell.m_duration - arxtime.now_f() < 2000) {
-			if(ucFlick&1)
-				flicker = false;
+		if(player.manaPool.current < 20 || spell.m_duration - spell.m_elapsed < GameDurationMs(2000)) {
+			flicker = m_flickNow;
 		}
 	} else {
-		if(player.manaPool.current<20) {
-			if(ucFlick&1)
-				flicker = false;
+		if(player.manaPool.current < 20) {
+			flicker = m_flickNow;
 		}
 	}
 	
@@ -1234,8 +1189,7 @@ void ActiveSpellsGui::ManageSpellIcon(SpellBase & spell, float intensity, bool f
 
 
 DamagedEquipmentGui::DamagedEquipmentGui()
-	: HudItem()
-	, m_size(64.f, 64.f)
+	: m_size(64.f, 64.f)
 {
 	iconequip[0] = NULL;
 	iconequip[1] = NULL;
@@ -1259,87 +1213,105 @@ void DamagedEquipmentGui::init() {
 
 void DamagedEquipmentGui::updateRect(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_BottomRight, m_size * m_scale, Anchor_BottomLeft);
+	
+	if(g_playerInventoryHud.rect().overlaps(m_rect + Vec2f(0.0f, indicatorVertSpacing))) {
+		m_rect.move(0.0f, g_playerInventoryHud.rect().top - parent.bottom - indicatorVertSpacing);
+	}
+	
+	if(g_secondaryInventoryHud.rect().overlaps(m_rect  + Vec2f(0.0f, -indicatorHorizSpacing))) {
+		m_rect.move(g_secondaryInventoryHud.rect().right - m_rect.left + indicatorHorizSpacing, 0.0f);
+	}
 }
 
 void DamagedEquipmentGui::update() {
-	if(cinematicBorder.isActive() || BLOCK_PLAYER_CONTROLS)
+	if(cinematicBorder.isActive() || BLOCK_PLAYER_CONTROLS) {
 		return;
+	}
 		
-	if(player.Interface & INTER_INVENTORYALL)
+	if(player.Interface & INTER_INVENTORYALL) {
 		return;
+	}
 	
 	for(long i = 0; i < 5; i++) {
+		
 		m_colors[i] = Color::black;
 		
-		long eq=-1;
-		
+		long eq = -1;
 		switch (i) {
 			case 0: eq = EQUIP_SLOT_WEAPON; break;
 			case 1: eq = EQUIP_SLOT_SHIELD; break;
 			case 2: eq = EQUIP_SLOT_HELMET; break;
 			case 3: eq = EQUIP_SLOT_ARMOR; break;
 			case 4: eq = EQUIP_SLOT_LEGGINGS; break;
+			default: arx_unreachable();
 		}
 		
-		if(ValidIONum(player.equiped[eq])) {
-			Entity *io = entities[player.equiped[eq]];
+		Entity * io = entities.get(player.equiped[eq]);
+		if(io) {
 			float ratio = io->durability / io->max_durability;
-			
-			if(ratio <= 0.5f)
-				m_colors[i] = Color3f(1.f-ratio, ratio, 0).to<u8>();
+			if(ratio <= 0.5f) {
+				m_colors[i] = Color::rgb(1.f - ratio, ratio, 0);
+			}
 		}
+		
 	}
 }
 
 void DamagedEquipmentGui::draw() {
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	
-	GRenderer->SetCulling(CullNone);
-	GRenderer->SetRenderState(Renderer::DepthWrite, true);
-	GRenderer->SetRenderState(Renderer::Fog, false);
+	UseRenderState state(render2D().blendAdditive());
 	
 	for(long i = 0; i < 5; i++) {
-		if(m_colors[i] == Color::black)
+		if(m_colors[i] == Color::black) {
 			continue;
+		}
 		
-		EERIEDrawBitmap2(m_rect, 0.001f, iconequip[i], m_colors[i]);
+		EERIEDrawBitmap(m_rect, 0.001f, iconequip[i], m_colors[i]);
 	}
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
 }
 
-
 StealthGauge::StealthGauge()
-	: HudItem()
-	, m_texture(NULL)
+	: m_texture(NULL)
 	, m_visible(false)
-{}
+	, m_color(Color::none)
+	, m_size(32.f, 32.f)
+{ }
 
 void StealthGauge::init() {
 	m_texture = TextureContainer::LoadUI("graph/interface/icons/stealth_gauge");
 	arx_assert(m_texture);
-	m_size = Vec2f(32.f, 32.f);
 }
 
-void StealthGauge::update(const Rectf & parent) {
+void StealthGauge::updateRect(const Rectf & parent) {
 	m_rect = createChild(parent, Anchor_TopRight, m_size * m_scale, Anchor_BottomLeft);
+	
+	if(g_playerInventoryHud.rect().overlaps(m_rect + Vec2f(0.0f, indicatorVertSpacing))) {
+		m_rect.move(0.0f, g_playerInventoryHud.rect().top - parent.top - indicatorVertSpacing);
+	}
+	
+	if(g_secondaryInventoryHud.rect().overlaps(m_rect  + Vec2f(0.0f, -indicatorHorizSpacing))) {
+		m_rect.move(g_secondaryInventoryHud.rect().right - m_rect.left + indicatorHorizSpacing, 0.0f);
+	}
+}
+
+void StealthGauge::update() {
 	
 	m_visible = false;
 	
 	if(!cinematicBorder.isActive()) {
-		float v=GetPlayerStealth();
+		float v = GetPlayerStealth();
 		
 		if(CURRENT_PLAYER_COLOR < v) {
 			float t = v - CURRENT_PLAYER_COLOR;
 			
-			if(t >= 15)
+			if(t >= 15) {
 				v = 1.f;
-			else
-				v = (t*( 1.0f / 15 ))* 0.9f + 0.1f;
+			} else {
+				v = (t * (1.0f / 15)) * 0.9f + 0.1f;
+			}
 			
-			m_color = Color3f::gray(v).to<u8>();
+			m_color = Color::gray(v);
 			
 			m_visible = true;
 		}
@@ -1347,78 +1319,78 @@ void StealthGauge::update(const Rectf & parent) {
 }
 
 void StealthGauge::draw() {
-	if(!m_visible)
-		return;
 	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
+	if(!m_visible) {
+		return;
+	}
+	
+	UseRenderState state(render2D().blendAdditive());
+	
 	EERIEDrawBitmap(m_rect, 0.01f, m_texture, m_color);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
 }
 
-bool PLAYER_INTERFACE_HIDE_COUNT = true;
+bool PLAYER_INTERFACE_SHOW = true;
 
 PlayerInterfaceFader::PlayerInterfaceFader()
 	: m_direction(0)
-	, m_current(0.f)
+	, m_current(0)
 {}
 
 void PlayerInterfaceFader::reset() {
 	m_direction = 0;
-	PLAYER_INTERFACE_HIDE_COUNT = true;
+	PLAYER_INTERFACE_SHOW = true;
 }
 
 void PlayerInterfaceFader::resetSlid() {
-	m_current = 0.f;
+	m_current = 0;
 }
 
 void PlayerInterfaceFader::requestFade(FadeDirection showhide, long smooth) {
 	if(showhide == FadeDirection_Out) {
 		InventoryOpenClose(2);
-		ARX_INTERFACE_BookClose();
+		g_playerBook.close();
 		ARX_INTERFACE_NoteClose();
 	}
 	
-	if(showhide == FadeDirection_In)
-		PLAYER_INTERFACE_HIDE_COUNT = true;
-	else
-		PLAYER_INTERFACE_HIDE_COUNT = false;
+	PLAYER_INTERFACE_SHOW = (showhide == FadeDirection_In);
 	
 	if(smooth) {
-		if(showhide == FadeDirection_In)
+		if(showhide == FadeDirection_In) {
 			m_direction = -1;
-		else
+		} else {
 			m_direction = 1;
+		}
 	} else {
-		if(showhide == FadeDirection_In)
-			m_current = 0.f;
-		else
-			m_current = 100.f;
+		if(showhide == FadeDirection_In) {
+			m_current = 0;
+		} else {
+			m_current = PlatformDurationMs(1000);
+		}
 		
-		lSLID_VALUE = m_current;
+		lSLID_VALUE = m_current / PlatformDurationMs(10);
 	}
 }
 
-float SLID_START = 0.f; // Charging Weapon
+PlatformInstant SLID_START = 0; // Charging Weapon
 
 void PlayerInterfaceFader::update() {
 	
-	if(PLAYER_INTERFACE_HIDE_COUNT && !m_direction) {
+	if(PLAYER_INTERFACE_SHOW && !m_direction) {
 		bool bOk = true;
 		
 		if(TRUE_PLAYER_MOUSELOOK_ON) {
 			if(!(player.Interface & INTER_COMBATMODE) && player.doingmagic != 2 && !InInventoryPos(DANAEMouse)) {
 				bOk = false;
 				
-				float t = arxtime.now_f();
+				PlatformInstant t = g_platformTime.frameStart();
 				
-				if(t-SLID_START > 10000.f) {
-					m_current += Original_framedelay * (1.0f/10);
+				if(t - SLID_START > PlatformDurationMs(10000)) {
+					m_current += g_platformTime.lastFrameDuration();
 					
-					if(m_current > 100.f)
-						m_current = 100.f;
+					if(m_current > PlatformDurationMs(1000))
+						m_current = PlatformDurationMs(1000);
 					
-					lSLID_VALUE = m_current;
+					lSLID_VALUE = m_current / PlatformDurationMs(10);
 				} else {
 					bOk = true;
 				}
@@ -1426,42 +1398,33 @@ void PlayerInterfaceFader::update() {
 		}
 		
 		if(bOk) {
-			m_current -= Original_framedelay * (1.0f/10);
+			m_current -= g_platformTime.lastFrameDuration();
 			
-			if(m_current < 0.f)
-				m_current = 0.f;
+			if(m_current < 0) {
+				m_current = 0;
+			}
 			
-			lSLID_VALUE = m_current;
+			lSLID_VALUE = m_current / PlatformDurationMs(10);
 		}
 	}
 	
 	if(m_direction == 1) {
-		m_current += Original_framedelay * (1.0f/10);
+		m_current += g_platformTime.lastFrameDuration();
 		
-		if(m_current > 100.f) {
-			m_current = 100.f;
+		if(m_current > PlatformDurationMs(1000)) {
+			m_current = PlatformDurationMs(1000);
 			m_direction = 0;
 		}
-		lSLID_VALUE = m_current;
+		lSLID_VALUE = m_current / PlatformDurationMs(10);
 	} else if(m_direction == -1) {
-		m_current -= Original_framedelay * (1.0f/10);
+		m_current -= g_platformTime.lastFrameDuration();
 		
-		if(m_current < 0.f) {
-			m_current = 0.f;
+		if(m_current < 0) {
+			m_current = 0;
 			m_direction = 0;
 		}
-		lSLID_VALUE = m_current;
+		lSLID_VALUE = m_current / PlatformDurationMs(10);
 	}
-}
-
-static void setHudTextureState() {
-	TextureStage::FilterMode filter = TextureStage::FilterLinear;
-	if(config.interface.hudScaleFilter == UIFilterNearest) {
-		filter = TextureStage::FilterNearest;
-	}
-	GRenderer->GetTextureStage(0)->setMinFilter(filter);
-	GRenderer->GetTextureStage(0)->setMagFilter(filter);
-	GRenderer->GetTextureStage(0)->setWrapMode(TextureStage::WrapClamp);
 }
 
 void HudRoot::draw() {
@@ -1480,7 +1443,10 @@ void HudRoot::draw() {
 	hitStrengthGauge.updateRect(Rectf(g_size));
 	hitStrengthGauge.update();
 	
+	g_secondaryInventoryHud.updateFader();
+	g_secondaryInventoryHud.updateRect();
 	g_secondaryInventoryHud.update();
+	g_playerInventoryHud.updateRect();
 	g_playerInventoryHud.update();
 	mecanismIcon.update();
 	screenArrows.update();
@@ -1490,41 +1456,44 @@ void HudRoot::draw() {
 	
 	quickSaveIconGui.update();
 	
-	
-	Vec2f anchorPos = g_playerInventoryHud.anchorPosition();
-	
-	Rectf spacer;
-	spacer.left = std::max(g_secondaryInventoryHud.m_fadePosition + 160, healthGauge.rect().right);
-	spacer.bottom = anchorPos.y;
-	spacer.top = spacer.bottom - 30;
-	spacer.right = spacer.left + 20;
-	
-	stealthGauge.update(spacer);
+	{
+		Rectf spacer;
+		spacer.left = healthGauge.rect().right;
+		spacer.bottom = float(g_size.bottom);
+		spacer.top = spacer.bottom - indicatorVertSpacing;
+		spacer.right = spacer.left + indicatorHorizSpacing;
+		stealthGauge.updateRect(spacer);
+	}
+	stealthGauge.update();
 	
 	damagedEquipmentGui.updateRect(stealthGauge.rect());
+	if(player.torch && damagedEquipmentGui.rect().overlaps(currentTorchIconGui.rect())) {
+		Vec2f offset = Vec2f(currentTorchIconGui.rect().right - stealthGauge.rect().right + indicatorHorizSpacing,
+		                     0.0f);
+		damagedEquipmentGui.updateRect(stealthGauge.rect() + offset);
+	}
 	damagedEquipmentGui.update();
 	
 	precastSpellsGui.updateRect(damagedEquipmentGui.rect());
 	precastSpellsGui.update();
 	
-	setHudTextureState();
+	UseRenderState state(render2D());
+	UseTextureState textureState(getInterfaceTextureFilter(), TextureStage::WrapClamp);
 	
 	if(player.Interface & INTER_COMBATMODE) {
 		hitStrengthGauge.draw();
-	}	
+	}
 	
 	g_secondaryInventoryHud.draw();
 	g_playerInventoryHud.draw();
 	
-	if(FlyingOverIO 
-		&& !(player.Interface & INTER_COMBATMODE)
-		&& !GInput->actionPressed(CONTROLS_CUST_MAGICMODE)
-		&& (!PLAYER_MOUSELOOK_ON || !config.input.autoReadyWeapon)
-	  ) {
+	if(FlyingOverIO  && !(player.Interface & INTER_COMBATMODE)
+	   && !GInput->actionPressed(CONTROLS_CUST_MAGICMODE)
+	   && (!PLAYER_MOUSELOOK_ON || config.input.autoReadyWeapon != AlwaysAutoReadyWeapon)) {
 		if((FlyingOverIO->ioflags & IO_ITEM) && !DRAGINTER && SecondaryInventory) {
-			DrawItemPrice();
+			DrawItemPrice(m_scale);
 		}
-		SpecialCursor=CURSOR_INTERACTION_ON;
+		cursorSetInteraction();
 	}
 	
 	healthGauge.updateRect(hudSlider);
@@ -1538,7 +1507,7 @@ void HudRoot::draw() {
 	if(!(player.Interface & INTER_COMBATMODE) && (player.Interface & INTER_MINIBACK)) {
 		
 		if(player.Interface & INTER_STEAL) {
-			stealIconGui.draw();			
+			stealIconGui.draw();
 		}
 	}
 	
@@ -1551,19 +1520,8 @@ void HudRoot::draw() {
 	quickSaveIconGui.draw();
 	stealthGauge.draw();
 
-	if((player.Interface & INTER_MAP) && !(player.Interface & INTER_COMBATMODE)) {
-		ARX_INTERFACE_ManageOpenedBook();
-		
-		GRenderer->SetRenderState(Renderer::DepthWrite, true);
-		
-		if((player.Interface & INTER_MAP) && !(player.Interface & INTER_COMBATMODE)) {
-			if(g_guiBookCurrentTopTab == BOOKMODE_SPELLS) {
-				gui::ARX_INTERFACE_ManageOpenedBook_Finish(mousePos);
-				ARX_INTERFACE_ManageOpenedBook_SpellsDraw();
-			}
-		}
-		
-		setHudTextureState();
+	if((player.Interface & INTER_PLAYERBOOK) && !(player.Interface & INTER_COMBATMODE)) {
+		g_playerBook.manage();
 	}
 	
 	memorizedRunesHud.draw();
@@ -1576,47 +1534,45 @@ void HudRoot::draw() {
 		healthGauge.draw();
 		
 		if(bRenderInCursorMode) {
-			GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-			GRenderer->SetBlendFunc(BlendOne, BlendOne);
 			if(!MAGICMODE) {
 				mecanismIcon.draw();
 			}
 			screenArrows.draw();
-			GRenderer->SetRenderState(Renderer::AlphaBlending, false);
 		}
 	}
 	
 	if(!(player.Interface & INTER_COMBATMODE) && (player.Interface & INTER_MINIBACK)) {
 		
 		{
-		Rectf spacer = createChild(manaGauge.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
-		backpackIconGui.update(spacer);
+			Rectf spacer = createChild(manaGauge.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
+			backpackIconGui.update(spacer);
 		}
 		
 		{
-		Rectf spacer = createChild(backpackIconGui.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
-		bookIconGui.update(spacer);
+			Rectf spacer = createChild(backpackIconGui.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
+			bookIconGui.update(spacer);
 		}
 		
 		{
-		Rectf spacer = createChild(bookIconGui.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
-		purseIconGui.update(spacer);
+			Rectf spacer = createChild(bookIconGui.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
+			purseIconGui.update(spacer);
 		}
 		
 		{
-		Rectf spacer = createChild(purseIconGui.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
-		levelUpIconGui.update(spacer);
+			Rectf spacer = createChild(purseIconGui.rect(), Anchor_TopRight, Vec2f(0, 3), Anchor_BottomRight);
+			levelUpIconGui.update(spacer);
 		}
 		
 		backpackIconGui.draw();
 		bookIconGui.draw();
+		
+		levelUpIconGui.draw();
 		
 		// Draw/Manage Gold Purse Icon
 		if(player.gold > 0) {
 			purseIconGui.draw();
 		}
 		
-		levelUpIconGui.draw();
 	}
 	
 	precastSpellsGui.draw();
@@ -1624,27 +1580,10 @@ void HudRoot::draw() {
 	activeSpellsGui.updateInput(mousePos);
 	activeSpellsGui.draw();
 	
-	GRenderer->GetTextureStage(0)->setMinFilter(TextureStage::FilterLinear);
-	GRenderer->GetTextureStage(0)->setMagFilter(TextureStage::FilterLinear);
-	GRenderer->GetTextureStage(0)->setWrapMode(TextureStage::WrapRepeat);
 }
 
 void HudRoot::recalcScale() {
-	
-	float maxScale = minSizeRatio();
-	float scale = glm::clamp(1.f, maxScale * config.interface.hudScale, maxScale);
-	
-	if(config.interface.hudScaleInteger && maxScale > 1.f) {
-		if(scale < 1.3f || maxScale < 1.5f) {
-			scale = 1.f;
-		} else if(scale < 1.75f || maxScale < 2.f) {
-			scale = 1.5f;
-		} else {
-			scale = std::floor(std::min(scale + 0.5f, maxScale));
-		}
-	}
-	
-	setScale(scale);
+	setScale(getInterfaceScale(config.interface.hudScale, config.interface.hudScaleInteger));
 }
 
 
@@ -1677,7 +1616,12 @@ void HudRoot::setScale(float scale) {
 	g_secondaryInventoryHud.setScale(scale);
 }
 
+float HudRoot::getScale() {
+	return m_scale;
+}
+
 void HudRoot::init() {
+	
 	changeLevelIconGui.init();
 	currentTorchIconGui.init();
 	activeSpellsGui.init();
@@ -1700,7 +1644,6 @@ void HudRoot::init() {
 	
 	hitStrengthGauge.init();
 	
-	//setHudScale(2);
 }
 
 void HudRoot::updateInput() {

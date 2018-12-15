@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,71 +24,29 @@
 #include "graphics/data/TextureContainer.h"
 #include "gui/menu/MenuCursor.h"
 #include "input/Input.h"
-#include "scene/GameSound.h"
 
-ButtonWidget::ButtonWidget(const Vec2f & pos, const Vec2f & size, const char * texturePath)
-	: Widget()
+ButtonWidget::ButtonWidget(const Vec2f & size, const res::path & texture)
+	: m_texture(TextureContainer::Load(texture))
 {
-	m_pos = pos;
-	m_size = size;
 	
-	pRef = this; //TODO remove this
-	m_id = BUTTON_INVALID; //TODO remove this
-	
-	m_texture = TextureContainer::Load(texturePath);
 	arx_assert(m_texture);
 	
-	Vec2f scaledPos = RATIO_2(pos);
-	Vec2f scaledSize = RATIO_2(m_size);
-	m_rect = Rectf(scaledPos, scaledSize.x, scaledSize.y);
-}
-
-ButtonWidget::~ButtonWidget() {
-}
-
-void ButtonWidget::SetPos(Vec2f pos) {
+	m_rect = Rectf(size.x, size.y);
 	
-	Vec2f scaledSize = RATIO_2(m_size);
-	m_rect = Rectf(pos, scaledSize.x, scaledSize.y);
 }
 
-bool ButtonWidget::OnMouseClick() {
+ButtonWidget::~ButtonWidget() { }
+
+void ButtonWidget::render(bool mouseOver) {
 	
-	if(!enabled) {
-		return false;
+	UseRenderState state(render2D().blendAdditive());
+	
+	Color color = m_enabled ? Color::white : Color::gray(0.25f);
+	
+	EERIEDrawBitmap(m_rect, 0, m_texture, color);
+	
+	if(mouseOver) {
+		EERIEDrawBitmap(m_rect, 0, m_texture, color);
 	}
 	
-	ARX_SOUND_PlayMenu(SND_MENU_CLICK);
-	
-	if(clicked) {
-		clicked();
-	}
-	
-	return false;
-}
-
-void ButtonWidget::Update() {
-}
-
-void ButtonWidget::Render() {
-
-	Color color = (bCheck) ? Color::white : Color(63, 63, 63, 255);
-	EERIEDrawBitmap2(m_rect, 0, m_texture, color);
-}
-
-extern MenuCursor * pMenuCursor;
-
-void ButtonWidget::RenderMouseOver() {
-
-	pMenuCursor->SetMouseOver();
-	
-	const Vec2f cursor = Vec2f(GInput->getMousePosAbs());
-	if(m_rect.contains(cursor)) {
-		GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-		GRenderer->SetBlendFunc(BlendOne, BlendOne);
-		
-		Render();
-		
-		GRenderer->SetRenderState(Renderer::AlphaBlending, false);
-	}
 }

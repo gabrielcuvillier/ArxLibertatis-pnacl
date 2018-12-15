@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -50,7 +50,7 @@ class CrashHandler {
 public:
 	
 	//! Crash callback type that can be used with registerCrashCallback().
-	typedef void (*CrashCallback)(void);
+	typedef void (*CrashCallback)();
 
 public:
 	
@@ -87,7 +87,7 @@ public:
 	 *
 	 * \return True if the file could be attached, false otherwise.
 	 */
-	static bool addAttachedFile(const fs::path& file);
+	static bool addAttachedFile(const fs::path & file);
 	
 	/*!
 	 * \brief Set a variable value, which will be included in the crash report
@@ -133,8 +133,13 @@ public:
 	 *
 	 * \return True if the variable could be set, false otherwise.
 	 */
-	static bool setVariable(const std::string& name, const std::string & value);
-
+	static bool setVariable(const std::string & name, const std::string & value);
+	
+	/*!
+	 * \brief Set window ID which should be hidden when the process crashes
+	 */
+	static bool setWindow(u64 window);
+	
 	/*!
 	 * \brief Specify the location where crash reports will be written
 	 *
@@ -142,7 +147,7 @@ public:
 	 *
 	 * \return True if the report location could be set, false otherwise.
 	 */
-	static bool setReportLocation(const fs::path& location);
+	static bool setReportLocation(const fs::path & location);
 
 	/*!
 	 * \brief Remove old reports from the report location specified with setReportLocation().

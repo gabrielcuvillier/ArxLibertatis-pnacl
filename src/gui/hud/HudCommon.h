@@ -43,7 +43,9 @@ protected:
 };
 
 class HudIconBase : public HudItem {
+	
 protected:
+	
 	TextureContainer * m_tex;
 	bool m_isSelected;
 	
@@ -51,10 +53,11 @@ protected:
 	Color3f m_haloColor;
 	
 public:
+	
 	HudIconBase();
 	
-	//Used for drawing icons like the book or backpack icon.
 	void draw();
+	
 };
 
 enum Anchor {
@@ -69,9 +72,8 @@ enum Anchor {
 	Anchor_BottomRight,
 };
 
-Vec2f getAnchorPos(const Rectf & rect, const Anchor anchor);
+Vec2f getAnchorPos(const Rectf & rect, Anchor anchor);
 
-Rectf createChild(const Rectf & parent, const Anchor parentAnchor,
-                  const Vec2f & size, const Anchor childAnchor);
+Rectf createChild(const Rectf & parent, Anchor parentAnchor, const Vec2f & size, Anchor childAnchor);
 
 #endif // ARX_GUI_HUD_HUDCOMMON_H

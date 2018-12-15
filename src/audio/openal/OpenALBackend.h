@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -29,33 +29,40 @@
 #if ARX_HAVE_OPENAL_EFX
 #include <efx.h>
 #endif
+#if ARX_HAVE_OPENAL_HRTF
+#include <alext.h>
+#endif
 
 #include "audio/AudioBackend.h"
 #include "audio/AudioTypes.h"
 #include "audio/AudioResource.h"
 #include "math/Types.h"
+#include "platform/Platform.h"
 
 namespace audio {
 
 class OpenALSource;
 
-class OpenALBackend : public Backend {
+class OpenALBackend arx_final : public Backend {
 	
 public:
 	
 	OpenALBackend();
 	~OpenALBackend();
 	
-	aalError init(const char * device = NULL);
+	aalError init(const char * requestedDeviceName = NULL, HRTFAttribute hrtf = HRTFDefault);
 	
 	std::vector<std::string> getDevices();
 	
-	Source * createSource(SampleId sampleId, const Channel & channel);
+	Source * createSource(SampleHandle sampleId, const Channel & channel);
 	
-	Source * getSource(SourceId sourceId);
+	Source * getSource(SourcedSample sourceId);
 	
 	aalError setReverbEnabled(bool enable);
 	bool isReverbSupported();
+	
+	aalError setHRTFEnabled(HRTFAttribute enable);
+	HRTFStatus getHRTFStatus();
 	
 	aalError setUnitFactor(float factor);
 	aalError setRolloffFactor(float factor);
@@ -72,6 +79,8 @@ public:
 private:
 	
 	static const char * shortenDeviceName(const char * deviceName);
+	
+	void fillDeviceAttributes(ALCint (&attrs)[3]);
 	
 	ALCdevice * device;
 	ALCcontext * context;
@@ -95,7 +104,18 @@ private:
 	
 	#endif
 	
-	ResourceList<OpenALSource> sources;
+	#if ARX_HAVE_OPENAL_HRTF
+	
+	bool m_hasHRTF;
+	
+	LPALCRESETDEVICESOFT alcResetDeviceSOFT;
+	
+	HRTFAttribute m_HRTFAttribute;
+	
+	#endif
+	
+	typedef ResourceList<OpenALSource, SourceHandle> SourceList;
+	SourceList sources;
 	
 	float rolloffFactor;
 	

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,7 +49,11 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <cstring>
 #include <cstdlib>
 #include <algorithm>
+#include <list>
 
+#include <boost/foreach.hpp>
+
+#include "ai/Anchors.h"
 #include "ai/PathFinder.h"
 #include "game/Entity.h"
 #include "game/NPC.h"
@@ -57,308 +61,214 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "platform/Thread.h"
 #include "platform/Lock.h"
 #include "platform/profiler/Profiler.h"
-#include "physics/Anchors.h"
 #include "scene/Light.h"
 
 static const float PATHFINDER_HEURISTIC_MIN = 0.2f;
 static const float PATHFINDER_HEURISTIC_MAX = PathFinder::HEURISTIC_MAX;
-static const float PATHFINDER_HEURISTIC_RANGE = PATHFINDER_HEURISTIC_MAX
-                                                - PATHFINDER_HEURISTIC_MIN;
+static const float PATHFINDER_HEURISTIC_RANGE = PATHFINDER_HEURISTIC_MAX - PATHFINDER_HEURISTIC_MIN;
 static const float PATHFINDER_DISTANCE_MAX = 5000.0f;
 
 // Pathfinder Definitions
-static unsigned long PATHFINDER_UPDATE_INTERVAL = 10;
-
-long PATHFINDER_WORKING = 0;
+static const PlatformDuration PATHFINDER_UPDATE_INTERVAL = PlatformDurationMs(10);
 
 class PathFinderThread : public StoppableThread {
 	
+	Lock m_mutex;
+	std::list<PATHFINDER_REQUEST> m_queue;
+	volatile bool m_busy;
+	
 	void run();
 	
-};
-
-static PathFinderThread * pathfinder = NULL;
-static Lock * mutex = NULL;
-
-struct PATHFINDER_QUEUE_ELEMENT {
-	PATHFINDER_REQUEST req;
-	PATHFINDER_QUEUE_ELEMENT * next;
-	long valid;
-};
-
-static PATHFINDER_QUEUE_ELEMENT * pathfinder_queue_start = NULL;
-
-// An Io can request Pathfinding only once so we insure that it's always the case.
-// A new pathfinder request from the same IO will overwrite the precedent.
-static PATHFINDER_QUEUE_ELEMENT * PATHFINDER_Find_ioid(Entity * io) {
+public:
 	
-	if(!pathfinder_queue_start)
-		return NULL;
-
-	PATHFINDER_QUEUE_ELEMENT * cur = pathfinder_queue_start;
-
-	while(cur) {
-		if(cur->req.ioid == io)
-			return cur->valid ? cur : NULL;
+	PathFinderThread() : m_busy(false) { }
+	
+	void queueRequest(const PATHFINDER_REQUEST & request);
+	
+	size_t queueSize() {
 		
-		cur = cur->next;
-	}
-
-	return NULL;
-}
-
-// Adds a Pathfinder Search Element to the pathfinder queue.
-bool EERIE_PATHFINDER_Add_To_Queue(const PATHFINDER_REQUEST & req) {
-	
-	if(!pathfinder) {
-		return false;
+		Autolock lock(&m_mutex);
+		
+		return m_queue.size();
 	}
 	
-	Autolock lock(mutex);
+	void clearQueue() {
+		
+		Autolock lock(&m_mutex);
+		
+		m_queue.clear();
+	}
+	
+	bool isBusy() {
+		return m_busy;
+	}
+	
+};
 
-	PATHFINDER_QUEUE_ELEMENT * cur = pathfinder_queue_start;
-
-	PATHFINDER_QUEUE_ELEMENT * temp;
-
+void PathFinderThread::queueRequest(const PATHFINDER_REQUEST & request) {
+	
+	arx_assert(request.entity && (request.entity->ioflags & IO_NPC));
+	
+	Autolock lock(&m_mutex);
+	
 	// If this NPC is already requesting a Pathfinding then either
 	// try to Override it or add it to queue if it is currently being
 	// processed.
-	temp = PATHFINDER_Find_ioid(req.ioid);
-
-	if(temp && temp->valid && temp != pathfinder_queue_start) {
-		temp->valid = 0;
-		temp->req = req;
-		temp->valid = 1;
-		return true;
-	}
-
-	// Create a New element for the queue
-	temp = new PATHFINDER_QUEUE_ELEMENT;
-
-	if(!temp) {
-		return false;
-	}
-
-	// Fill this New element with new request
-	temp->req = req;
-	temp->valid = 1;
-
-	// No queue start ? then this element becomes the queue start
-	if(!cur) {
-		temp->next = NULL;
-		pathfinder_queue_start = temp;
-		
-	} else if((req.ioid->_npcdata->behavior & (BEHAVIOUR_MOVE_TO | BEHAVIOUR_FLEE
-	                                            | BEHAVIOUR_LOOK_FOR)) && cur->next) {
-		// priority: insert as second element of queue
-		temp->next = cur->next;
-		cur->next = temp;
-		
-	} else {
-		
-		// add to end of queue
-		temp->next = NULL;
-		
-		if(!pathfinder_queue_start) {
-			pathfinder_queue_start = temp;
-			return true;
-		} else {
-			while(cur->next) {
-				cur = cur->next;
-			}
-			cur->next = temp;
+	BOOST_FOREACH(PATHFINDER_REQUEST & oldRequest, m_queue) {
+		if(oldRequest.entity == request.entity) {
+			oldRequest = request;
+			return;
 		}
 	}
+	
+	if(!m_queue.empty()
+	   && (request.entity->_npcdata->behavior & (BEHAVIOUR_MOVE_TO | BEHAVIOUR_FLEE | BEHAVIOUR_LOOK_FOR))) {
+		// priority: insert as second element of queue
+		m_queue.insert(++m_queue.begin(), request);
+	} else {
+		m_queue.push_back(request);
+	}
+	
+}
+
+void PathFinderThread::run() {
+	
+	BackgroundData * eb = ACTIVEBKG;
+	PathFinder pathfinder(eb->m_anchors.size(), &eb->m_anchors[0], g_staticLightsMax, (EERIE_LIGHT **)g_staticLights);
+	
+	for(; !isStopRequested(); m_busy = false, sleep(PATHFINDER_UPDATE_INTERVAL)) {
+		
+		Autolock lock(&m_mutex);
+		
+		m_busy = true;
+		
+		if(m_queue.empty()) {
+			continue;
+		}
+		
+		PATHFINDER_REQUEST request = m_queue.front();
+		m_queue.pop_front();
+		
+		// TODO potentially unsafe Entity access
+		if(request.entity->_npcdata->behavior == BEHAVIOUR_NONE) {
+			continue;
+		}
+		
+		ARX_PROFILE_FUNC();
+		
+		pathfinder.setCylinder(request.entity->physics.cyl.radius, request.entity->physics.cyl.height);
+		
+		float distance;
+		if(request.entity->_npcdata->behavior & (BEHAVIOUR_MOVE_TO | BEHAVIOUR_GO_HOME)) {
+			distance = fdist(ACTIVEBKG->m_anchors[request.from].pos, ACTIVEBKG->m_anchors[request.to].pos);
+		} else if(request.entity->_npcdata->behavior & (BEHAVIOUR_WANDER_AROUND | BEHAVIOUR_FLEE | BEHAVIOUR_HIDE)) {
+			distance = request.entity->_npcdata->behavior_param;
+		} else if(request.entity->_npcdata->behavior & BEHAVIOUR_LOOK_FOR) {
+			distance = fdist(request.entity->pos, request.entity->target);
+		} else {
+			continue;
+		}
+		float heuristic = PATHFINDER_HEURISTIC_MAX;
+		if(distance < PATHFINDER_DISTANCE_MAX) {
+			heuristic = PATHFINDER_HEURISTIC_MIN + PATHFINDER_HEURISTIC_RANGE * (distance / PATHFINDER_DISTANCE_MAX);
+		}
+		pathfinder.setHeuristic(heuristic);
+		
+		bool stealth = request.entity->_npcdata->behavior.hasAll(BEHAVIOUR_SNEAK | BEHAVIOUR_HIDE);
+		
+		PathFinder::Result result;
+		if(request.entity->_npcdata->behavior & (BEHAVIOUR_MOVE_TO | BEHAVIOUR_GO_HOME)) {
+			
+			pathfinder.move(request.from, request.to, result, stealth);
+			
+		} else if(request.entity->_npcdata->behavior & BEHAVIOUR_WANDER_AROUND) {
+			
+			pathfinder.wanderAround(request.from, distance, result, stealth);
+			
+		} else if(request.entity->_npcdata->behavior & (BEHAVIOUR_FLEE | BEHAVIOUR_HIDE)) {
+			
+			float safeDistance = distance + fdist(request.entity->target, request.entity->pos);
+			pathfinder.flee(request.from, request.entity->target, safeDistance, result, stealth);
+			
+		} else if(request.entity->_npcdata->behavior & BEHAVIOUR_LOOK_FOR) {
+			
+			float radius = request.entity->_npcdata->behavior_param;
+			pathfinder.lookFor(request.from, request.entity->target, radius, result, stealth);
+			
+		}
+		
+		if(!result.empty()) {
+			long * list = new long[result.size()];
+			std::copy(result.begin(), result.end(), list);
+			// TODO potential memory leak
+			request.entity->_npcdata->pathfind.list = list;
+		}
+		request.entity->_npcdata->pathfind.listnb = result.size();
+		
+	}
+	
+}
+
+static PathFinderThread * g_pathFinderThread = NULL;
+
+// Adds a Pathfinder Search Element to the pathfinder queue.
+bool EERIE_PATHFINDER_Add_To_Queue(const PATHFINDER_REQUEST & request) {
+	
+	if(!g_pathFinderThread) {
+		return false;
+	}
+	
+	g_pathFinderThread->queueRequest(request);
 	
 	return true;
 }
 
 long EERIE_PATHFINDER_Get_Queued_Number() {
-	if(!mutex)
+	
+	if(!g_pathFinderThread) {
 		return 0;
-
-	Autolock lock(mutex);
-	
-	PATHFINDER_QUEUE_ELEMENT * cur = pathfinder_queue_start;
-
-	long count = 0;
-
-	while (cur) cur = cur->next, count++;
-
-	return count;
-}
-
-static void EERIE_PATHFINDER_Clear_Private() {
-	
-	PATHFINDER_QUEUE_ELEMENT * cur = pathfinder_queue_start;
-	PATHFINDER_QUEUE_ELEMENT * next;
-	
-	while(cur) {
-		next = cur->next;
-		delete cur;
-		cur = next;
 	}
 	
-	pathfinder_queue_start = NULL;
-	
+	return g_pathFinderThread->queueSize();
 }
 
+bool EERIE_PATHFINDER_Is_Busy() {
+	
+	if(!g_pathFinderThread) {
+		return false;
+	}
+	
+	return g_pathFinderThread->isBusy();
+}
 
 void EERIE_PATHFINDER_Clear() {
 	
-	if(!pathfinder) {
+	if(!g_pathFinderThread) {
 		return;
 	}
 	
-	Autolock lock(mutex);
-	
-	EERIE_PATHFINDER_Clear_Private();
-	
-}
-
-// Retrieves & Removes next Pathfind request from queue
-static bool EERIE_PATHFINDER_Get_Next_Request(PATHFINDER_REQUEST & request) {
-	
-	if(!pathfinder_queue_start || !pathfinder_queue_start->valid) {
-		return false;
-	}
-	
-	PATHFINDER_QUEUE_ELEMENT * cur = pathfinder_queue_start;
-
-	if ((cur->req.ioid)
-	        && (cur->req.ioid->ioflags & IO_NPC)
-	        && (cur->req.ioid->_npcdata->behavior == BEHAVIOUR_NONE)) {
-		pathfinder_queue_start = cur->next;
-		delete cur;
-		return false;
-	}
-
-	request = cur->req;
-	pathfinder_queue_start = cur->next;
-	delete cur;
-
-	return true;
-}
-
-// Pathfinder Thread
-void PathFinderThread::run() {
-	
-	EERIE_BACKGROUND * eb = ACTIVEBKG;
-	PathFinder pathfinder(eb->nbanchors, eb->anchors, MAX_LIGHTS, (EERIE_LIGHT **)GLight);
-
-	while(!isStopRequested()) {
-		
-		mutex->lock();
-
-		PATHFINDER_WORKING = 1;
-
-		PATHFINDER_REQUEST curpr;
-		if(EERIE_PATHFINDER_Get_Next_Request(curpr) && curpr.isvalid) {
-			
-			ARX_PROFILE_FUNC();
-			
-			PATHFINDER_WORKING = 2;
-
-			if(curpr.ioid && curpr.ioid->_npcdata) {
-				float heuristic(PATHFINDER_HEURISTIC_MAX);
-
-				pathfinder.setCylinder(curpr.ioid->physics.cyl.radius, curpr.ioid->physics.cyl.height);
-
-				bool stealth = (curpr.ioid->_npcdata->behavior & (BEHAVIOUR_SNEAK | BEHAVIOUR_HIDE))
-				                == (BEHAVIOUR_SNEAK | BEHAVIOUR_HIDE);
-
-				
-				PathFinder::Result result;
-				
-				if(   (curpr.ioid->_npcdata->behavior & BEHAVIOUR_MOVE_TO)
-				   || (curpr.ioid->_npcdata->behavior & BEHAVIOUR_GO_HOME)
-				) {
-					float distance = fdist(ACTIVEBKG->anchors[curpr.from].pos, ACTIVEBKG->anchors[curpr.to].pos);
-
-					if(distance < PATHFINDER_DISTANCE_MAX)
-						heuristic = PATHFINDER_HEURISTIC_MIN + PATHFINDER_HEURISTIC_RANGE * (distance / PATHFINDER_DISTANCE_MAX);
-
-					pathfinder.setHeuristic(heuristic);
-					pathfinder.move(curpr.from, curpr.to, result, stealth);
-				} else if(curpr.ioid->_npcdata->behavior & BEHAVIOUR_WANDER_AROUND) {
-					if(curpr.ioid->_npcdata->behavior_param < PATHFINDER_DISTANCE_MAX)
-						heuristic = PATHFINDER_HEURISTIC_MIN + PATHFINDER_HEURISTIC_RANGE * (curpr.ioid->_npcdata->behavior_param / PATHFINDER_DISTANCE_MAX);
-
-					pathfinder.setHeuristic(heuristic);
-					pathfinder.wanderAround(curpr.from, curpr.ioid->_npcdata->behavior_param, result, stealth);
-				} else if(curpr.ioid->_npcdata->behavior & (BEHAVIOUR_FLEE | BEHAVIOUR_HIDE)) {
-					if(curpr.ioid->_npcdata->behavior_param < PATHFINDER_DISTANCE_MAX)
-						heuristic = PATHFINDER_HEURISTIC_MIN
-						            + PATHFINDER_HEURISTIC_RANGE
-						              * (curpr.ioid->_npcdata->behavior_param / PATHFINDER_DISTANCE_MAX);
-
-					pathfinder.setHeuristic(heuristic);
-					float safedist = curpr.ioid->_npcdata->behavior_param
-					                 + fdist(curpr.ioid->target, curpr.ioid->pos);
-
-					pathfinder.flee(curpr.from, curpr.ioid->target, safedist, result, stealth);
-				} else if(curpr.ioid->_npcdata->behavior & BEHAVIOUR_LOOK_FOR) {
-					float distance = fdist(curpr.ioid->pos, curpr.ioid->target);
-
-					if(distance < PATHFINDER_DISTANCE_MAX)
-						heuristic = PATHFINDER_HEURISTIC_MIN + PATHFINDER_HEURISTIC_RANGE * (distance / PATHFINDER_DISTANCE_MAX);
-
-					pathfinder.setHeuristic(heuristic);
-					pathfinder.lookFor(curpr.from, curpr.ioid->target,
-					                   curpr.ioid->_npcdata->behavior_param, result, stealth);
-				}
-				
-				if(!result.empty()) {
-					long * list = (long*)malloc(result.size() * sizeof(long));
-					std::copy(result.begin(), result.end(), list);
-					*(curpr.returnlist) = list;
-				}
-				*(curpr.returnnumber) = result.size();
-				
-			}
-		}
-
-		PATHFINDER_WORKING = 0;
-
-		mutex->unlock();
-		sleep(PATHFINDER_UPDATE_INTERVAL);
-	}
-
-	// fix leaks memory but freeze characters
-	// pathfinder.Clean();
-
-	PATHFINDER_WORKING = 0;
-	
+	g_pathFinderThread->clearQueue();
 }
 
 void EERIE_PATHFINDER_Release() {
 	
-	if(!pathfinder) {
+	if(!g_pathFinderThread) {
 		return;
 	}
 	
-	mutex->lock();
+	g_pathFinderThread->clearQueue();
+	g_pathFinderThread->stop();
 	
-	EERIE_PATHFINDER_Clear_Private();
-	
-	pathfinder->stop();
-	
-	delete pathfinder, pathfinder = NULL;
-	
-	mutex->unlock(), delete mutex, mutex = NULL;
+	delete g_pathFinderThread, g_pathFinderThread = NULL;
 }
 
 void EERIE_PATHFINDER_Create() {
 	
-	if(pathfinder) {
+	if(g_pathFinderThread) {
 		EERIE_PATHFINDER_Release();
 	}
 	
-	if(!mutex) {
-		mutex = new Lock();
-	}
-	
-	pathfinder = new PathFinderThread();
-	pathfinder->setThreadName("Pathfinder");
-	pathfinder->start();
+	g_pathFinderThread = new PathFinderThread();
+	g_pathFinderThread->setThreadName("Pathfinder");
+	g_pathFinderThread->start();
 }

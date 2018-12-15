@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,120 +20,91 @@
 #ifndef ARX_GUI_WIDGET_WIDGET_H
 #define ARX_GUI_WIDGET_WIDGET_H
 
+#include <boost/function.hpp>
 #include <boost/noncopyable.hpp>
 
 #include "core/SaveGame.h"
+#include "input/InputKey.h"
 #include "math/Rectangle.h"
 #include "util/HandleType.h"
 
-// Enum for all the buttons in the menu
-enum MenuButton {
-	BUTTON_INVALID = -1,
-
-	BUTTON_MENUEDITQUEST_LOAD = 1,
-	BUTTON_MENUEDITQUEST_LOAD_CONFIRM,
-	BUTTON_MENUEDITQUEST_SAVE,
-	BUTTON_MENUEDITQUEST_DELETE,
-	BUTTON_MENUEDITQUEST_DELETE_CONFIRM,
-
-	BUTTON_MENUOPTIONS_CONTROLS_CUST_DEFAULT,
-
-	BUTTON_MENUEDITQUEST_SAVEINFO,
-};
-
-enum ELEMSTATE
-{
-	TNOP,
-	//Element Text
-	EDIT,           //type d'etat
-	GETTOUCH,
-	EDIT_TIME,      //etat en cours
-	GETTOUCH_TIME
-};
-
-enum ELEMPOS
-{
-	NOCENTER,
-	CENTER,
-	CENTERY
-};
-
-enum MENUSTATE
-{
-	MAIN,
-	RESUME_GAME,
-	NEW_QUEST,
-	EDIT_QUEST,
-	EDIT_QUEST_LOAD,
-	EDIT_QUEST_SAVE,
-	EDIT_QUEST_SAVE_CONFIRM,
-	OPTIONS,
-	OPTIONS_VIDEO,
-	OPTIONS_INTERFACE,
-	OPTIONS_AUDIO,
-	OPTIONS_INPUT,
-	OPTIONS_INPUT_CUSTOMIZE_KEYS_1,
-	OPTIONS_INPUT_CUSTOMIZE_KEYS_2,
-	CREDITS,
-	QUIT,
-	NOP
+enum MENUSTATE {
+	NOP,
+	Page_None,
+	Page_NewQuestConfirm,
+	Page_LoadOrSave,
+	Page_Load,
+	Page_Save,
+	Page_SaveConfirm,
+	Page_Options,
+	Page_OptionsVideo,
+	Page_OptionsRender,
+	Page_OptionsInterface,
+	Page_OptionsAudio,
+	Page_OptionsInput,
+	Page_OptionsInputCustomizeKeys1,
+	Page_OptionsInputCustomizeKeys2,
+	Page_QuitConfirm,
 };
 
 enum WidgetType {
+	WidgetType_Spacer,
 	WidgetType_Button,
 	WidgetType_Checkbox,
 	WidgetType_CycleText,
 	WidgetType_Panel,
 	WidgetType_Slider,
-	WidgetType_Text
+	WidgetType_Text,
+	WidgetType_TextInput,
+	WidgetType_Keybind,
+	WidgetType_SaveSlot,
 };
 
 class Widget : private boost::noncopyable {
 	
 public:
-	Rectf m_rect;
-	Widget *	pRef;
 	
-	MenuButton m_id;
-	
-	SavegameHandle m_savegame;
-	
-	ELEMPOS     ePlace;			//placement de la zone
-	ELEMSTATE   eState;			//etat de l'element en cours
-	MENUSTATE   m_targetMenu;		//etat de retour de l'element
-	int         m_shortcut;
-	
-public:
-	explicit Widget();
+	Widget();
 	virtual ~Widget();
 	
-	virtual bool OnMouseClick() = 0;
-	virtual void Update() = 0;
-	virtual void Render() = 0;
-	virtual void RenderMouseOver() { }
-	virtual void EmptyFunction() { }
-	virtual bool OnMouseDoubleClick() { return false; }
-	virtual Widget * GetZoneWithID(MenuButton zoneId);
+	virtual bool click();
+	virtual bool doubleClick();
+	virtual void hover() { }
+	virtual void update() { }
+	virtual void render(bool mouseOver = false) = 0;
+	virtual bool wantFocus() const { return false; }
+	virtual void unfocus() { }
 	
-	void SetShortCut(int _iShortCut);
+	MENUSTATE targetPage() const { return m_targetPage; }
+	void setTargetPage(MENUSTATE page) { m_targetPage = page; }
+	
+	InputKeyId shortcut() const { return m_shortcut; }
+	void setShortcut(int key);
 	
 	virtual void setEnabled(bool enable);
+	bool isEnabled() const { return m_enabled; }
 	
-	virtual void Move(const Vec2f & offset);
-	virtual void SetPos(Vec2f pos);
+	virtual void move(const Vec2f & offset);
+	void setPosition(Vec2f pos) { move(pos - m_rect.topLeft()); }
 	
-	void SetCheckOff();
-	void SetCheckOn();
-	
-	bool getCheck();
-	
-	virtual Widget * IsMouseOver(const Vec2f & mousePos) const;
+	virtual Widget * getWidgetAt(const Vec2f & mousePos);
 	
 	virtual WidgetType type() const = 0;
 	
+	boost::function<void(Widget * /* widget */)> clicked;
+	boost::function<void(Widget * /* widget */)> doubleClicked;
+	
+	Rectf m_rect;
+	
 protected:
-	bool enabled;
-	bool bCheck;
+	
+	bool m_enabled;
+	
+private:
+	
+	MENUSTATE m_targetPage;
+	InputKeyId m_shortcut;
+	
 };
 
 #endif // ARX_GUI_WIDGET_WIDGET_H

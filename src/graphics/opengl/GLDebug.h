@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,15 +21,16 @@
 #define ARX_GRAPHICS_OPENGL_GLDEBUG_H
 
 namespace gldebug {
-	
-	//! Initialize OpenGL debug output.
-	void initialize();
-	
-	//! Check if debug output should be enabled.
-	bool isEnabled();
-	
-	//! Must be called at the end of each frame
-	void endFrame();
-}
+
+//! Initialize OpenGL debug output.
+void initialize();
+
+//! Check if debug output should be enabled.
+bool isEnabled();
+
+//! Must be called at the end of each frame
+void endFrame();
+
+} // namespace gldebug
 
 #endif // ARX_GRAPHICS_OPENGL_GLDEBUG_H

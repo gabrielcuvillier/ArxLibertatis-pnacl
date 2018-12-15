@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,31 +49,35 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "io/log/Logger.h"
 
 struct TextManager::ManagedText {
-	Font* pFont;
+	
+	Font * pFont;
 	Rect rRect;
 	Rect rRectClipp;
 	std::string lpszUText;
 	float fDeltaY;
 	float fSpeedScrollY;
 	Color lCol;
-	long lTimeScroll;
-	long lTimeOut;
+	PlatformDuration lTimeScroll;
+	PlatformDuration lTimeOut;
+	
 };
 
-TextManager::TextManager() {
-}
+TextManager::TextManager() { }
 
 TextManager::~TextManager() {
 	Clear();
 }
 
-bool TextManager::AddText(Font* _pFont, const std::string & _lpszUText, const Rect & _rRect, Color _lCol, long _lTimeOut, long _lTimeScroll, float _fSpeedScroll, int iNbLigneClipp) {
+bool TextManager::AddText(Font * font, const std::string & text,
+                          const Rect & bbox, Color color,
+                          PlatformDuration displayTime, PlatformDuration scrollTime,
+                          float scrollSpeed, int nLineClipp) {
 	
-	if(_lpszUText.empty()) {
+	if(text.empty()) {
 		return false;
 	}
 	
-	if(!_pFont) {
+	if(!font) {
 		LogWarning << "Adding text with NULL font.";
 		return false;
 	}
@@ -83,23 +87,21 @@ bool TextManager::AddText(Font* _pFont, const std::string & _lpszUText, const Re
 		return false;
 	}
 	
-	arx_assert(!_rRect.empty());
+	arx_assert(!bbox.empty());
 	
-	pArxText->pFont = _pFont;
-	pArxText->lpszUText = _lpszUText;
-	pArxText->rRect = _rRect;
-	pArxText->lCol = _lCol;
-	pArxText->lTimeScroll = _lTimeScroll;
+	pArxText->pFont = font;
+	pArxText->lpszUText = text;
+	pArxText->rRect = bbox;
+	pArxText->lCol = color;
+	pArxText->lTimeScroll = scrollTime;
 	pArxText->fDeltaY = 0.f;
-	pArxText->fSpeedScrollY = _fSpeedScroll;
-	pArxText->lTimeOut = _lTimeOut;
+	pArxText->fSpeedScrollY = scrollSpeed;
+	pArxText->lTimeOut = displayTime;
 	pArxText->rRectClipp = pArxText->rRect;
 	
-	if(iNbLigneClipp) 
-	{
-		Vec2i sSize = _pFont->getTextSize(pArxText->lpszUText);
-		sSize.y *= iNbLigneClipp;
-	
+	if(nLineClipp) {
+		Vec2i sSize = font->getTextSize(pArxText->lpszUText);
+		sSize.y *= nLineClipp;
 		pArxText->rRectClipp.bottom = pArxText->rRect.top + sSize.y;
 	}
 	
@@ -108,22 +110,16 @@ bool TextManager::AddText(Font* _pFont, const std::string & _lpszUText, const Re
 	return true;
 }
 
-bool TextManager::AddText(Font * font, const std::string & str, Vec2i pos, Color fgcolor) {
-	Rect r;
-	r.left = pos.x;
-	r.top = pos.y;
-	r.right = Rect::Limits::max();
-	r.bottom = Rect::Limits::max();
-	return AddText(font, str, r, fgcolor);
+bool TextManager::AddText(Font * font, const std::string & text, Vec2i pos, Color color) {
+	Rect bbox;
+	bbox.left = pos.x;
+	bbox.top = pos.y;
+	bbox.right = Rect::Limits::max();
+	bbox.bottom = Rect::Limits::max();
+	return AddText(font, text, bbox, color);
 }
 
-void TextManager::Update(float _fDiffFrame) {
-	
-	int _iDiffFrame = checked_range_cast<int>(_fDiffFrame);
-	
-	// TODO-slussier: Until we fix the arxtime.get_updated() mess, it's easy to have a FrameDiff of 0...
-	if(_iDiffFrame == 0)
-		_iDiffFrame = 1;
+void TextManager::Update(PlatformDuration _iDiffFrame) {
 	
 	std::vector<ManagedText *>::iterator itManage;
 	for(itManage = entries.begin(); itManage != entries.end();) {
@@ -138,9 +134,9 @@ void TextManager::Update(float _fDiffFrame) {
 		
 		pArxText->lTimeOut -= _iDiffFrame;
 		
-		if(pArxText->lTimeScroll < 0 &&
-		   pArxText->fDeltaY < (pArxText->rRect.bottom - pArxText->rRectClipp.bottom)) {
-			pArxText->fDeltaY += pArxText->fSpeedScrollY * (float)_iDiffFrame;
+		if(pArxText->lTimeScroll < 0
+		   && pArxText->fDeltaY < float(pArxText->rRect.bottom - pArxText->rRectClipp.bottom)) {
+			pArxText->fDeltaY += pArxText->fSpeedScrollY * toMs(_iDiffFrame);
 			
 			if(pArxText->fDeltaY >= (pArxText->rRect.bottom - pArxText->rRectClipp.bottom)) {
 				pArxText->fDeltaY = static_cast<float>(pArxText->rRect.bottom - pArxText->rRectClipp.bottom);
@@ -191,7 +187,6 @@ void TextManager::Clear() {
 	entries.clear();
 }
 
-bool TextManager::Empty() const 
-{
+bool TextManager::Empty() const {
 	return entries.empty();
 }

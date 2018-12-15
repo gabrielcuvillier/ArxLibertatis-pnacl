@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -52,18 +52,17 @@ class Mixer {
 	
 public:
 	
-	Mixer();
+	explicit Mixer(const Mixer * parent);
 	~Mixer();
 	
-	aalError setVolume(float volume);
-	aalError setParent(const Mixer * mixer);
+	void setVolume(float volume);
 	
 	bool isPaused() const { return paused; }
 	float getFinalVolume() const { return finalVolume; }
 	
-	aalError stop();
-	aalError pause();
-	aalError resume();
+	void stop();
+	void pause();
+	void resume();
 	
 private:
 	
@@ -71,8 +70,8 @@ private:
 	void updateVolume();
 	
 	bool paused;
-	float volume;
-	const Mixer * parent;
+	float m_volume;
+	const Mixer * m_parent;
 	float finalVolume;
 	
 };

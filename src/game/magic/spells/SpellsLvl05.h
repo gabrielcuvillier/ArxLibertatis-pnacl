@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,9 +23,12 @@
 #include "game/magic/Spell.h"
 
 #include "graphics/spells/Spells05.h"
+#include "platform/Platform.h"
 
-class RuneOfGuardingSpell : public SpellBase {
+class RuneOfGuardingSpell arx_final : public SpellBase {
+	
 public:
+	
 	RuneOfGuardingSpell();
 	
 	void Launch();
@@ -35,15 +38,18 @@ public:
 	Vec3f getPosition();
 	
 private:
+	
 	Vec3f m_pos;
 	LightHandle m_light;
 	
 	TextureContainer * tex_p2;
-	unsigned long ulCurrentTime;
+	
 };
 
-class LevitateSpell : public SpellBase {
+class LevitateSpell arx_final : public SpellBase {
+	
 public:
+	
 	LevitateSpell();
 	
 	void Launch();
@@ -51,7 +57,7 @@ public:
 	void Update();
 	
 private:
-	unsigned long ulCurrentTime;
+	
 	Vec3f m_pos;
 	float m_baseRadius;
 	RotatingCone cone1;
@@ -59,10 +65,13 @@ private:
 	FloatingStones m_stones;
 	
 	void createDustParticle();
+	
 };
 
-class CurePoisonSpell : public SpellBase {
+class CurePoisonSpell arx_final : public SpellBase {
+	
 public:
+	
 	CurePoisonSpell();
 	
 	void Launch();
@@ -70,14 +79,17 @@ public:
 	void Update();
 	
 private:
+	
 	Vec3f m_pos;
 	LightHandle m_light;
 	ParticleSystem m_particles;
-	unsigned long m_currentTime;
+	
 };
 
-class RepelUndeadSpell : public SpellBase {
+class RepelUndeadSpell arx_final : public SpellBase {
+	
 public:
+	
 	RepelUndeadSpell();
 	
 	void Launch();
@@ -85,14 +97,18 @@ public:
 	void Update();
 	
 private:
+	
 	LightHandle m_light;
 	Vec3f m_pos;
 	float m_yaw;
 	TextureContainer * tex_p2;
+	
 };
 
-class PoisonProjectileSpell : public SpellBase {
+class PoisonProjectileSpell arx_final : public SpellBase {
+	
 public:
+	
 	~PoisonProjectileSpell();
 	
 	void Launch();
@@ -100,10 +116,12 @@ public:
 	void Update();
 	
 private:
+	
 	LightHandle lLightId;
 	std::vector<CPoisonProjectile *> m_projectiles;
 	
 	void AddPoisonFog(const Vec3f & pos, float power);
+	
 };
 
 #endif // ARX_GAME_MAGIC_SPELLS_SPELLSLVL05_H

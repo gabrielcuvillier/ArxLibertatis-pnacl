@@ -14,7 +14,7 @@
 #  - Allow #ifdef BOOST_PP_IS_ITERATING + #endif in place of header guards
 #  - C++ source files are named .cpp, not .cc
 #
-# Copyright (c) 2011-1013 Arx Libertatis Team (see the AUTHORS file)
+# Copyright (c) 2011-2014 Arx Libertatis Team (see the AUTHORS file)
 # Copyright (c) 2009 Google Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -121,10 +121,6 @@ Syntax: cpplint.py [--verbose=#] [--output=vs7] [--filter=-x,+y,...]
   Every problem is given a confidence score from 1-5, with 5 meaning we are
   certain of the problem, and 1 meaning it could be a legitimate construct.
   This will miss some errors, and is not a substitute for a code review.
-
-  To suppress false-positive errors of a certain category, add a
-  'NOLINT(category)' comment to the line.  NOLINT or NOLINT(*)
-  suppresses errors of all categories on that line.
 
   The files passed in will be linted; at least one file must be provided.
   Linted extensions are %s.  Other file types will be ignored.
@@ -317,9 +313,6 @@ _OTHER_HEADER = 5
 
 _regexp_compile_cache = {}
 
-# Finds occurrences of NOLINT or NOLINT(...).
-_RE_SUPPRESSION = re.compile(r'\bNOLINT\b(\([^)]*\))?')
-
 # {str, set(int)}: a map from error categories to sets of linenumbers
 # on which those errors are expected and should be suppressed.
 _error_suppressions = {}
@@ -354,20 +347,6 @@ def ParseNolintSuppressions(filename, raw_line, linenum, error):
     linenum: int, the number of the current line.
     error: function, an error handler.
   """
-  # FIXME(adonovan): "NOLINT(" is misparsed as NOLINT(*).
-  matched = _RE_SUPPRESSION.search(raw_line)
-  if matched:
-    category = matched.group(1)
-    if category in (None, '(*)'):  # => "suppress all"
-      _error_suppressions.setdefault(None, set()).add(linenum)
-    else:
-      if category.startswith('(') and category.endswith(')'):
-        category = category[1:-1]
-        if category in _ERROR_CATEGORIES:
-          _error_suppressions.setdefault(category, set()).add(linenum)
-        else:
-          error(filename, linenum, 'readability/nolint', 5,
-                'Unknown NOLINT error category: %s' % category)
 
 
 def ResetNolintSuppressions():
@@ -1622,7 +1601,7 @@ def CheckSpacingForFunctionCall(filename, line, linenum, error):
       # If the closing parenthesis is preceded by only whitespaces,
       # try to give a more descriptive error message.
       if Search(r'^\s+\)', fncall):
-        error(filename, linenum, 'whitespace/parens', 2,
+        error(filename, linenum, 'whitespace/parens_newline', 2,
               'Closing ) should be moved to the previous line')
       else:
         error(filename, linenum, 'whitespace/parens', 2,
@@ -1874,8 +1853,19 @@ def CheckSpacing(filename, clean_lines, linenum, error):
 
   line = clean_lines.elided[linenum]  # get rid of comments and strings
 
+  match = Search(r'[^\w]operator[\s]+([^\(\s\w]+)', line)
+  if match:
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space in operator %s' % match.group(1))
+
   # Don't try to do spacing checks for operator methods
-  line = re.sub(r'operator(==|!=|<|<<|<=|>=|>>|>)\(', 'operator\(', line)
+  line = re.sub(r'operator[\s]*(==|!=|<|<<|<=|>=|>>|>|\+=|\*=|\-=|/=|\%=|\|=|\&=|\^=|\~|\~|\+|\*|\-|\/|\%|\||\&|\^|\+\+|\-\-|\-\>|=|\!|new|new\[\]|delete|delete\[\]|[\:\w\s\<\>\*\&]*)[\s]*([\(\;])', 'operator\\2', line)
+
+  line = re.sub(r'^[\s]*\#[\s]*(include|pragma).*', '', line)
+
+  line = re.sub(r'(^|[^\w])(delete\[\]|delete|return|case)([^\w\;]|$)', '\\1\\2 =\\3', line)
+
+  line = re.sub(r'(^|[^\w])(\d(\.\d*)?e\-\d+f?)([^\w]|$)', '\\1_\\4', line)
 
   if Search(r'template\<', line):
     error(filename, linenum, 'whitespace/templates', 4,
@@ -1885,9 +1875,126 @@ def CheckSpacing(filename, clean_lines, linenum, error):
   # Otherwise not.  Note we only check for non-spaces on *both* sides;
   # sometimes people put non-spaces on one side when aligning ='s among
   # many lines (not that this is behavior that I approve of...)
-  if Search(r'[\w.]=[\w.]', line) and not Search(r'\b(if|while) ', line):
+  if Search(r'\=[^\=\>\s]', line):
     error(filename, linenum, 'whitespace/operators', 4,
-          'Missing spaces around =')
+          'Missing space after =')
+  if Search(r'[^\+\-\*\/\%\&\|\^\<\>\!\=\s]\=', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before =')
+  match = Search(r'[^\s](([\+\-\*\/\%\&\|\^\!]|\<\<|\>\>)\=)', line)
+  if match:
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before %s' % match.group(1))
+  match = Search(r'(([\+\-\*\/\%\&\|\^\!]|\<\<|\>\>)\=)[^\s]', line)
+  if match:
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after %s' % match.group(1))
+
+  if Search(r'[^\s]\^', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before ^')
+  if Search(r'\^[^\s\=]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after ^')
+  if Search(r'[^\(\[\s\:\.\+\-\!\*\&\>]\~', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before ~')
+  if Search(r'\~\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space space after ~')
+  if Search(r'[^\s\(\[\!\+\-\*\~\&]\!', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before !')
+  if Search(r'\!\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after !')
+  if Search(r'[^\s\.\>\*\(\[\+\-\!\~\&\:]\*', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before *')
+  if Search(r'[\w\)\]\"\']\s*\*[^\s\*\=\>\,\)\[]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after *')
+  if Search(r'[^\s\w\)\]\>\*\"\'\,]\s*\*\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after *')
+  if Search(r'\*\s+\*', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space between * and *')
+  if Search(r'[^\s\&\(\[\+\-\!\~\*]\&', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before &')
+  if Search(r'[\w\)\]\"\'\*]\s*\&[^\s\&\=\>\,\)]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after &')
+  if Search(r'[^\s\w\)\]\>\&\"\'\,\*]\s*\&\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after &')
+  if Search(r'[^\s\/]\/', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before /')
+  if Search(r'[^\/]\/[^\s\/\=]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after /')
+  if Search(r'[^\s\+\(\[\*\-\!\~\&]\+[^\+]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before +')
+  if Search(r'[\w\)\]\"\']\s*\+[^\s\)\]\+\=]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after +')
+  if Search(r'[^\s\w\)\]\>\"\'\+]\s*\+\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after +')
+  if Search(r'[^\s\-\(\[\+\*\!\~\&]\-[^\>\-]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before -')
+  if Search(r'[^\s\w\)\]\>\"\'\-]\s*\-\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after -')
+  if Search(r'[\w\)\]\"\']\s*\-[^\s\>\)\]\-\=]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after -')
+  if Search(r'[^\s]\s+\-\>', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space before ->')
+  if Search(r'\-\>\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after ->')
+  if Search(r'[^\s]\s+\.[^\d\.]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space before .')
+  if Search(r'([^\d\.]|[a-zA-Z_]\d*)\.\s', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Extra space after .')
+  if Search(r'[^\s\|]\|', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before |')
+  if Search(r'(\|)[^\s\|\=]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after |')
+  if Search(r'[^\s]\?', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before ?')
+  if Search(r'\?[^\s]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after ?')
+  if Search(r'[^\:]\:[^\s\:]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after :')
+  if Search(r'[^\s\w\:\>]\:[^:]', line) and not Search(r'(^|[^\w])(case)([^\w]|$)', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before :')
+  if Search(r'[^\s\<]\<[^\>\(]*\)', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before <')
+  if Search(r'\<[^\s\>\(\<\=][^\>\(]*\)', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after <')
+  if Search(r'\([^\)\<]*[^\s\)\>\-]\>', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space before >')
+  if Search(r'\([^\)\<]*[^\)\<\-]\>[^\s\=\>]', line):
+    error(filename, linenum, 'whitespace/operators', 4,
+          'Missing space after >')
 
   # It's ok not to have spaces around binary operators like + - * /, but if
   # there's too little whitespace, we get concerned.  It's hard to tell,
@@ -1910,7 +2017,7 @@ def CheckSpacing(filename, clean_lines, linenum, error):
           'Missing spaces around %s' % match.group(1))
   # We allow no-spaces around << and >> when used like this: 10<<20, but
   # not otherwise (particularly, not when used as streams)
-  match = Search(r'[^0-9\s](<<|>>)[^0-9\s]', line)
+  match = Search(r'[^\s](<<|>>)[^\s]', line)
   if match:
     error(filename, linenum, 'whitespace/operators', 3,
           'Missing spaces around %s' % match.group(1))
@@ -1942,9 +2049,9 @@ def CheckSpacing(filename, clean_lines, linenum, error):
               not match.group(2) and Search(r'\bfor\s*\(.*; \)', line)):
         error(filename, linenum, 'whitespace/parens', 5,
               'Mismatching spaces inside () in %s' % match.group(1))
-    if not len(match.group(2)) in [0, 1]:
+    if len(match.group(2)) != 0:
       error(filename, linenum, 'whitespace/parens', 5,
-            'Should have zero or one spaces inside ( and ) in %s' %
+            'Should have zero spaces inside ( and ) in %s' %
             match.group(1))
 
   # You should always have a space after a comma (either as fn arg or operator)

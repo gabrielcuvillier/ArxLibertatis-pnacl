@@ -37,10 +37,24 @@ struct SPELL_ICON {
 	bool bSecret;
 	bool m_hasDuration;
 	bool bAudibleAtStart;
+	
+	SPELL_ICON()
+		: tc(NULL)
+		, level(0)
+		, spellid(SPELL_NONE)
+		, bSecret(false)
+		, m_hasDuration(true)
+		, bAudibleAtStart(false)
+	{
+		for(long j = 0; j < 6; j++) {
+			symbols[j] = RUNE_NONE;
+		}
+	}
 };
 
 extern SPELL_ICON spellicons[SPELL_TYPES_COUNT];
 
 void spellDataInit();
+void spellDataRelease();
 
 #endif // ARX_GAME_MAGIC_SPELLDATA_H

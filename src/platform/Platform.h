@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -34,7 +34,7 @@
 #define ARX_PLATFORM_UNKNOWN 0
 #define ARX_PLATFORM_WIN32   1
 #define ARX_PLATFORM_LINUX   2
-#define ARX_PLATFORM_MACOSX  3
+#define ARX_PLATFORM_MACOS   3
 #define ARX_PLATFORM_BSD     100 // Generic BSD system
 #define ARX_PLATFORM_UNIX    101 // Generic UNIX system
 
@@ -43,7 +43,7 @@
 #elif defined(_WIN32)
 	#define ARX_PLATFORM ARX_PLATFORM_WIN32
 #elif defined(__MACH__)
-	#define ARX_PLATFORM ARX_PLATFORM_MACOSX
+	#define ARX_PLATFORM ARX_PLATFORM_MACOS
 #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) \
       || defined(__bsdi__) || defined(__DragonFly__)
 	#define ARX_PLATFORM ARX_PLATFORM_BSD
@@ -113,15 +113,15 @@ typedef double f64; // 64 bits double float
 ------------------------------------------------------------*/
 
 /*!
- * \def ARX_DEBUG_BREAK()
+ * \def arx_trap()
  * \brief Halt execution and notify any attached debugger
  */
 #if ARX_COMPILER_MSVC
-	#define ARX_DEBUG_BREAK() __debugbreak()
+	#define arx_trap() (__debugbreak(), std::abort())
 #elif ARX_HAVE_BUILTIN_TRAP
-	#define ARX_DEBUG_BREAK() __builtin_trap()
+	#define arx_trap() __builtin_trap()
 #else
-	#define ARX_DEBUG_BREAK() std::abort()
+	#define arx_trap() std::abort()
 #endif
 
 /* ---------------------------------------------------------
@@ -129,10 +129,10 @@ typedef double f64; // 64 bits double float
 ------------------------------------------------------------*/
 
 /*!
- * \def ARX_FORMAT_PRINTF(message_arg, param_vararg)
+ * \def arx_format_printf(message_arg, param_vararg)
  * \brief Declare that a function argument is a printf-like format string
  *
- * Usage: T function(args, message, ...) ARX_FORMAT_PRINTF(message_arg, param_vararg)
+ * Usage: T function(args, message, ...) arx_format_printf(message_arg, param_vararg)
  *
  * \param message_arg index of the format string arg (1 for the first)
  * \param param_vararg index of the vararg for the parameters
@@ -142,10 +142,10 @@ typedef double f64; // 64 bits double float
  *  b) Prevent warnings due to a non-literal format string in the implementation
  */
 #if ARX_HAVE_ATTRIBUTE_FORMAT_PRINTF
-	#define ARX_FORMAT_PRINTF(message_arg, param_vararg) \
+	#define arx_format_printf(message_arg, param_vararg) \
 		__attribute__((format(printf, message_arg, param_vararg)))
 #else
-	#define ARX_FORMAT_PRINTF(message_arg, param_vararg)
+	#define arx_format_printf(message_arg, param_vararg)
 #endif
 
 /* ---------------------------------------------------------
@@ -186,7 +186,7 @@ typedef double f64; // 64 bits double float
  *
  * (unused params, variables only used for asserts...)
  */
-#define ARX_UNUSED(x) ((void)&x)
+#define ARX_UNUSED(x) ((void)(x))
 
 /*!
  * \def ARX_ANONYMOUS_SYMBOL(Name)
@@ -251,6 +251,18 @@ namespace ARX_ANONYMOUS_NAMESPACE {
 #endif
 
 /*!
+ * \def arx_force_inline
+ * \brief Declare that a function never throws exceptions.
+ */
+#if ARX_COMPILER_MSVC
+	#define arx_force_inline __forceinline
+#elif ARX_HAVE_ATTRIBUTE_ALWAYS_INLINE
+	#define arx_force_inline __attribute__((always_inline)) inline
+#else
+	#define arx_force_inline inline
+#endif
+
+/*!
  * \def ARX_STATIC_ASSERT
  * \brief Declare that a function never throws exceptions.
  */
@@ -265,46 +277,159 @@ namespace ARX_ANONYMOUS_NAMESPACE {
                           Assertions
 ------------------------------------------------------------*/
 
-/*!
- * \brief Log that an assertion has failed
- *
- * This is a low-level implementation, use arx_assert() instead!
- */
-void assertionFailed(const char * expression, const char * file, unsigned line,
-                     const char * message = NULL, ...) ARX_FORMAT_PRINTF(4, 5);
-
-/*!
- * \def arx_assert(Expression, ...)
- * \brief Abort if \a Expression evaluates to false
- * You may provide a failure message in printf-like syntax and arguments for it as
- * as additional arguments after the expression.
- * Does nothing in release builds.
- */
 #ifdef ARX_DEBUG
-	#define arx_assert(Expression, ...)  do { \
-			if(!(Expression)) { \
-				assertionFailed(#Expression, (ARX_FILE), __LINE__, ##__VA_ARGS__); \
-				ARX_DEBUG_BREAK(); \
-			} \
-		} while(0)
+	/*!
+	 * \brief Log that an assertion has failed
+	 *
+	 * This is a low-level implementation, use arx_assert() instead!
+	 */
+	arx_format_printf(4, 5)
+	void assertionFailed(const char * expression, const char * file, unsigned line, const char * message, ...);
+#define arx_assert_impl(Expression, ExpressionString, ...) \
+	((Expression) ? (void)0 : (assertionFailed(ExpressionString, ARX_FILE, __LINE__, __VA_ARGS__), arx_trap()))
 #else // ARX_DEBUG
-	#define arx_assert(Expression, ...) \
-		ARX_DISCARD(Expression, ##__VA_ARGS__)
+	#define arx_assert_impl(Expression, ExpressionString, ...) \
+		ARX_DISCARD(Expression, ExpressionString, __VA_ARGS__)
 #endif // ARX_DEBUG
 
 /*!
- * \def ARX_DEAD_CODE()
- * \brief Assert that a code branch cannot be reached.
+ * \def arx_assert(Expression)
+ * \brief Abort if \a Expression evaluates to false
+ *
+ * Does nothing in release builds.
+ */
+#define arx_assert(Expression)          arx_assert_impl(Expression, #Expression, NULL)
+
+/*!
+ * \def arx_assert_msg(Expression, Message, MessageArguments...)
+ * \brief Abort and print a message if \a Expression evaluates to false
+ *
+ * You must provide a failure message in printf-like syntax and arguments for it as
+ * as additional arguments after the expression.
+ *
+ * Does nothing in release builds.
+ */
+#define arx_assert_msg(Expression, ...) arx_assert_impl(Expression, #Expression, __VA_ARGS__)
+
+/* ---------------------------------------------------------
+                  Assumptions (Optimizer Hints)
+------------------------------------------------------------*/
+
+/*!
+ * \def arx_assume(Expression)
+ * \brief Assume that an expression is true for optimization purposes.
+ *
+ * In debug builds, assumptions are checked using \ref arx_assert().
+ *
+ * Unlike arx_assert(Expression) this macro also tells the compiler to assume that Expression is always true
+ * in release builds.
  */
 #ifdef ARX_DEBUG
-#define ARX_DEAD_CODE() arx_assert(false)
-#elif ARX_COMPILER_MSVC
-#define ARX_DEAD_CODE() __assume(0)
+	#define arx_assume_impl(Expression) arx_assert(Expression)
+#elif ARX_HAVE_BUILTIN_ASSUME
+	#define arx_assume_impl(Expression) __builtin_assume(Expression)
+#elif ARX_HAVE_ASSUME
+	#define arx_assume_impl(Expression) __assume(Expression)
 #elif ARX_HAVE_BUILTIN_UNREACHABLE
-#define ARX_DEAD_CODE() __builtin_unreachable()
+	#define arx_assume_impl(Expression) ((Expression) ? (void)0 : __builtin_unreachable())
+#endif
+#ifdef arx_assume_impl
+#define arx_assume(Expression) arx_assume_impl(Expression)
 #else
-#define ARX_DEAD_CODE() ((void)0)
+#define arx_assume(Expression) ARX_DISCARD(Expression)
 #endif
 
+/*!
+ * \def arx_unreachable()
+ * \brief Assume that a code branch cannot be reached.
+ *
+ * This is similar to arx_assume(false) falls back to a while loop instead of a no-op when we don't know
+ * of a way to tell the compiler about assumtions.
+ *
+ * Unlike arx_assert(false) this macro also tells the compiler to assume that the branch is unreachable
+ * in release builds. Therefore there should never be any code after uses of this macro, including
+ * return statements, as wether this code is executed would be undefined.
+ *
+ * This macro can be used to avoid dummy values when switching over enums, ie if only A and B are possible:
+ * \code
+ * const char * enumToString(Enum value) {
+ *   switch(value) {
+ *     case A: return "A";
+ *     case B: return "B";
+ *     // default: return "invalid value";  -- this is not needed with arx_unreachable()
+ *   }
+ *   arx_unreachable();
+ * }
+ * \endcode
+ *
+ * If a switch is supposed to handle all values of an enum it is important to not add a default label
+ * for the arx_unreachable() macro but instead place it after the switch. This allows tools to warn when
+ * ther is an enum value added that is not handled in the switch.
+ */
+#ifdef ARX_DEBUG
+	#define arx_unreachable() arx_assert_impl(false, "unreachable code", NULL)
+#elif ARX_HAVE_BUILTIN_UNREACHABLE
+	#define arx_unreachable() __builtin_unreachable()
+#elif defined(arx_assume_impl)
+	#define arx_unreachable() arx_assume_impl(false)
+#else
+	#define arx_unreachable() do { } while(true)
+#endif
+
+/*!
+ * \def arx_nodiscard
+ * \brief Annotate a function return attribute to warn if it is not checked by callers
+ *
+ * Should go before the return type and static specifier of a function declaration.
+ */
+#if ARX_HAVE_CXX17_NODISCARD
+#define arx_nodiscard [[nodiscard]]
+#elif ARX_HAVE_ATTRIBUTE_WARN_UNUSED_RESULT
+#define arx_nodiscard __attribute__((warn_unused_result))
+#elif ARX_COMPILER_MSVC && _MSC_VER >= 1700
+#define arx_nodiscard _Check_return_
+#else
+#define arx_nodiscard
+#endif
+
+/*!
+ * \def arx_return_noalias
+ * \brief Annotate a function that returns a pointer that doesn't alias with anything and
+ *        points to uninitialized or zeroed memory
+ */
+#if ARX_HAVE_ATTRIBUTE_MALLOC
+#define arx_return_noalias __attribute__((malloc))
+#elif ARX_COMPILER_MSVC
+#define arx_return_noalias __declspec(restrict)
+#else
+#define arx_return_noalias
+#endif
+
+/*!
+ * \def arx_alloc_size(SizeArg)
+ * \brief Annotate a function that returns a pointer to memory of size given by the function
+ *        parameter with index SizeArg
+ */
+#if ARX_HAVE_ATTRIBUTE_ALLOC_SIZE
+#define arx_alloc_size(SizeArg) __attribute__((alloc_size(SizeArg)))
+#else
+#define arx_alloc_size(SizeArg)
+#endif
+
+/*!
+ * \def arx_alloc(SizeArg)
+ * \brief Annotate a function that returns a pointer that doesn't alias with anything and
+ *        points to uninitialized or zeroed memory of size given by the function
+ *        parameter with index SizeArg
+ */
+#define arx_alloc(SizeArg) arx_nodiscard arx_return_noalias arx_alloc_size(SizeArg)
+
+#if ARX_HAVE_CXX11_FINAL
+#define arx_final final
+#elif ARX_COMPILER_MSVC
+#define arx_final sealed
+#else
+#define arx_final
+#endif
 
 #endif // ARX_PLATFORM_PLATFORM_H

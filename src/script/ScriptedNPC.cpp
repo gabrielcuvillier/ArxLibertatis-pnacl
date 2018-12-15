@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -75,9 +75,6 @@ public:
 			behavior |= (flg & flag('m')) ? BEHAVIOUR_MAGIC : Behaviour(0);
 			behavior |= (flg & flag('f')) ? BEHAVIOUR_FIGHT : Behaviour(0);
 			behavior |= (flg & flag('a')) ? BEHAVIOUR_STARE_AT : Behaviour(0);
-			if(flg & flags("012")) {
-				io->_npcdata->tactics = 0;
-			}
 		}
 		
 		std::string command = context.getWord();
@@ -87,11 +84,13 @@ public:
 				DebugScript(' ' << options << ' ' << command);
 				ARX_NPC_Behaviour_Stack(io);
 				return Success;
-			} else if(command == "unstack") {
+			}
+			if(command == "unstack") {
 				DebugScript(' ' << options << ' ' << command);
 				ARX_NPC_Behaviour_UnStack(io);
 				return Success;
-			} else if(command == "unstackall") {
+			}
+			if(command == "unstackall") {
 				DebugScript(' ' << options << ' ' << command);
 				ARX_NPC_Behaviour_Reset(io);
 				return Success;
@@ -155,7 +154,7 @@ public:
 		
 		DebugScript(' ' << options);
 		
-		ARX_NPC_Revive(context.getEntity(), init ? 1 : 0);
+		ARX_NPC_Revive(context.getEntity(), init);
 		
 		return Success;
 	}
@@ -172,7 +171,7 @@ public:
 		
 		SpellcastFlags spflags = 0;
 		long duration = -1;
-		bool haveDuration = 0;
+		bool haveDuration = false;
 		
 		HandleFlags("kdxmsfz") {
 			
@@ -193,11 +192,11 @@ public:
 			
 			if(flg & flag('d')) {
 				spflags |= SPELLCAST_FLAG_NOCHECKCANCAST;
-				duration = context.getFloat();
+				duration = long(context.getFloat());
 				if(duration <= 0) {
 					duration = 99999999; // TODO should this be FLT_MAX?
 				}
-				haveDuration = 1;
+				haveDuration = true;
 			}
 			if(flg & flag('x')) {
 				spflags |= SPELLCAST_FLAG_NOSOUND;
@@ -242,7 +241,7 @@ public:
 		
 		DebugScript(' ' << spellname << ' ' << level << ' ' << target << ' ' << spflags << ' ' << duration);
 		
-		TryToCastSpell(context.getEntity(), spellid, level, t->index(), spflags, duration);
+		TryToCastSpell(context.getEntity(), spellid, level, t->index(), spflags, GameDurationMs(duration));
 		
 		return Success;
 	}
@@ -286,7 +285,7 @@ public:
 		
 		DebugScript(' ' << r << ' ' << g << ' ' << b);
 		
-		context.getEntity()->_npcdata->blood_color = Color3f(r, g, b).to<u8>();
+		context.getEntity()->_npcdata->blood_color = Color::rgb(r, g, b);
 		
 		return Success;
 	}
@@ -438,7 +437,7 @@ public:
 		
 		Entity * io = context.getEntity();
 		if(io->ioflags & IO_NPC) {
-			io->_npcdata->pathfind.flags &= ~(PATHFIND_ALWAYS|PATHFIND_ONCE|PATHFIND_NO_UPDATE);
+			io->_npcdata->pathfind.flags &= ~(PATHFIND_ALWAYS | PATHFIND_ONCE | PATHFIND_NO_UPDATE);
 		}
 		
 		HandleFlags("san") {
@@ -460,7 +459,7 @@ public:
 			if(io->_npcdata->reachedtarget) {
 				old_target = io->targetinfo;
 			}
-			if(io->_npcdata->behavior & (BEHAVIOUR_FLEE|BEHAVIOUR_WANDER_AROUND)) {
+			if(io->_npcdata->behavior & (BEHAVIOUR_FLEE | BEHAVIOUR_WANDER_AROUND)) {
 				old_target = EntityHandle(-12);
 			}
 		}
@@ -475,7 +474,7 @@ public:
 		DebugScript(' ' << options << ' ' << target);
 		
 		if(io->ioflags & IO_CAMERA) {
-			io->_camdata->cam.translatetarget = Vec3f_ZERO;
+			io->_camdata->translatetarget = Vec3f(0.f);
 		}
 		
 		EntityHandle i = EntityHandle();
@@ -521,7 +520,7 @@ public:
 			return Failed;
 		}
 		
-		ARX_DAMAGES_ForceDeath(t, context.getEntity());
+		ARX_DAMAGES_ForceDeath(*t, context.getEntity());
 		
 		return Success;
 	}
@@ -548,7 +547,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedNPC() {
 	

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -26,17 +26,23 @@
 
 namespace audio {
 
-Source::Source(Sample * _sample) : id(INVALID_ID), sample(_sample), status(Idle), time(0), callback_i(0) {
-	sample->reference();
+Source::Source(Sample * sample)
+	: m_channel(MixerId())
+	, m_sample(sample)
+	, status(Idle)
+	, time(0)
+	, callback_i(0)
+{
+	m_sample->reference();
 }
 
 Source::~Source() {
-	sample->dereference();
+	m_sample->dereference();
 }
 
-void Source::addCallback(Callback * callback, size_t time, TimeUnit unit) {
+void Source::addCallback(Callback * callback, size_t position) {
 	
-	size_t pos = std::min(unitsToBytes(time, sample->getFormat(), unit), sample->getLength());
+	size_t pos = std::min(position, m_sample->getLength());
 	
 	size_t i = 0;
 	while(i != callbacks.size() && callbacks[i].second <= pos) {
@@ -73,11 +79,11 @@ void Source::updateCallbacks() {
 			callbacks[callback_i].first->onSamplePosition(*this, callbacks[callback_i].second);
 		}
 		
-		if(time < sample->getLength()) {
+		if(time < m_sample->getLength()) {
 			break;
 		}
 		
-		time -= sample->getLength();
+		time -= m_sample->getLength();
 		callback_i = 0;
 		
 		if(!time && status != Playing) {
@@ -91,26 +97,22 @@ void Source::updateCallbacks() {
 	
 }
 
-aalError Source::setVolume(float v) {
+aalError Source::setVolume(float volume) {
 	
-	if(!(channel.flags & FLAG_VOLUME)) {
+	if(!(m_channel.flags & FLAG_VOLUME)) {
 		return AAL_ERROR_INIT;
 	}
 	
-	channel.volume = glm::clamp(v, 0.f, 1.f);
+	m_channel.volume = glm::clamp(volume, 0.f, 1.f);
 	
 	return updateVolume();
 }
 
 aalError Source::setMixer(MixerId mixer) {
 	
-	channel.mixer = mixer;
+	m_channel.mixer = mixer;
 	
 	return updateVolume();
-}
-
-size_t Source::getTime(TimeUnit unit) const {
-	return bytesToUnits(time, sample->getFormat(), unit);
 }
 
 } // namespace audio

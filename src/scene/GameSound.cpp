@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -48,7 +48,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <vector>
 #include <sstream>
 #include <cstdio>
+#include <cstring>
 
+#include <boost/foreach.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
 
 #include "animation/Animation.h"
@@ -80,10 +82,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 
 using audio::AmbianceId;
-using audio::SampleId;
-using audio::SourceId;
 using audio::EnvId;
-using audio::INVALID_ID;
 using audio::FLAG_VOLUME;
 using audio::FLAG_POSITION;
 using audio::FLAG_REVERBERATION;
@@ -94,12 +93,6 @@ using audio::FLAG_AUTOFREE;
 
 extern bool EXTERNALVIEW;
 
-enum PlayingAmbianceType {
-	PLAYING_AMBIANCE_MENU,
-	PLAYING_AMBIANCE_SCRIPT,
-	PLAYING_AMBIANCE_ZONE
-};
-
 // TODO used for saving
 struct PlayingAmbiance {
 	char name[256];
@@ -108,58 +101,51 @@ struct PlayingAmbiance {
 	s32 type;
 };
 
-static const unsigned long ARX_SOUND_UPDATE_INTERVAL(100);  
-static const unsigned long ARX_SOUND_STREAMING_LIMIT(176400); 
-static const unsigned long MAX_MATERIALS(17);
-static const unsigned long MAX_VARIANTS(5);
-static const unsigned long AMBIANCE_FADE_TIME(2000);
-static const float ARX_SOUND_UNIT_FACTOR(0.01F);
-static const float ARX_SOUND_ROLLOFF_FACTOR(1.3F);
-static const float ARX_SOUND_DEFAULT_FALLSTART(200.0F);
+static const unsigned long MAX_VARIANTS = 5;
+static const PlatformDuration AMBIANCE_FADE_TIME = PlatformDurationMs(2000);
+static const float ARX_SOUND_DEFAULT_FALLSTART = 200.f;
 
-static const float ARX_SOUND_DEFAULT_FALLEND(2200.0F);
-static const float ARX_SOUND_REFUSE_DISTANCE(2500.0F);
+static const float ARX_SOUND_DEFAULT_FALLEND = 2200.f;
+static const float ARX_SOUND_REFUSE_DISTANCE = 2500.f;
+
+static const res::path sample_path = "sfx";
 
 static const res::path ARX_SOUND_PATH_INI = "localisation";
-static const char ARX_SOUND_PATH_SAMPLE[] = "sfx";
-static const char ARX_SOUND_PATH_AMBIANCE[] = "sfx/ambiance";
 static const char ARX_SOUND_PATH_ENVIRONMENT[] = "sfx/environment";
 static const res::path ARX_SOUND_PRESENCE_NAME = "presence";
 static const std::string ARX_SOUND_FILE_EXTENSION_WAV = ".wav";
 static const std::string ARX_SOUND_FILE_EXTENSION_INI = ".ini";
 
-static const unsigned long ARX_SOUND_COLLISION_MAP_COUNT = 3;
 static const res::path ARX_SOUND_COLLISION_MAP_NAMES[] = {
 	"snd_armor",
 	"snd_step",
 	"snd_weapon"
 };
 
-static bool bIsActive(false);
+static bool g_soundInitialized = false;
 
+static AmbianceId g_zoneAmbiance = AmbianceId();
+static AmbianceId g_menuAmbiance = AmbianceId();
 
-static AmbianceId ambiance_zone = AmbianceId();
-static AmbianceId ambiance_menu = AmbianceId();
-
-static long Inter_Materials[MAX_MATERIALS][MAX_MATERIALS][MAX_VARIANTS];
+static audio::SampleHandle g_soundMaterials[MAX_MATERIALS][MAX_MATERIALS];
 
 namespace {
 
 struct SoundMaterial {
 	
-	std::vector<SampleId> variants;
+	std::vector<audio::SampleHandle> variants;
 	
 	SoundMaterial() : current(0) { }
 	
 	~SoundMaterial() {
-		for(std::vector<SampleId>::const_iterator i = variants.begin(); i !=  variants.end(); ++i) {
+		for(std::vector<audio::SampleHandle>::const_iterator i = variants.begin(); i !=  variants.end(); ++i) {
 			audio::deleteSample(*i);
 		}
 	}
 	
-	SampleId next() {
+	audio::SampleHandle next() {
 		arx_assert(current < variants.size());
-		SampleId sample = variants[current];
+		audio::SampleHandle sample = variants[current];
 		current = (current + 1) % variants.size();
 		return sample;
 	}
@@ -172,16 +158,16 @@ private:
 
 typedef std::map<std::string, SoundMaterial> CollisionMap;
 typedef std::map<std::string, CollisionMap> CollisionMaps;
-static CollisionMaps collisionMaps;
+CollisionMaps collisionMaps;
 
 namespace Section {
-static const std::string presence = "presence";
-}
+const std::string presence = "presence";
+} // namespace Section
 
 typedef std::map<res::path, float> PresenceFactors;
-static PresenceFactors presence;
+PresenceFactors g_presenceFactors;
 
-}
+} // anonymous namespace
 
 audio::MixerId ARX_SOUND_MixerGame;
 audio::MixerId ARX_SOUND_MixerGameSample;
@@ -192,202 +178,46 @@ audio::MixerId ARX_SOUND_MixerMenuSample;
 audio::MixerId ARX_SOUND_MixerMenuSpeech;
 audio::MixerId ARX_SOUND_MixerMenuAmbiance;
 
-// Menu samples
-SampleId SND_MENU_CLICK(INVALID_ID);
-SampleId SND_MENU_RELEASE(INVALID_ID);
-
-// Interface samples
-SampleId SND_BACKPACK(INVALID_ID);
-SampleId SND_BOOK_OPEN(INVALID_ID);
-SampleId SND_BOOK_CLOSE(INVALID_ID);
-SampleId SND_BOOK_PAGE_TURN(INVALID_ID);
-SampleId SND_GOLD(INVALID_ID);
-SampleId SND_INVSTD(INVALID_ID);
-SampleId SND_SCROLL_OPEN(INVALID_ID);
-SampleId SND_SCROLL_CLOSE(INVALID_ID);
-SampleId SND_TORCH_START(INVALID_ID);
-SampleId SND_TORCH_LOOP(INVALID_ID);
-SampleId SND_TORCH_END(INVALID_ID);
-
-// Other SFX samples
-SampleId SND_FIREPLACE(INVALID_ID);
-SampleId SND_PLOUF(INVALID_ID);
-SampleId SND_QUAKE(INVALID_ID);
-SampleId SND_WHOOSH(INVALID_ID);
-
-// Player samples
-SampleId SND_PLAYER_DEATH_BY_FIRE(INVALID_ID);
-
-SampleId SND_PLAYER_FILLLIFEMANA(INVALID_ID);
-SampleId SND_PLAYER_HEART_BEAT(INVALID_ID);
-SampleId SND_PLAYER_LEVEL_UP(INVALID_ID);
-SampleId SND_PLAYER_POISONED(INVALID_ID);
-
-// Magic drawing samples
-SampleId SND_MAGIC_AMBIENT(INVALID_ID);
-SampleId SND_MAGIC_DRAW(INVALID_ID);
-SampleId SND_MAGIC_FIZZLE(INVALID_ID);
-
-// Magic symbols samples
-SampleId SND_SYMB[RUNE_COUNT] = {INVALID_ID};
-
-// Spells samples
-SampleId SND_SPELL_ACTIVATE_PORTAL(INVALID_ID);
-SampleId SND_SPELL_ARMOR_START(INVALID_ID);
-SampleId SND_SPELL_ARMOR_END(INVALID_ID);
-SampleId SND_SPELL_ARMOR_LOOP(INVALID_ID);
-SampleId SND_SPELL_LOWER_ARMOR(INVALID_ID);
-SampleId SND_SPELL_LOWER_ARMOR_END(INVALID_ID);
-SampleId SND_SPELL_BLESS(INVALID_ID);
-SampleId SND_SPELL_COLD_PROTECTION_START(INVALID_ID);
-SampleId SND_SPELL_COLD_PROTECTION_LOOP(INVALID_ID);
-SampleId SND_SPELL_COLD_PROTECTION_END(INVALID_ID);
-SampleId SND_SPELL_CONFUSE(INVALID_ID);
-SampleId SND_SPELL_CONTROL_TARGET(INVALID_ID);
-SampleId SND_SPELL_CREATE_FIELD(INVALID_ID);
-SampleId SND_SPELL_CREATE_FOOD(INVALID_ID);
-SampleId SND_SPELL_CURE_POISON(INVALID_ID);
-SampleId SND_SPELL_CURSE(INVALID_ID);
-SampleId SND_SPELL_DETECT_TRAP(INVALID_ID);
-SampleId SND_SPELL_DETECT_TRAP_LOOP(INVALID_ID);
-SampleId SND_SPELL_DISARM_TRAP(INVALID_ID);
-SampleId SND_SPELL_DISPELL_FIELD(INVALID_ID);
-SampleId SND_SPELL_DISPELL_ILLUSION(INVALID_ID);
-SampleId SND_SPELL_DOUSE(INVALID_ID);
-SampleId SND_SPELL_ELECTRIC(INVALID_ID);
-SampleId SND_SPELL_ENCHANT_WEAPON(INVALID_ID);
-SampleId SND_SPELL_EXPLOSION(INVALID_ID);
-SampleId SND_SPELL_EYEBALL_IN(INVALID_ID);
-SampleId SND_SPELL_EYEBALL_OUT(INVALID_ID);
-SampleId SND_SPELL_FIRE_FIELD(INVALID_ID);
-SampleId SND_SPELL_FIRE_HIT(INVALID_ID);
-SampleId SND_SPELL_FIRE_LAUNCH(INVALID_ID);
-SampleId SND_SPELL_FIRE_PROTECTION(INVALID_ID);
-SampleId SND_SPELL_FIRE_PROTECTION_LOOP(INVALID_ID);
-SampleId SND_SPELL_FIRE_PROTECTION_END(INVALID_ID);
-SampleId SND_SPELL_FIRE_WIND(INVALID_ID);
-SampleId SND_SPELL_FREEZETIME(INVALID_ID);
-SampleId SND_SPELL_HARM(INVALID_ID);
-SampleId SND_SPELL_HEALING(INVALID_ID);
-SampleId SND_SPELL_ICE_FIELD(INVALID_ID);
-SampleId SND_SPELL_ICE_FIELD_LOOP(INVALID_ID);
-SampleId SND_SPELL_ICE_FIELD_END(INVALID_ID);
-SampleId SND_SPELL_ICE_PROJECTILE_LAUNCH(INVALID_ID);
-SampleId SND_SPELL_INCINERATE(INVALID_ID);
-SampleId SND_SPELL_INCINERATE_LOOP(INVALID_ID);
-SampleId SND_SPELL_INCINERATE_END(INVALID_ID);
-SampleId SND_SPELL_IGNITE(INVALID_ID);
-SampleId SND_SPELL_INVISIBILITY_START(INVALID_ID);
-SampleId SND_SPELL_INVISIBILITY_END(INVALID_ID);
-SampleId SND_SPELL_LEVITATE_START(INVALID_ID);
-SampleId SND_SPELL_LEVITATE_LOOP(INVALID_ID);
-SampleId SND_SPELL_LEVITATE_END(INVALID_ID);
-SampleId SND_SPELL_LIGHTNING_START(INVALID_ID);
-SampleId SND_SPELL_LIGHTNING_LOOP(INVALID_ID);
-SampleId SND_SPELL_LIGHTNING_END(INVALID_ID);
-SampleId SND_SPELL_MAGICAL_HIT(INVALID_ID);
-
-//SampleId SND_SPELL_MASS_LIGHTNING_END(INVALID_ID);
-SampleId SND_SPELL_FIRE_FIELD_START(INVALID_ID);
-SampleId SND_SPELL_FIRE_FIELD_LOOP(INVALID_ID);
-SampleId SND_SPELL_FIRE_FIELD_END(INVALID_ID);
-
-
-SampleId SND_SPELL_MAGICAL_SHIELD(INVALID_ID);
-SampleId SND_SPELL_MASS_INCINERATE(INVALID_ID);
-SampleId SND_SPELL_MASS_PARALYSE(INVALID_ID);
-SampleId SND_SPELL_MM_CREATE(INVALID_ID);
-SampleId SND_SPELL_MM_HIT(INVALID_ID);
-SampleId SND_SPELL_MM_LAUNCH(INVALID_ID);
-SampleId SND_SPELL_MM_LOOP(INVALID_ID);
-SampleId SND_SPELL_NEGATE_MAGIC(INVALID_ID);
-SampleId SND_SPELL_NO_EFFECT(INVALID_ID);
-SampleId SND_SPELL_PARALYSE(INVALID_ID);
-SampleId SND_SPELL_PARALYSE_END(INVALID_ID);
-SampleId SND_SPELL_POISON_PROJECTILE_LAUNCH(INVALID_ID);
-SampleId SND_SPELL_RAISE_DEAD(INVALID_ID);
-SampleId SND_SPELL_REPEL_UNDEAD(INVALID_ID);
-SampleId SND_SPELL_REPEL_UNDEAD_LOOP(INVALID_ID);
-SampleId SND_SPELL_RUNE_OF_GUARDING(INVALID_ID);
-SampleId SND_SPELL_RUNE_OF_GUARDING_END(INVALID_ID);
-SampleId SND_SPELL_SLOW_DOWN(INVALID_ID);
-SampleId SND_SPELL_SLOW_DOWN_END(INVALID_ID);
-SampleId SND_SPELL_SPARK(INVALID_ID);
-SampleId SND_SPELL_SPEED_START(INVALID_ID);
-SampleId SND_SPELL_SPEED_LOOP(INVALID_ID);
-SampleId SND_SPELL_SPEED_END(INVALID_ID);
-SampleId SND_SPELL_SUMMON_CREATURE(INVALID_ID);
-SampleId SND_SPELL_TELEKINESIS_START(INVALID_ID);
-SampleId SND_SPELL_TELEKINESIS_END(INVALID_ID);
-SampleId SND_SPELL_TELEPORT(INVALID_ID);
-SampleId SND_SPELL_TELEPORTED(INVALID_ID);
-SampleId SND_SPELL_VISION_START(INVALID_ID);
-SampleId SND_SPELL_VISION_LOOP(INVALID_ID);
+StaticSamples g_snd;
 
 static void ARX_SOUND_EnvironmentSet(const res::path & name);
 static void ARX_SOUND_CreateEnvironments();
 static void ARX_SOUND_CreateStaticSamples();
 static void ARX_SOUND_ReleaseStaticSamples();
-static void ARX_SOUND_LoadCollision(const long & mat1, const long & mat2, const char * name);
 static void ARX_SOUND_CreateCollisionMaps();
 static void ARX_SOUND_CreateMaterials();
 static void ARX_SOUND_CreatePresenceMap();
 static float GetSamplePresenceFactor(const res::path & name);
-static void ARX_SOUND_LaunchUpdateThread();
-static void ARX_SOUND_KillUpdateThread();
 
 bool ARX_SOUND_Init() {
 	
-	if (bIsActive) ARX_SOUND_Release();
+	if(g_soundInitialized) {
+		ARX_SOUND_Release();
+	}
 	
-	if(audio::init(config.audio.backend, config.audio.device)) {
+	if(audio::init(config.audio.backend, config.audio.device, config.audio.hrtf)) {
 		audio::clean();
 		return false;
 	}
 	
-	if(audio::setSamplePath(ARX_SOUND_PATH_SAMPLE)
-	   || audio::setAmbiancePath(ARX_SOUND_PATH_AMBIANCE)
-	   || audio::setEnvironmentPath(ARX_SOUND_PATH_ENVIRONMENT)) {
-		audio::clean();
-		return false;
-	}
+	audio::setAmbiancePath("sfx/ambiance");
+	audio::setEnvironmentPath(ARX_SOUND_PATH_ENVIRONMENT);
+	audio::setUnitFactor(0.01f);
+	audio::setRolloffFactor(1.3f);
+	
+	audio::threadStart();
 	
 	// Create game mixers
 	ARX_SOUND_MixerGame = audio::createMixer();
-	ARX_SOUND_MixerGameSample = audio::createMixer();
-	audio::setMixerParent(ARX_SOUND_MixerGameSample, ARX_SOUND_MixerGame);
-	ARX_SOUND_MixerGameSpeech = audio::createMixer();
-	audio::setMixerParent(ARX_SOUND_MixerGameSpeech, ARX_SOUND_MixerGame);
-	ARX_SOUND_MixerGameAmbiance = audio::createMixer();
-	audio::setMixerParent(ARX_SOUND_MixerGameAmbiance, ARX_SOUND_MixerGame);
+	ARX_SOUND_MixerGameSample = audio::createMixer(ARX_SOUND_MixerGame);
+	ARX_SOUND_MixerGameSpeech = audio::createMixer(ARX_SOUND_MixerGame);
+	ARX_SOUND_MixerGameAmbiance = audio::createMixer(ARX_SOUND_MixerGame);
 	
 	// Create menu mixers
 	ARX_SOUND_MixerMenu = audio::createMixer();
-	ARX_SOUND_MixerMenuSample = audio::createMixer();
-	audio::setMixerParent(ARX_SOUND_MixerMenuSample, ARX_SOUND_MixerMenu);
-	ARX_SOUND_MixerMenuSpeech = audio::createMixer();
-	audio::setMixerParent(ARX_SOUND_MixerMenuSpeech, ARX_SOUND_MixerMenu);
-	ARX_SOUND_MixerMenuAmbiance = audio::createMixer();
-	audio::setMixerParent(ARX_SOUND_MixerMenuAmbiance, ARX_SOUND_MixerMenu);
-	
-	if(ARX_SOUND_MixerGame == audio::MixerId()
-	   || ARX_SOUND_MixerGameSample == audio::MixerId()
-	   || ARX_SOUND_MixerGameSpeech == audio::MixerId()
-	   || ARX_SOUND_MixerGameAmbiance == audio::MixerId()
-	   || ARX_SOUND_MixerMenu == audio::MixerId()
-	   || ARX_SOUND_MixerMenuSample == audio::MixerId()
-	   || ARX_SOUND_MixerMenuSpeech == audio::MixerId()
-	   || ARX_SOUND_MixerMenuAmbiance == audio::MixerId()) {
-		audio::clean();
-		return false;
-	}
-	
-	audio::setStreamLimit(ARX_SOUND_STREAMING_LIMIT);
-	
-	audio::setUnitFactor(ARX_SOUND_UNIT_FACTOR);
-	audio::setRolloffFactor(ARX_SOUND_ROLLOFF_FACTOR);
-	
-	ARX_SOUND_LaunchUpdateThread();
+	ARX_SOUND_MixerMenuSample = audio::createMixer(ARX_SOUND_MixerMenu);
+	ARX_SOUND_MixerMenuSpeech = audio::createMixer(ARX_SOUND_MixerMenu);
+	ARX_SOUND_MixerMenuAmbiance = audio::createMixer(ARX_SOUND_MixerMenu);
 	
 	// Load samples
 	ARX_SOUND_CreateStaticSamples();
@@ -398,7 +228,7 @@ bool ARX_SOUND_Init() {
 	// Load environments, enable environment system and set default one if required
 	ARX_SOUND_CreateEnvironments();
 	
-	bIsActive = true;
+	g_soundInitialized = true;
 	
 	ARX_SOUND_SetReverb(config.audio.eax);
 	
@@ -414,50 +244,45 @@ void ARX_SOUND_SetReverb(bool enabled) {
 
 void ARX_SOUND_Release() {
 	
-	if(!bIsActive) {
+	if(!g_soundInitialized) {
 		return;
 	}
 	
 	ARX_SOUND_ReleaseStaticSamples();
 	collisionMaps.clear();
-	presence.clear();
-	ARX_SOUND_KillUpdateThread();
+	g_presenceFactors.clear();
+	audio::threadStop();
 	audio::clean();
-	bIsActive = false;
+	g_soundInitialized = false;
 }
 
 long ARX_SOUND_IsEnabled()
 {
-	return bIsActive ? 1 : 0;
+	return g_soundInitialized ? 1 : 0;
 }
 
 void ARX_SOUND_MixerSetVolume(audio::MixerId mixer_id, float volume) {
-	if(bIsActive) {
+	if(g_soundInitialized) {
 		audio::setMixerVolume(mixer_id, volume);
 	}
 }
 
 void ARX_SOUND_MixerStop(audio::MixerId mixer_id) {
-	if(bIsActive) {
+	if(g_soundInitialized) {
 		audio::mixerStop(mixer_id);
 	}
 }
 
 void ARX_SOUND_MixerPause(audio::MixerId mixer_id) {
-	if(bIsActive) {
+	if(g_soundInitialized) {
 		audio::mixerPause(mixer_id);
 	}
 }
 
 void ARX_SOUND_MixerResume(audio::MixerId mixer_id) {
-	if(bIsActive) {
+	if(g_soundInitialized) {
 		audio::mixerResume(mixer_id);
 	}
-}
-
-void ARX_SOUND_MixerSwitch(audio::MixerId from, audio::MixerId to) {
-	ARX_SOUND_MixerPause(from);
-	ARX_SOUND_MixerResume(to);
 }
 
 // Sets the position of the listener
@@ -465,15 +290,14 @@ void ARX_SOUND_SetListener(const Vec3f & position, const Vec3f & front, const Ve
 	
 	ARX_PROFILE_FUNC();
 	
-	if(bIsActive) {
-		audio::setListenerPosition(position);
-		audio::setListenerDirection(front, up);
+	if(g_soundInitialized) {
+		audio::setListenerPosition(position, front, up);
 	}
 }
 
 void ARX_SOUND_EnvironmentSet(const res::path & name) {
 	
-	if(bIsActive) {
+	if(g_soundInitialized) {
 		EnvId e_id = audio::getEnvironment(name);
 		if(e_id != audio::EnvId()) {
 			audio::setListenerEnvironment(e_id);
@@ -481,116 +305,110 @@ void ARX_SOUND_EnvironmentSet(const res::path & name) {
 	}
 }
 
-long ARX_SOUND_PlaySFX(SourceId & sample_id, const Vec3f * position, float pitch, SoundLoopMode loop) {
+static audio::SourcedSample ARX_SOUND_PlaySFX_int(audio::SampleHandle sample_id, const Vec3f * position,
+                                  float pitch, SoundLoopMode loop) {
 	
-	if(!bIsActive || sample_id == INVALID_ID) {
-		return INVALID_ID;
+	if(!g_soundInitialized || sample_id == audio::SampleHandle()) {
+		return audio::SourcedSample();
 	}
 	
-	audio::Channel channel;
-	float presence;
-	
-	channel.mixer = ARX_SOUND_MixerGameSample;
+	audio::Channel channel(ARX_SOUND_MixerGameSample);
 	channel.flags = FLAG_VOLUME | FLAG_POSITION | FLAG_REVERBERATION | FLAG_FALLOFF;
-	channel.volume = 1.0F;
+	channel.volume = 1.f;
 	
 	if(position) {
-		if(ACTIVECAM && fartherThan(ACTIVECAM->orgTrans.pos, *position, ARX_SOUND_REFUSE_DISTANCE)) {
-			return -1;
+		if(g_camera && fartherThan(g_camera->m_pos, *position, ARX_SOUND_REFUSE_DISTANCE)) {
+			return audio::SourcedSample();
 		}
+		channel.position = *position;
+	} else {
+		channel.flags |= FLAG_RELATIVE;
+		channel.position = Vec3f(0.f, 0.f, 1.f);
 	}
 	
 	res::path sample_name;
 	audio::getSampleName(sample_id, sample_name);
-	presence = GetSamplePresenceFactor(sample_name);
+	float presence = GetSamplePresenceFactor(sample_name);
 	channel.falloff.start = ARX_SOUND_DEFAULT_FALLSTART * presence;
 	channel.falloff.end = ARX_SOUND_DEFAULT_FALLEND * presence;
 	
-	if(pitch != 1.0F) {
+	if(pitch != 1.f) {
 		channel.flags |= FLAG_PITCH;
 		channel.pitch = pitch;
 	}
 	
-	if(position) {
-		channel.position = *position;
-	} else {
-		channel.flags |= FLAG_RELATIVE;
-		channel.position = Vec3f_Z_AXIS;
+	return audio::samplePlay(sample_id, channel, loop);
+}
+
+void ARX_SOUND_PlaySFX(audio::SampleHandle sample_id, const Vec3f * position, float pitch) {
+	ARX_SOUND_PlaySFX_int(sample_id, position, pitch, ARX_SOUND_PLAY_ONCE);
+}
+
+audio::SourcedSample ARX_SOUND_PlaySFX_loop(audio::SampleHandle sample_id, const Vec3f * position, float pitch) {
+	
+	return ARX_SOUND_PlaySFX_int(sample_id, position, pitch, ARX_SOUND_PLAY_LOOPED);
+}
+
+static void playSample(audio::SampleHandle sample_id, float pitch, SoundLoopMode loop, audio::MixerId mixer) {
+	
+	if(!g_soundInitialized || sample_id == audio::SampleHandle()) {
+		return;
+	}
+	
+	audio::Channel channel(mixer);
+	channel.flags = FLAG_VOLUME;
+	channel.volume = 1.f;
+	if(pitch != 1.f) {
+		channel.flags |= FLAG_PITCH;
+		channel.pitch = pitch;
 	}
 	
 	audio::samplePlay(sample_id, channel, loop);
-	
-	return sample_id;
 }
 
-
-long ARX_SOUND_PlayInterface(SourceId & sample_id, float pitch, SoundLoopMode loop) {
-	
-	if (!bIsActive || sample_id == INVALID_ID) return INVALID_ID;
-
-	audio::Channel channel;
-
-	channel.mixer = ARX_SOUND_MixerGameSample;
-	channel.flags = FLAG_VOLUME;
-	channel.volume = 1.0F;
-
-	if (pitch != 1.0F) channel.flags |= FLAG_PITCH, channel.pitch = pitch;
-
-	audio::samplePlay(sample_id, channel, loop);
-
-	return sample_id;
+void ARX_SOUND_PlayInterface(audio::SampleHandle sample_id, float pitch) {
+	playSample(sample_id, pitch, ARX_SOUND_PLAY_ONCE, ARX_SOUND_MixerGameSample);
 }
 
-long ARX_SOUND_PlayMenu(SourceId & sample_id, float pitch, SoundLoopMode loop) {
-	
-	if (!bIsActive || sample_id == INVALID_ID) return INVALID_ID;
-
-	audio::Channel channel;
-
-	channel.mixer = ARX_SOUND_MixerMenuSample;
-	channel.flags = FLAG_VOLUME;
-	channel.volume = 1.0F;
-
-	if (pitch != 1.0F) channel.flags |= FLAG_PITCH, channel.pitch = pitch;
-
-	audio::samplePlay(sample_id, channel, loop);
-
-	return sample_id;
+void ARX_SOUND_PlayMenu(audio::SampleHandle sample_id) {
+	playSample(sample_id, 1.f, ARX_SOUND_PLAY_ONCE, ARX_SOUND_MixerMenuSample);
 }
 
-static void ARX_SOUND_IOFrontPos(const Entity * io, Vec3f & pos) {
+static Vec3f ARX_SOUND_IOFrontPos(const Entity * io) {
 	if(io == entities.player()) {
-		pos = ARX_PLAYER_FrontPos();
-	} else if(io) {
-		pos = io->pos;
-		pos += angleToVectorXZ(io->angle.getPitch()) * 100.f;
-		pos += Vec3f(0.f, -100.f, 0.f);
-	} else if(ACTIVECAM) {
-		pos = ACTIVECAM->orgTrans.pos;
-		pos += angleToVectorXZ(ACTIVECAM->angle.getPitch()) * 100.f;
-		pos += Vec3f(0.f, -100.f, 0.f);
-	} else {
-		pos = Vec3f_ZERO;
+		return ARX_PLAYER_FrontPos();
 	}
+	if(io) {
+		Vec3f pos = io->pos;
+		pos += angleToVectorXZ(io->angle.getYaw()) * 100.f;
+		pos += Vec3f(0.f, -100.f, 0.f);
+		return pos;
+	}
+	if(g_camera) {
+		Vec3f pos = g_camera->m_pos;
+		pos += angleToVectorXZ(g_camera->angle.getYaw()) * 100.f;
+		pos += Vec3f(0.f, -100.f, 0.f);
+		return pos;
+	}
+	return Vec3f(0.f);
 }
 
 static res::path speechFileName(const res::path & name) {
 	return res::path("speech") / config.language / name;
 }
 
-long ARX_SOUND_PlaySpeech(const res::path & name, const Entity * io)
-{
-	if (!bIsActive) return INVALID_ID;
-
-	audio::Channel channel;
-	SampleId sample_id;
+audio::SourcedSample ARX_SOUND_PlaySpeech(const res::path & name, bool * tooFar, const Entity * io) {
+	
+	if(!g_soundInitialized) {
+		return audio::SourcedSample();
+	}
 	
 	res::path file = speechFileName(name);
 	file.set_ext(ARX_SOUND_FILE_EXTENSION_WAV);
 	
-	sample_id = audio::createSample(file);
-
-	channel.mixer = ARX_SOUND_MixerGameSpeech;
+	audio::SampleHandle sample_id = audio::createSample(file);
+	
+	audio::Channel channel(ARX_SOUND_MixerGameSpeech);
 	channel.flags = FLAG_VOLUME | FLAG_POSITION | FLAG_REVERBERATION | FLAG_AUTOFREE | FLAG_FALLOFF;
 	channel.volume = 1.f;
 	channel.falloff.start = ARX_SOUND_DEFAULT_FALLSTART;
@@ -598,12 +416,16 @@ long ARX_SOUND_PlaySpeech(const res::path & name, const Entity * io)
 
 	if(io) {
 		if((io == entities.player() && !EXTERNALVIEW))
-			ARX_SOUND_IOFrontPos(io, channel.position);
+			channel.position = ARX_SOUND_IOFrontPos(io);
 		else
 			channel.position = io->pos;
 
-		if(ACTIVECAM && fartherThan(ACTIVECAM->orgTrans.pos, io->pos, ARX_SOUND_REFUSE_DISTANCE)) {
-			return ARX_SOUND_TOO_FAR; // TODO sample is never freed!
+		if(g_camera && fartherThan(g_camera->m_pos, io->pos, ARX_SOUND_REFUSE_DISTANCE)) {
+			if(tooFar) {
+				*tooFar = true;
+			}
+			// TODO sample is never freed!
+			return audio::SourcedSample();
 		}
 
 		if(io->ioflags & IO_NPC && io->_npcdata->speakpitch != 1.f) {
@@ -612,32 +434,29 @@ long ARX_SOUND_PlaySpeech(const res::path & name, const Entity * io)
 		}
 	} else {
 		channel.flags |= FLAG_RELATIVE;
-		channel.position = Vec3f_Z_AXIS * 100.f;
+		channel.position = Vec3f(0.f, 0.f, 100.f);
 	}
-
-	audio::samplePlay(sample_id, channel);
-
-	return sample_id;
+	
+	return audio::samplePlay(sample_id, channel);
 }
 
-long ARX_SOUND_PlayCollision(Material mat1, Material mat2, float volume, float power, const Vec3f & position, Entity * source) {
+void ARX_SOUND_PlayCollision(Material mat1, Material mat2, float volume, float power, const Vec3f & position, Entity * source) {
 	
-	if(!bIsActive)
-		return 0;
+	if(!g_soundInitialized)
+		return;
 
 	if(mat1 == MATERIAL_NONE || mat2 == MATERIAL_NONE)
-		return 0;
+		return;
 
 	if(mat1 == MATERIAL_WATER || mat2 == MATERIAL_WATER)
 		ARX_PARTICLES_SpawnWaterSplash(position);
 
-	SampleId sample_id = Inter_Materials[mat1][mat2][0];
+	audio::SampleHandle sample_id = g_soundMaterials[mat1][mat2];
 
-	if(sample_id == INVALID_ID)
-		return 0;
+	if(sample_id == audio::SampleHandle())
+		return;
 
-	audio::Channel channel;
-	channel.mixer = ARX_SOUND_MixerGameSample;
+	audio::Channel channel(ARX_SOUND_MixerGameSample);
 	channel.flags = FLAG_VOLUME | FLAG_PITCH | FLAG_POSITION | FLAG_REVERBERATION | FLAG_FALLOFF;
 	
 	res::path sample_name;
@@ -646,8 +465,8 @@ long ARX_SOUND_PlayCollision(Material mat1, Material mat2, float volume, float p
 	channel.falloff.start = ARX_SOUND_DEFAULT_FALLSTART * presence;
 	channel.falloff.end = ARX_SOUND_DEFAULT_FALLEND * presence;
 	
-	if(ACTIVECAM && fartherThan(ACTIVECAM->orgTrans.pos, position, ARX_SOUND_REFUSE_DISTANCE))
-		return -1;
+	if(g_camera && fartherThan(g_camera->m_pos, position, ARX_SOUND_REFUSE_DISTANCE))
+		return;
 	
 	// Launch 'ON HEAR' script event
 	ARX_NPC_SpawnAudibleSound(position, source, power, presence);
@@ -655,42 +474,37 @@ long ARX_SOUND_PlayCollision(Material mat1, Material mat2, float volume, float p
 	channel.position = position;
 	channel.pitch = Random::getf(0.9f, 1.1f);
 	channel.volume = volume;
+	
 	audio::samplePlay(sample_id, channel);
-	
-	size_t length;
-	audio::getSampleLength(sample_id, length);
-	
-	return (long)(channel.pitch * length);
 }
 
-long ARX_SOUND_PlayCollision(const std::string & name1, const std::string & name2, float volume, float power, const Vec3f & position, Entity * source) {
+void ARX_SOUND_PlayCollision(const std::string & name1, const std::string & name2, float volume, float power, const Vec3f & position, Entity * source) {
 	
-	if(!bIsActive)
-		return 0;
+	if(!g_soundInitialized)
+		return;
 	
 	if(name1.empty() || name2.empty())
-		return 0;
+		return;
 	
 	if(name2 == "water")
 		ARX_PARTICLES_SpawnWaterSplash(position);
 	
 	CollisionMaps::iterator mi = collisionMaps.find(name1);
 	if(mi == collisionMaps.end()) {
-		return 0;
+		return;
 	}
 	CollisionMap & map = mi->second;
 	
 	CollisionMap::iterator ci = map.find(name2);
 	if(ci == map.end()) {
-		return 0;
+		return;
 	}
 	SoundMaterial & mat = ci->second;
 	
-	SampleId sample_id = mat.next();
-	arx_assert(sample_id != INVALID_ID);
+	audio::SampleHandle sample_id = mat.next();
+	arx_assert(sample_id != audio::SampleHandle());
 	
-	audio::Channel channel;
-	channel.mixer = ARX_SOUND_MixerGameSample;
+	audio::Channel channel(ARX_SOUND_MixerGameSample);
 	channel.flags = FLAG_VOLUME | FLAG_PITCH | FLAG_POSITION | FLAG_REVERBERATION | FLAG_FALLOFF;
 	
 	res::path sample_name;
@@ -702,78 +516,69 @@ long ARX_SOUND_PlayCollision(const std::string & name1, const std::string & name
 	// Launch 'ON HEAR' script event
 	ARX_NPC_SpawnAudibleSound(position, source, power, presence);
 	
-	if(ACTIVECAM && fartherThan(ACTIVECAM->orgTrans.pos, position, ARX_SOUND_REFUSE_DISTANCE))
-		return -1;
+	if(g_camera && fartherThan(g_camera->m_pos, position, ARX_SOUND_REFUSE_DISTANCE))
+		return;
 	
 	channel.position = position;
 	channel.pitch = Random::getf(0.975f, 1.475f);
 	channel.volume = volume;
+	
 	audio::samplePlay(sample_id, channel);
-	
-	size_t length;
-	audio::getSampleLength(sample_id, length);
-	
-	return (long)(channel.pitch * length);
 }
 
-long ARX_SOUND_PlayScript(const res::path & name, const Entity * io, float pitch, SoundLoopMode loop)
-{
-	if (!bIsActive) {
-		return INVALID_ID;
-	}
-
-	audio::Channel channel;
-	SampleId sample_id;
-
-	sample_id = audio::createSample(name);
-
-	if (sample_id == INVALID_ID) {
-		return INVALID_ID;
+audio::SourcedSample ARX_SOUND_PlayScript(const res::path & name, bool & tooFar, const Entity * io,
+                                     float pitch, SoundLoopMode loop) {
+	
+	if(!g_soundInitialized) {
+		return audio::SourcedSample();
 	}
 	
-	channel.mixer = ARX_SOUND_MixerGameSample;
+	audio::SampleHandle sample_id = audio::createSample(sample_path / name);
+	if (sample_id == audio::SampleHandle()) {
+		return audio::SourcedSample();
+	}
+	
+	audio::Channel channel(ARX_SOUND_MixerGameSample);
 	channel.flags = FLAG_VOLUME | FLAG_AUTOFREE | FLAG_POSITION | FLAG_REVERBERATION | FLAG_FALLOFF;
-	channel.volume = 1.0F;
+	channel.volume = 1.f;
 	channel.falloff.start = ARX_SOUND_DEFAULT_FALLSTART * GetSamplePresenceFactor(name);
 	channel.falloff.end = ARX_SOUND_DEFAULT_FALLEND;
 	
 	if(io) {
 		channel.position = GetItemWorldPositionSound(io);
 		if(loop != ARX_SOUND_PLAY_LOOPED) {
-			if (ACTIVECAM && fartherThan(ACTIVECAM->orgTrans.pos, channel.position, ARX_SOUND_REFUSE_DISTANCE)) {
+			if (g_camera && fartherThan(g_camera->m_pos, channel.position, ARX_SOUND_REFUSE_DISTANCE)) {
 				// TODO the sample will never be freed!
-				return ARX_SOUND_TOO_FAR;
+				tooFar = true;
+				return audio::SourcedSample();
 			}
 		}
 	} else {
 		channel.flags |= FLAG_RELATIVE;
-		channel.position = Vec3f_Z_AXIS * 100.f;
+		channel.position = Vec3f(0.f, 0.f, 100.f);
 	}
 	
-	if(pitch != 1.0F) {
+	if(pitch != 1.f) {
 		channel.flags |= FLAG_PITCH;
 		channel.pitch = pitch;
 	}
 	
-	audio::samplePlay(sample_id, channel, loop);
-	
-	return sample_id;
+	return audio::samplePlay(sample_id, channel, loop);
 }
 
-long ARX_SOUND_PlayAnim(SourceId & sample_id, const Vec3f * position)
-{
-	if(!bIsActive || sample_id == INVALID_ID)
-		return INVALID_ID;
-
-	audio::Channel channel;
-
-	channel.mixer = ARX_SOUND_MixerGameSample;
+void ARX_SOUND_PlayAnim(audio::SampleHandle sample_id, const Vec3f * position) {
+	
+	if(!g_soundInitialized || sample_id == audio::SampleHandle()) {
+		return;
+	}
+	
+	audio::Channel channel(ARX_SOUND_MixerGameSample);
 	channel.flags = FLAG_VOLUME;
-	channel.volume = 1.0F;
+	channel.volume = 1.f;
 
 	if(position) {
-		if(ACTIVECAM && fartherThan(ACTIVECAM->orgTrans.pos, *position, ARX_SOUND_REFUSE_DISTANCE)) {
-			return -1;
+		if(g_camera && fartherThan(g_camera->m_pos, *position, ARX_SOUND_REFUSE_DISTANCE)) {
+			return;
 		}
 		channel.flags |= FLAG_POSITION | FLAG_REVERBERATION | FLAG_FALLOFF;
 		res::path sample_name;
@@ -783,166 +588,153 @@ long ARX_SOUND_PlayAnim(SourceId & sample_id, const Vec3f * position)
 		channel.falloff.end = ARX_SOUND_DEFAULT_FALLEND * presence;
 		channel.position = *position;
 	}
-
+	
 	audio::samplePlay(sample_id, channel);
-
-	return sample_id;
 }
 
-long ARX_SOUND_PlayCinematic(const res::path & name, bool isSpeech) {
+audio::SourcedSample ARX_SOUND_PlayCinematic(const res::path & name, bool isSpeech) {
 	
-	res::path file = (isSpeech) ? speechFileName(name) : name;
+	res::path file = (isSpeech) ? speechFileName(name) : (sample_path / name);
 	file.set_ext(ARX_SOUND_FILE_EXTENSION_WAV);
 	
-	s32 sample_id = audio::createSample(file);
-	if(sample_id == INVALID_ID) {
+	audio::SampleHandle sample_id = audio::createSample(file);
+	if(sample_id == audio::SampleHandle()) {
 		LogError << "Cannot load sound for cinematic: " << file;
-		return INVALID_ID;
+		return audio::SourcedSample();
 	}
 	
-	audio::Channel channel;
-	channel.mixer = ARX_SOUND_MixerGameSpeech;
+	audio::Channel channel(ARX_SOUND_MixerGameSpeech);
 	channel.flags = FLAG_VOLUME | FLAG_AUTOFREE | FLAG_POSITION | FLAG_FALLOFF
 	                | FLAG_REVERBERATION;
 	channel.volume = 1.0f;
 	channel.falloff.start = ARX_SOUND_DEFAULT_FALLSTART;
 	channel.falloff.end = ARX_SOUND_DEFAULT_FALLEND;
 	
-	if (ACTIVECAM) {
-		std::pair<Vec3f, Vec3f> frontUp = angleToFrontUpVec(ACTIVECAM->angle);
-		
-		ARX_SOUND_SetListener(ACTIVECAM->orgTrans.pos, frontUp.first, frontUp.second);
+	if(g_camera) {
+		std::pair<Vec3f, Vec3f> frontUp = angleToFrontUpVec(g_camera->angle);
+		ARX_SOUND_SetListener(g_camera->m_pos, frontUp.first, frontUp.second);
 	}
 	
-	ARX_SOUND_IOFrontPos(NULL, channel.position); 
+	channel.position = ARX_SOUND_IOFrontPos(NULL);
 	
-	audio::samplePlay(sample_id, channel);
-	
-	return sample_id;
+	return audio::samplePlay(sample_id, channel);
 }
 
-long ARX_SOUND_IsPlaying(SourceId & sample_id) {
-	return bIsActive ? audio::isSamplePlaying(sample_id) : 0;
+bool ARX_SOUND_IsPlaying(audio::SourcedSample & sample_id) {
+	return g_soundInitialized ? audio::isSamplePlaying(sample_id) : false;
 }
 
 
-float ARX_SOUND_GetDuration(SampleId & sample_id) {
+GameDuration ARX_SOUND_GetDuration(audio::SampleHandle sample_id) {
 	
-	if(bIsActive && sample_id != INVALID_ID) {
+	if(g_soundInitialized && sample_id != audio::SampleHandle()) {
 		size_t length;
 		audio::getSampleLength(sample_id, length);
-		return static_cast<float>(length);
+		return GameDurationMs(length);
 	}
 
-	return 0.f;
+	return 0;
 }
 
-void ARX_SOUND_RefreshVolume(SourceId & sample_id, float volume) {
-	if(bIsActive && sample_id != INVALID_ID) {
+void ARX_SOUND_RefreshVolume(audio::SourcedSample & sample_id, float volume) {
+	if(g_soundInitialized && sample_id != audio::SourcedSample()) {
 		audio::setSampleVolume(sample_id, volume);
 	}
 }
 
-void ARX_SOUND_RefreshPitch(SourceId & sample_id, float pitch) {
-	if(bIsActive && sample_id != INVALID_ID) {
+void ARX_SOUND_RefreshPitch(audio::SourcedSample & sample_id, float pitch) {
+	if(g_soundInitialized && sample_id != audio::SourcedSample()) {
 		audio::setSamplePitch(sample_id, pitch);
 	}
 }
 
-void ARX_SOUND_RefreshPosition(SourceId & sample_id, const Vec3f & position) {
+void ARX_SOUND_RefreshPosition(audio::SourcedSample & sample_id, const Vec3f & position) {
 	
-	if(bIsActive && sample_id != INVALID_ID) {
+	if(g_soundInitialized && sample_id != audio::SourcedSample()) {
 		audio::setSamplePosition(sample_id, position);
 	}
 }
 
-void ARX_SOUND_RefreshSpeechPosition(SourceId & sample_id, const Entity * io) {
+void ARX_SOUND_RefreshSpeechPosition(audio::SourcedSample & sample_id, const Entity * io) {
 	
-	if(!bIsActive || !io || sample_id == INVALID_ID) {
+	if(!g_soundInitialized || !io || sample_id == audio::SourcedSample()) {
 		return;
 	}
 	
-	Vec3f position;
+	Vec3f position = io->pos;
 	if((io == entities.player() && !EXTERNALVIEW)) {
-		ARX_SOUND_IOFrontPos(io, position);
-	} else {
-		position = io->pos;
+		position = ARX_SOUND_IOFrontPos(io);
 	}
 	
 	audio::setSamplePosition(sample_id, position);
 }
 
-SampleId ARX_SOUND_Load(const res::path & name) {
+audio::SampleHandle ARX_SOUND_Load(const res::path & name) {
 	
-	if(!bIsActive) {
-		return INVALID_ID;
+	if(!g_soundInitialized) {
+		return audio::SampleHandle();
 	}
 	
-	res::path sample_name = name;
+	res::path sample_name = sample_path / name;
 	
 	return audio::createSample(sample_name.set_ext(ARX_SOUND_FILE_EXTENSION_WAV));
 }
 
-void ARX_SOUND_Free(const SampleId & sample) {
-	if(bIsActive && sample != INVALID_ID) {
+void ARX_SOUND_Free(const audio::SampleHandle & sample) {
+	if(g_soundInitialized && sample != audio::SampleHandle()) {
 		audio::deleteSample(sample);
 	}
 }
 
-void ARX_SOUND_Stop(SourceId & sample_id) {
-	if(bIsActive && sample_id != INVALID_ID) {
+void ARX_SOUND_Stop(const audio::SourcedSample & sample_id) {
+	if(g_soundInitialized && sample_id != audio::SourcedSample()) {
 		audio::sampleStop(sample_id);
 	}
 }
 
 bool ARX_SOUND_PlayScriptAmbiance(const res::path & name, SoundLoopMode loop, float volume) {
 	
-	if (!bIsActive) return INVALID_ID;
-
+	if(!g_soundInitialized) {
+		return true;
+	}
+	
 	res::path temp = res::path(name).set_ext("amb");
-
+	
 	AmbianceId ambiance_id = audio::getAmbiance(temp);
-
-	if (ambiance_id == AmbianceId())
-	{
-		if (volume == 0.f) return true;
-
-		ambiance_id = audio::createAmbiance(temp);
+	
+	if(ambiance_id == AmbianceId()) {
+		if(volume == 0.f) {
+			return true;
+		}
+		
+		ambiance_id = audio::createAmbiance(temp, audio::PLAYING_AMBIANCE_SCRIPT);
 		if(ambiance_id == AmbianceId()) {
 			return false;
 		}
 		
-		audio::setAmbianceUserData(ambiance_id, reinterpret_cast<void *>(PLAYING_AMBIANCE_SCRIPT));
-
-		audio::Channel channel;
-
-		channel.mixer = ARX_SOUND_MixerGameAmbiance;
+		audio::Channel channel(ARX_SOUND_MixerGameAmbiance);
 		channel.flags = FLAG_VOLUME | FLAG_AUTOFREE;
 		channel.volume = volume;
-
+		
 		audio::ambiancePlay(ambiance_id, channel, loop == ARX_SOUND_PLAY_LOOPED);
-	}
-	else
-	{
-		if (volume <= 0.0F)
-		{
+	} else {
+		if(volume <= 0.f) {
 			audio::deleteAmbiance(ambiance_id);
 			return true;
 		}
-
 		audio::setAmbianceVolume(ambiance_id, volume);
 	}
-
+	
 	return true;
 }
 
 bool ARX_SOUND_PlayZoneAmbiance(const res::path & name, SoundLoopMode loop, float volume) {
 	
-	if (!bIsActive) return true;
+	if (!g_soundInitialized) return true;
 
 	if(name == "none") {
-		audio::ambianceStop(ambiance_zone, AMBIANCE_FADE_TIME);
-		ambiance_zone = AmbianceId();
+		audio::ambianceStop(g_zoneAmbiance, AMBIANCE_FADE_TIME);
+		g_zoneAmbiance = AmbianceId();
 		return true;
 	}
 
@@ -950,116 +742,92 @@ bool ARX_SOUND_PlayZoneAmbiance(const res::path & name, SoundLoopMode loop, floa
 
 	AmbianceId ambiance_id = audio::getAmbiance(temp);
 
-	if (ambiance_id == AmbianceId())
-	{
-		ambiance_id = audio::createAmbiance(temp);
+	if(ambiance_id == AmbianceId()) {
+		ambiance_id = audio::createAmbiance(temp, audio::PLAYING_AMBIANCE_ZONE);
 		if(ambiance_id == AmbianceId()) {
 			return false;
 		}
-		audio::setAmbianceUserData(ambiance_id, reinterpret_cast<void *>(PLAYING_AMBIANCE_ZONE));
-	}
-	else if (ambiance_id == ambiance_zone)
+	} else if(ambiance_id == g_zoneAmbiance) {
 		return true;
+	}
 
-	audio::Channel channel;
-
-	channel.mixer = ARX_SOUND_MixerGameAmbiance;
+	audio::Channel channel(ARX_SOUND_MixerGameAmbiance);
 	channel.flags = FLAG_VOLUME | FLAG_AUTOFREE;
 	channel.volume = volume;
 
-	audio::ambianceStop(ambiance_zone, AMBIANCE_FADE_TIME);
-	ambiance_zone = ambiance_id;
-	audio::ambiancePlay(ambiance_zone, channel, loop == ARX_SOUND_PLAY_LOOPED, AMBIANCE_FADE_TIME);
+	audio::ambianceStop(g_zoneAmbiance, AMBIANCE_FADE_TIME);
+	g_zoneAmbiance = ambiance_id;
+	audio::ambiancePlay(g_zoneAmbiance, channel, loop == ARX_SOUND_PLAY_LOOPED, AMBIANCE_FADE_TIME);
 
 	return true;
 }
 
 void ARX_SOUND_KillAmbiances() {
 	
-	if(!bIsActive) {
+	if(!g_soundInitialized) {
 		return;
 	}
 	
-	AmbianceId ambiance_id = audio::getNextAmbiance();
+	audio::deleteAmbianceAll();
 	
-	while(ambiance_id != AmbianceId()) {
-		audio::deleteAmbiance(ambiance_id);
-		ambiance_id = audio::getNextAmbiance(ambiance_id);
-	}
-	
-	ambiance_zone = AmbianceId();
+	g_zoneAmbiance = AmbianceId();
 }
 
 AmbianceId ARX_SOUND_PlayMenuAmbiance(const res::path & ambiance_name) {
 	
-	if(!bIsActive) {
+	if(!g_soundInitialized) {
 		return AmbianceId();
 	}
 	
-	audio::deleteAmbiance(ambiance_menu);
-	ambiance_menu = audio::createAmbiance(ambiance_name);
+	audio::deleteAmbiance(g_menuAmbiance);
+	g_menuAmbiance = audio::createAmbiance(ambiance_name, audio::PLAYING_AMBIANCE_MENU);
 	
-	audio::setAmbianceUserData(ambiance_menu, reinterpret_cast<void *>(PLAYING_AMBIANCE_MENU));
-	
-	audio::Channel channel;
-	
-	channel.mixer = ARX_SOUND_MixerMenuAmbiance;
+	audio::Channel channel(ARX_SOUND_MixerMenuAmbiance);
 	channel.flags = FLAG_VOLUME;
-	channel.volume = 1.0F;
+	channel.volume = 1.f;
 	
-	audio::ambiancePlay(ambiance_menu, channel, true);
+	audio::ambiancePlay(g_menuAmbiance, channel, true);
 	
-	return ambiance_menu;
+	return g_menuAmbiance;
 }
 
-char * ARX_SOUND_AmbianceSavePlayList(size_t & size) {
+std::string ARX_SOUND_AmbianceSavePlayList() {
 	
-	unsigned long count(0);
-	PlayingAmbiance * play_list = NULL;
-	AmbianceId ambiance_id = audio::getNextAmbiance();
-
-	while (ambiance_id != AmbianceId())
-	{
-		void * storedType;
-		audio::getAmbianceUserData(ambiance_id, &storedType);
-		long type = reinterpret_cast<long>(storedType);
-
-		if (type == PLAYING_AMBIANCE_SCRIPT || type == PLAYING_AMBIANCE_ZONE)
-		{
-			void * ptr;
-			PlayingAmbiance * playing;
-
-			ptr = realloc(play_list, (count + 1) * sizeof(PlayingAmbiance));
-
-			if (!ptr) break;
-
-			play_list = (PlayingAmbiance *)ptr;
-			playing = &play_list[count];
-			
-			memset(playing->name, 0, sizeof(playing->name));
-			
-			res::path name;
-			audio::getAmbianceName(ambiance_id, name);
-			arx_assert(name.string().length() + 1 < ARRAY_SIZE(playing->name));
-			util::storeString(playing->name, name.string().c_str());
-			audio::getAmbianceVolume(ambiance_id, playing->volume);
-			playing->loop = audio::isAmbianceLooped(ambiance_id) ? ARX_SOUND_PLAY_LOOPED : ARX_SOUND_PLAY_ONCE;
-			playing->type = type;
-
-			count++;
+	std::string result;
+	
+	std::vector<audio::AmbianceInfo> infos;
+	audio::getAmbianceInfos(infos);
+	
+	BOOST_FOREACH(const audio::AmbianceInfo & info, infos) {
+		
+		if(info.type != audio::PLAYING_AMBIANCE_SCRIPT && info.type != audio::PLAYING_AMBIANCE_ZONE) {
+			continue;
 		}
-
-		ambiance_id = audio::getNextAmbiance(ambiance_id);
+		
+		result.resize(result.size() + sizeof(PlayingAmbiance));
+		
+		char * data = &result[result.size() - sizeof(PlayingAmbiance)];
+		PlayingAmbiance * playing = reinterpret_cast<PlayingAmbiance *>(data);
+		
+		std::memset(playing->name, 0, sizeof(playing->name));
+		arx_assert(info.name.string().length() + 1 < ARRAY_SIZE(playing->name));
+		util::storeString(playing->name, info.name.string());
+		
+		playing->volume = info.volume;
+		
+		playing->loop = info.isLooped ?  ARX_SOUND_PLAY_LOOPED : ARX_SOUND_PLAY_ONCE;
+		
+		playing->type = (info.type == audio::PLAYING_AMBIANCE_SCRIPT ? 1 : 2);
+		
 	}
-
-	size = count * sizeof(PlayingAmbiance);
-	return reinterpret_cast<char *>(play_list);
+	
+	return result;
 }
 
-void ARX_SOUND_AmbianceRestorePlayList(const char * _play_list, size_t size) {
+void ARX_SOUND_AmbianceRestorePlayList(const char * playlist, size_t size) {
 	
 	size_t count = size / sizeof(PlayingAmbiance);
-	const PlayingAmbiance * play_list = reinterpret_cast<const PlayingAmbiance *>(_play_list);
+	const PlayingAmbiance * play_list = reinterpret_cast<const PlayingAmbiance *>(playlist);
 	
 	for(size_t i = 0; i < count; i++) {
 		
@@ -1067,23 +835,26 @@ void ARX_SOUND_AmbianceRestorePlayList(const char * _play_list, size_t size) {
 		
 		res::path name = res::path::load(util::loadString(playing->name));
 		
-		// TODO save/load enum
 		switch (playing->type) {
 			
-			case PLAYING_AMBIANCE_SCRIPT :
+			case 1 :
 				ARX_SOUND_PlayScriptAmbiance(name, (SoundLoopMode)playing->loop, playing->volume);
 				break;
 			
-			case PLAYING_AMBIANCE_ZONE :
+			case 2 :
 				ARX_SOUND_PlayZoneAmbiance(name, (SoundLoopMode)playing->loop, playing->volume);
 				break;
+			
+			default:
+				LogWarning << "Unknown ambiance type " << playing->type << " for " << name;
+			
 		}
 	}
 }
 
 static void ARX_SOUND_CreateEnvironments() {
 	
-	PakDirectory * dir = resources->getDirectory(ARX_SOUND_PATH_ENVIRONMENT);
+	PakDirectory * dir = g_resources->getDirectory(ARX_SOUND_PATH_ENVIRONMENT);
 	if(!dir) {
 		return;
 	}
@@ -1093,413 +864,202 @@ static void ARX_SOUND_CreateEnvironments() {
 	}
 }
 
+static audio::SampleHandle createEffectSample(const res::path & path) {
+	return audio::createSample(sample_path / path);
+}
+
 static void ARX_SOUND_CreateStaticSamples() {
 	
+	// Menu
+	g_snd.MENU_CLICK                     = createEffectSample("menu_click.wav");
+	g_snd.MENU_RELEASE                   = createEffectSample("menu_release.wav");
+	
 	// Interface
-	SND_BACKPACK                       = audio::createSample("interface_backpack.wav");
-	SND_BOOK_OPEN                      = audio::createSample("book_open.wav");
-	SND_BOOK_CLOSE                     = audio::createSample("book_close.wav");
-	SND_BOOK_PAGE_TURN                 = audio::createSample("book_page_turn.wav");
-	SND_SCROLL_OPEN                    = audio::createSample("scroll_open.wav");
-	SND_SCROLL_CLOSE                   = audio::createSample("scroll_close.wav");
-	SND_TORCH_START                    = audio::createSample("torch_start.wav");
-	SND_TORCH_LOOP                     = audio::createSample("sfx_torch_11khz.wav");
-	SND_TORCH_END                      = audio::createSample("torch_end.wav");
-	SND_INVSTD                         = audio::createSample("interface_invstd.wav");
-	SND_GOLD                           = audio::createSample("drop_coin.wav");
-	
-	//Menu
-	SND_MENU_CLICK                     = audio::createSample("menu_click.wav");
-	SND_MENU_RELEASE                   = audio::createSample("menu_release.wav");
-	
-	//Other SFX samples
-	SND_FIREPLACE                      = audio::createSample("fire_place.wav");
-	SND_PLOUF                          = audio::createSample("fishing_plouf.wav");
-	SND_QUAKE                          = audio::createSample("sfx_quake.wav");
-	SND_WHOOSH                         = audio::createSample("whoosh07.wav");
+	g_snd.BACKPACK                       = createEffectSample("interface_backpack.wav");
+	g_snd.BOOK_OPEN                      = createEffectSample("book_open.wav");
+	g_snd.BOOK_CLOSE                     = createEffectSample("book_close.wav");
+	g_snd.BOOK_PAGE_TURN                 = createEffectSample("book_page_turn.wav");
+	g_snd.SCROLL_OPEN                    = createEffectSample("scroll_open.wav");
+	g_snd.SCROLL_CLOSE                   = createEffectSample("scroll_close.wav");
+	g_snd.INVSTD                         = createEffectSample("interface_invstd.wav");
+	g_snd.GOLD                           = createEffectSample("drop_coin.wav");
 	
 	// Player
-	SND_PLAYER_FILLLIFEMANA            = audio::createSample("player_filllifemana.wav");
-	SND_PLAYER_HEART_BEAT              = audio::createSample("player_heartb.wav");
-	SND_PLAYER_LEVEL_UP                = audio::createSample("player_level_up.wav");
-	SND_PLAYER_POISONED                = audio::createSample("player_poisoned.wav");
-	SND_PLAYER_DEATH_BY_FIRE           = audio::createSample("lava_death.wav");
+	g_snd.PLAYER_HEART_BEAT              = createEffectSample("player_heartb.wav");
+	g_snd.PLAYER_LEVEL_UP                = createEffectSample("player_level_up.wav");
+	g_snd.PLAYER_POISONED                = createEffectSample("player_poisoned.wav");
+	g_snd.PLAYER_DEATH_BY_FIRE           = createEffectSample("lava_death.wav");
+	
+	// Other SFX samples
+	g_snd.TORCH_START                    = createEffectSample("torch_start.wav");
+	g_snd.TORCH_LOOP                     = createEffectSample("sfx_torch_11khz.wav");
+	g_snd.TORCH_END                      = createEffectSample("torch_end.wav");
+	g_snd.FIREPLACE_LOOP                 = createEffectSample("fire_place.wav");
+	g_snd.PLOUF                          = createEffectSample("fishing_plouf.wav");
+	g_snd.WHOOSH                         = createEffectSample("whoosh07.wav");
+	g_snd.DISMEMBER                      = createEffectSample("flesh_critical.wav");
 	
 	// Magic draw
-	SND_MAGIC_AMBIENT                  = audio::createSample("magic_ambient.wav");
-	SND_MAGIC_DRAW                     = audio::createSample("magic_draw.wav");
-	SND_MAGIC_FIZZLE                   = audio::createSample("magic_fizzle.wav");
+	g_snd.MAGIC_AMBIENT_LOOP             = createEffectSample("magic_ambient.wav");
+	g_snd.MAGIC_DRAW_LOOP                = createEffectSample("magic_draw.wav");
+	g_snd.MAGIC_FIZZLE                   = createEffectSample("magic_fizzle.wav");
 	
 	// Magic symbols
-	SND_SYMB[RUNE_AAM]                       = audio::createSample("magic_aam.wav");
-	SND_SYMB[RUNE_CETRIUS]                   = audio::createSample("magic_citrius.wav");
-	SND_SYMB[RUNE_COSUM]                     = audio::createSample("magic_cosum.wav");
-	SND_SYMB[RUNE_COMUNICATUM]               = audio::createSample("magic_comunicatum.wav");
-	SND_SYMB[RUNE_FOLGORA]                   = audio::createSample("magic_folgora.wav");
-	SND_SYMB[RUNE_FRIDD]                     = audio::createSample("magic_fridd.wav");
-	SND_SYMB[RUNE_KAOM]                      = audio::createSample("magic_kaom.wav");
-	SND_SYMB[RUNE_MEGA]                      = audio::createSample("magic_mega.wav");
-	SND_SYMB[RUNE_MORTE]                     = audio::createSample("magic_morte.wav");
-	SND_SYMB[RUNE_MOVIS]                     = audio::createSample("magic_movis.wav");
-	SND_SYMB[RUNE_NHI]                       = audio::createSample("magic_nhi.wav");
-	SND_SYMB[RUNE_RHAA]                      = audio::createSample("magic_rhaa.wav");
-	SND_SYMB[RUNE_SPACIUM]                   = audio::createSample("magic_spacium.wav");
-	SND_SYMB[RUNE_STREGUM]                   = audio::createSample("magic_stregum.wav");
-	SND_SYMB[RUNE_TAAR]                      = audio::createSample("magic_taar.wav");
-	SND_SYMB[RUNE_TEMPUS]                    = audio::createSample("magic_tempus.wav");
-	SND_SYMB[RUNE_TERA]                      = audio::createSample("magic_tera.wav");
-	SND_SYMB[RUNE_VISTA]                     = audio::createSample("magic_vista.wav");
-	SND_SYMB[RUNE_VITAE]                     = audio::createSample("magic_vitae.wav");
-	SND_SYMB[RUNE_YOK]                       = audio::createSample("magic_yok.wav");
+	g_snd.SYMB[RUNE_AAM]                 = createEffectSample("magic_aam.wav");
+	g_snd.SYMB[RUNE_CETRIUS]             = createEffectSample("magic_citrius.wav");
+	g_snd.SYMB[RUNE_COSUM]               = createEffectSample("magic_cosum.wav");
+	g_snd.SYMB[RUNE_COMUNICATUM]         = createEffectSample("magic_comunicatum.wav");
+	g_snd.SYMB[RUNE_FOLGORA]             = createEffectSample("magic_folgora.wav");
+	g_snd.SYMB[RUNE_FRIDD]               = createEffectSample("magic_fridd.wav");
+	g_snd.SYMB[RUNE_KAOM]                = createEffectSample("magic_kaom.wav");
+	g_snd.SYMB[RUNE_MEGA]                = createEffectSample("magic_mega.wav");
+	g_snd.SYMB[RUNE_MORTE]               = createEffectSample("magic_morte.wav");
+	g_snd.SYMB[RUNE_MOVIS]               = createEffectSample("magic_movis.wav");
+	g_snd.SYMB[RUNE_NHI]                 = createEffectSample("magic_nhi.wav");
+	g_snd.SYMB[RUNE_RHAA]                = createEffectSample("magic_rhaa.wav");
+	g_snd.SYMB[RUNE_SPACIUM]             = createEffectSample("magic_spacium.wav");
+	g_snd.SYMB[RUNE_STREGUM]             = createEffectSample("magic_stregum.wav");
+	g_snd.SYMB[RUNE_TAAR]                = createEffectSample("magic_taar.wav");
+	g_snd.SYMB[RUNE_TEMPUS]              = createEffectSample("magic_tempus.wav");
+	g_snd.SYMB[RUNE_TERA]                = createEffectSample("magic_tera.wav");
+	g_snd.SYMB[RUNE_VISTA]               = createEffectSample("magic_vista.wav");
+	g_snd.SYMB[RUNE_VITAE]               = createEffectSample("magic_vitae.wav");
+	g_snd.SYMB[RUNE_YOK]                 = createEffectSample("magic_yok.wav");
 	
 	// Spells
-	SND_SPELL_ACTIVATE_PORTAL          = audio::createSample("magic_spell_activate_portal.wav");
-	SND_SPELL_ARMOR_START              = audio::createSample("magic_spell_armor_start.wav");
-	SND_SPELL_ARMOR_END                = audio::createSample("magic_spell_armor_end.wav");
-	SND_SPELL_ARMOR_LOOP               = audio::createSample("magic_spell_armor_loop.wav");
-	SND_SPELL_LOWER_ARMOR              = audio::createSample("magic_spell_decrease_armor.wav");
-	SND_SPELL_LOWER_ARMOR_END          = audio::createSample("magic_spell_lower_armor.wav");
-	SND_SPELL_BLESS                    = audio::createSample("magic_spell_bless.wav");
-	SND_SPELL_COLD_PROTECTION_START    = audio::createSample("magic_spell_cold_protection.wav");
-	SND_SPELL_COLD_PROTECTION_LOOP     = audio::createSample("magic_spell_cold_protection_loop.wav");
-	SND_SPELL_COLD_PROTECTION_END      = audio::createSample("magic_spell_cold_protection_end.wav");
-	SND_SPELL_CONFUSE                  = audio::createSample("magic_spell_confuse.wav");
-	SND_SPELL_CONTROL_TARGET           = audio::createSample("magic_spell_control_target.wav");
-	SND_SPELL_CREATE_FIELD             = audio::createSample("magic_spell_create_field.wav");
-	SND_SPELL_CREATE_FOOD              = audio::createSample("magic_spell_create_food.wav");
-	SND_SPELL_CURE_POISON              = audio::createSample("magic_spell_cure_poison.wav");
-	SND_SPELL_CURSE                    = audio::createSample("magic_spell_curse.wav");
-	SND_SPELL_DETECT_TRAP              = audio::createSample("magic_spell_detect_trap.wav");
-	SND_SPELL_DETECT_TRAP_LOOP         = audio::createSample("magic_spell_detect_trap_loop.wav");
-	SND_SPELL_DISARM_TRAP              = audio::createSample("magic_spell_disarm_trap.wav");
-	SND_SPELL_DISPELL_FIELD            = audio::createSample("magic_spell_dispell_field.wav");
-	SND_SPELL_DISPELL_ILLUSION         = audio::createSample("magic_spell_dispell_illusion.wav");
-	SND_SPELL_DOUSE                    = audio::createSample("magic_spell_douse.wav");
-	SND_SPELL_ELECTRIC                 = audio::createSample("sfx_electric.wav");
-	SND_SPELL_ENCHANT_WEAPON           = audio::createSample("magic_spell_enchant_weapon.wav");
-	SND_SPELL_EXPLOSION                = audio::createSample("magic_spell_explosion.wav");
-	SND_SPELL_EYEBALL_IN               = audio::createSample("magic_spell_eyeball_in.wav");
-	SND_SPELL_EYEBALL_OUT              = audio::createSample("magic_spell_eyeball_out.wav");
-	SND_SPELL_FIRE_HIT                 = audio::createSample("magic_spell_firehit.wav");
-	SND_SPELL_FIRE_LAUNCH              = audio::createSample("magic_spell_firelaunch.wav");
-	SND_SPELL_FIRE_PROTECTION          = audio::createSample("magic_spell_fire_protection.wav");
-	SND_SPELL_FIRE_PROTECTION_LOOP     = audio::createSample("magic_spell_fire_protection_loop.wav");
-	SND_SPELL_FIRE_PROTECTION_END      = audio::createSample("magic_spell_fire_protection_end.wav");
-	SND_SPELL_FIRE_WIND                = audio::createSample("magic_spell_firewind.wav");
-	SND_SPELL_FREEZETIME               = audio::createSample("magic_spell_freezetime.wav");
-	SND_SPELL_HARM                     = audio::createSample("magic_spell_harm.wav");
-	SND_SPELL_HEALING                  = audio::createSample("magic_spell_healing.wav");
-	SND_SPELL_ICE_FIELD                = audio::createSample("magic_spell_ice_field.wav");
-	SND_SPELL_ICE_FIELD_LOOP           = audio::createSample("magic_spell_ice_fieldloop.wav");
-	SND_SPELL_ICE_FIELD_END            = audio::createSample("magic_spell_ice_field_end.wav");
-	SND_SPELL_ICE_PROJECTILE_LAUNCH    = audio::createSample("magic_spell_ice_projectile_launch.wav");
-	SND_SPELL_INCINERATE               = audio::createSample("magic_spell_incinerate.wav");
-	SND_SPELL_INCINERATE_LOOP          = audio::createSample("magic_spell_incinerate_loop.wav");
-	SND_SPELL_INCINERATE_END           = audio::createSample("magic_spell_incinerate_end.wav");
-	SND_SPELL_IGNITE                   = audio::createSample("magic_spell_ignite.wav");
-	SND_SPELL_INVISIBILITY_START       = audio::createSample("magic_spell_invisibilityon.wav");
-	SND_SPELL_INVISIBILITY_END         = audio::createSample("magic_spell_invisibilityoff.wav");
-	SND_SPELL_LEVITATE_START           = audio::createSample("magic_spell_levitate_start.wav");
-	SND_SPELL_LEVITATE_LOOP            = audio::createSample("magic_spell_levitate_loop.wav");
-	SND_SPELL_LEVITATE_END             = audio::createSample("magic_spell_levitate_end.wav");
-	SND_SPELL_LIGHTNING_START          = audio::createSample("magic_spell_lightning_start.wav");
-	SND_SPELL_LIGHTNING_LOOP           = audio::createSample("magic_spell_lightning_loop.wav");
-	SND_SPELL_LIGHTNING_END            = audio::createSample("magic_spell_lightning_end.wav");
-	SND_SPELL_MAGICAL_HIT              = audio::createSample("magic_spell_magicalhit.wav");
+	g_snd.SPELL_ACTIVATE_PORTAL          = createEffectSample("magic_spell_activate_portal.wav");
+	g_snd.SPELL_ARMOR_START              = createEffectSample("magic_spell_armor_start.wav");
+	g_snd.SPELL_ARMOR_END                = createEffectSample("magic_spell_armor_end.wav");
+	g_snd.SPELL_ARMOR_LOOP               = createEffectSample("magic_spell_armor_loop.wav");
+	g_snd.SPELL_LOWER_ARMOR              = createEffectSample("magic_spell_decrease_armor.wav");
+	g_snd.SPELL_LOWER_ARMOR_END          = createEffectSample("magic_spell_lower_armor.wav");
+	g_snd.SPELL_BLESS                    = createEffectSample("magic_spell_bless.wav");
+	g_snd.SPELL_COLD_PROTECTION_START    = createEffectSample("magic_spell_cold_protection.wav");
+	g_snd.SPELL_COLD_PROTECTION_LOOP     = createEffectSample("magic_spell_cold_protection_loop.wav");
+	g_snd.SPELL_COLD_PROTECTION_END      = createEffectSample("magic_spell_cold_protection_end.wav");
+	g_snd.SPELL_CONFUSE                  = createEffectSample("magic_spell_confuse.wav");
+	g_snd.SPELL_CONTROL_TARGET           = createEffectSample("magic_spell_control_target.wav");
+	g_snd.SPELL_CREATE_FIELD             = createEffectSample("magic_spell_create_field.wav");
+	g_snd.SPELL_CREATE_FOOD              = createEffectSample("magic_spell_create_food.wav");
+	g_snd.SPELL_CURE_POISON              = createEffectSample("magic_spell_cure_poison.wav");
+	g_snd.SPELL_CURSE                    = createEffectSample("magic_spell_curse.wav");
+	g_snd.SPELL_DETECT_TRAP              = createEffectSample("magic_spell_detect_trap.wav");
+	g_snd.SPELL_DETECT_TRAP_LOOP         = createEffectSample("magic_spell_detect_trap_loop.wav");
+	g_snd.SPELL_DISARM_TRAP              = createEffectSample("magic_spell_disarm_trap.wav");
+	g_snd.SPELL_DISPELL_FIELD            = createEffectSample("magic_spell_dispell_field.wav");
+	g_snd.SPELL_DISPELL_ILLUSION         = createEffectSample("magic_spell_dispell_illusion.wav");
+	g_snd.SPELL_DOUSE                    = createEffectSample("magic_spell_douse.wav");
+	g_snd.SPELL_ELECTRIC                 = createEffectSample("sfx_electric.wav");
+	g_snd.SPELL_EXPLOSION                = createEffectSample("magic_spell_explosion.wav");
+	g_snd.SPELL_EYEBALL_IN               = createEffectSample("magic_spell_eyeball_in.wav");
+	g_snd.SPELL_EYEBALL_OUT              = createEffectSample("magic_spell_eyeball_out.wav");
+	g_snd.SPELL_FIRE_HIT                 = createEffectSample("magic_spell_firehit.wav");
+	g_snd.SPELL_FIRE_LAUNCH              = createEffectSample("magic_spell_firelaunch.wav");
+	g_snd.SPELL_FIRE_PROTECTION          = createEffectSample("magic_spell_fire_protection.wav");
+	g_snd.SPELL_FIRE_PROTECTION_LOOP     = createEffectSample("magic_spell_fire_protection_loop.wav");
+	g_snd.SPELL_FIRE_PROTECTION_END      = createEffectSample("magic_spell_fire_protection_end.wav");
+	g_snd.SPELL_FIRE_WIND_LOOP           = createEffectSample("magic_spell_firewind.wav");
+	g_snd.SPELL_FREEZETIME               = createEffectSample("magic_spell_freezetime.wav");
+	g_snd.SPELL_HARM                     = createEffectSample("magic_spell_harm.wav");
+	g_snd.SPELL_HEALING                  = createEffectSample("magic_spell_healing.wav");
+	g_snd.SPELL_ICE_FIELD                = createEffectSample("magic_spell_ice_field.wav");
+	g_snd.SPELL_ICE_FIELD_LOOP           = createEffectSample("magic_spell_ice_fieldloop.wav");
+	g_snd.SPELL_ICE_FIELD_END            = createEffectSample("magic_spell_ice_field_end.wav");
+	g_snd.SPELL_ICE_PROJECTILE_LAUNCH    = createEffectSample("magic_spell_ice_projectile_launch.wav");
+	g_snd.SPELL_INCINERATE               = createEffectSample("magic_spell_incinerate.wav");
+	g_snd.SPELL_INCINERATE_LOOP          = createEffectSample("magic_spell_incinerate_loop.wav");
+	g_snd.SPELL_INCINERATE_END           = createEffectSample("magic_spell_incinerate_end.wav");
+	g_snd.SPELL_IGNITE                   = createEffectSample("magic_spell_ignite.wav");
+	g_snd.SPELL_INVISIBILITY_START       = createEffectSample("magic_spell_invisibilityon.wav");
+	g_snd.SPELL_INVISIBILITY_END         = createEffectSample("magic_spell_invisibilityoff.wav");
+	g_snd.SPELL_LEVITATE_START           = createEffectSample("magic_spell_levitate_start.wav");
+	g_snd.SPELL_LEVITATE_LOOP            = createEffectSample("magic_spell_levitate_loop.wav");
+	g_snd.SPELL_LEVITATE_END             = createEffectSample("magic_spell_levitate_end.wav");
+	g_snd.SPELL_LIGHTNING_START          = createEffectSample("magic_spell_lightning_start.wav");
+	g_snd.SPELL_LIGHTNING_LOOP           = createEffectSample("magic_spell_lightning_loop.wav");
+	g_snd.SPELL_LIGHTNING_END            = createEffectSample("magic_spell_lightning_end.wav");
+	g_snd.SPELL_MAGICAL_HIT              = createEffectSample("magic_spell_magicalhit.wav");
 	
-	SND_SPELL_FIRE_FIELD_START         = audio::createSample("magic_spell_fire_field.wav");
-	SND_SPELL_FIRE_FIELD_LOOP          = audio::createSample("magic_spell_fire_field_loop.wav");
-	SND_SPELL_FIRE_FIELD_END           = audio::createSample("magic_spell_fire_field_end.wav");
+	g_snd.SPELL_FIRE_FIELD_START         = createEffectSample("magic_spell_fire_field.wav");
+	g_snd.SPELL_FIRE_FIELD_LOOP          = createEffectSample("magic_spell_fire_field_loop.wav");
+	g_snd.SPELL_FIRE_FIELD_END           = createEffectSample("magic_spell_fire_field_end.wav");
 	
-	SND_SPELL_MAGICAL_SHIELD           = audio::createSample("magic_spell_magicalshield.wav");
-	SND_SPELL_MASS_INCINERATE          = audio::createSample("magic_spell_mass_incinerate.wav");
-	SND_SPELL_MASS_PARALYSE            = audio::createSample("magic_spell_mass_paralyse.wav");
-	SND_SPELL_MM_CREATE                = audio::createSample("magic_spell_missilecreate.wav");
-	SND_SPELL_MM_HIT                   = audio::createSample("magic_spell_missilehit.wav");
-	SND_SPELL_MM_LAUNCH                = audio::createSample("magic_spell_missilelaunch.wav");
-	SND_SPELL_MM_LOOP                  = audio::createSample("magic_spell_missileloop.wav");
-	SND_SPELL_NEGATE_MAGIC             = audio::createSample("magic_spell_negate_magic.wav");
-	SND_SPELL_NO_EFFECT                = audio::createSample("magic_spell_noeffect.wav");
-	SND_SPELL_PARALYSE                 = audio::createSample("magic_spell_paralyse.wav");
-	SND_SPELL_PARALYSE_END             = audio::createSample("magic_spell_paralyse_end.wav");
-	SND_SPELL_POISON_PROJECTILE_LAUNCH = audio::createSample("magic_spell_poison_projectile_launch.wav");
-	SND_SPELL_RAISE_DEAD               = audio::createSample("magic_spell_raise_dead.wav");
-	SND_SPELL_REPEL_UNDEAD             = audio::createSample("magic_spell_repel_undead.wav");
-	SND_SPELL_REPEL_UNDEAD_LOOP        = audio::createSample("magic_spell_repell_loop.wav");
-	SND_SPELL_RUNE_OF_GUARDING         = audio::createSample("magic_spell_rune_of_guarding.wav");
-	SND_SPELL_RUNE_OF_GUARDING_END     = audio::createSample("magic_spell_rune_of_guarding_explode.wav");
-	SND_SPELL_SLOW_DOWN                = audio::createSample("magic_spell_slow_down.wav");
-	SND_SPELL_SLOW_DOWN_END            = audio::createSample("magic_spell_slow_down_end.wav");
-	SND_SPELL_SPARK                    = audio::createSample("sfx_spark.wav");
-	SND_SPELL_SPEED_START              = audio::createSample("magic_spell_speedstart.wav");
-	SND_SPELL_SPEED_LOOP               = audio::createSample("magic_spell_speed.wav");
-	SND_SPELL_SPEED_END                = audio::createSample("magic_spell_speedend.wav");
-	SND_SPELL_SUMMON_CREATURE          = audio::createSample("magic_spell_summon_creature.wav");
-	SND_SPELL_TELEKINESIS_START        = audio::createSample("magic_spell_telekinesison.wav");
-	SND_SPELL_TELEKINESIS_END          = audio::createSample("magic_spell_telekinesisoff.wav");
-	SND_SPELL_TELEPORT                 = audio::createSample("magic_spell_teleport.wav");
-	SND_SPELL_TELEPORTED               = audio::createSample("magic_spell_teleported.wav");
-	SND_SPELL_VISION_START             = audio::createSample("magic_spell_vision2.wav");
-	SND_SPELL_VISION_LOOP              = audio::createSample("magic_spell_vision.wav");
+	g_snd.SPELL_MAGICAL_SHIELD_LOOP      = createEffectSample("magic_spell_magicalshield.wav");
+	g_snd.SPELL_MASS_INCINERATE          = createEffectSample("magic_spell_mass_incinerate.wav");
+	g_snd.SPELL_MASS_PARALYSE            = createEffectSample("magic_spell_mass_paralyse.wav");
+	g_snd.SPELL_MM_CREATE                = createEffectSample("magic_spell_missilecreate.wav");
+	g_snd.SPELL_MM_HIT                   = createEffectSample("magic_spell_missilehit.wav");
+	g_snd.SPELL_MM_LAUNCH                = createEffectSample("magic_spell_missilelaunch.wav");
+	g_snd.SPELL_MM_LOOP                  = createEffectSample("magic_spell_missileloop.wav");
+	g_snd.SPELL_NEGATE_MAGIC             = createEffectSample("magic_spell_negate_magic.wav");
+	g_snd.SPELL_PARALYSE                 = createEffectSample("magic_spell_paralyse.wav");
+	g_snd.SPELL_PARALYSE_END             = createEffectSample("magic_spell_paralyse_end.wav");
+	g_snd.SPELL_POISON_PROJECTILE_LAUNCH = createEffectSample("magic_spell_poison_projectile_launch.wav");
+	g_snd.SPELL_RAISE_DEAD               = createEffectSample("magic_spell_raise_dead.wav");
+	g_snd.SPELL_REPEL_UNDEAD             = createEffectSample("magic_spell_repel_undead.wav");
+	g_snd.SPELL_REPEL_UNDEAD_LOOP        = createEffectSample("magic_spell_repell_loop.wav");
+	g_snd.SPELL_RUNE_OF_GUARDING         = createEffectSample("magic_spell_rune_of_guarding.wav");
+	g_snd.SPELL_RUNE_OF_GUARDING_END     = createEffectSample("magic_spell_rune_of_guarding_explode.wav");
+	g_snd.SPELL_SLOW_DOWN                = createEffectSample("magic_spell_slow_down.wav");
+	g_snd.SPELL_SLOW_DOWN_END            = createEffectSample("magic_spell_slow_down_end.wav");
+	g_snd.SPELL_SPARK                    = createEffectSample("sfx_spark.wav");
+	g_snd.SPELL_SPEED_START              = createEffectSample("magic_spell_speedstart.wav");
+	g_snd.SPELL_SPEED_LOOP               = createEffectSample("magic_spell_speed.wav");
+	g_snd.SPELL_SPEED_END                = createEffectSample("magic_spell_speedend.wav");
+	g_snd.SPELL_SUMMON_CREATURE          = createEffectSample("magic_spell_summon_creature.wav");
+	g_snd.SPELL_TELEKINESIS_START        = createEffectSample("magic_spell_telekinesison.wav");
+	g_snd.SPELL_TELEKINESIS_END          = createEffectSample("magic_spell_telekinesisoff.wav");
+	g_snd.SPELL_VISION_START             = createEffectSample("magic_spell_vision2.wav");
+	g_snd.SPELL_VISION_LOOP              = createEffectSample("magic_spell_vision.wav");
 }
 
-// Reset each static sample to INVALID_ID
+// Reset each static sample to audio::SourcedSample()
 // Those samples are freed from memory when by audio::clean() is deleted
 static void ARX_SOUND_ReleaseStaticSamples() {
+	g_snd = StaticSamples();
+}
+
+const char * ARX_MATERIAL_GetNameById(Material id) {
 	
-	// Interface samples
-	SND_BACKPACK = INVALID_ID;
-	SND_BOOK_OPEN = INVALID_ID;
-	SND_BOOK_CLOSE = INVALID_ID;
-	SND_BOOK_PAGE_TURN = INVALID_ID;
-	SND_GOLD = INVALID_ID;
-	SND_INVSTD = INVALID_ID;
-	SND_SCROLL_OPEN = INVALID_ID;
-	SND_SCROLL_CLOSE = INVALID_ID;
-	SND_TORCH_START = INVALID_ID;
-	SND_TORCH_LOOP = INVALID_ID;
-	SND_TORCH_END = INVALID_ID;
-
-	// Other SFX samples
-	SND_FIREPLACE = INVALID_ID;
-	SND_PLOUF = INVALID_ID;
-	SND_QUAKE = INVALID_ID;
-
-	// Menu samples
-	SND_MENU_CLICK = INVALID_ID;
-	SND_MENU_RELEASE = INVALID_ID;
-
-	// Player samples
-	SND_PLAYER_DEATH_BY_FIRE = INVALID_ID;
-	SND_PLAYER_FILLLIFEMANA = INVALID_ID;
-	SND_PLAYER_HEART_BEAT = INVALID_ID;
-	SND_PLAYER_LEVEL_UP = INVALID_ID;
-	SND_PLAYER_POISONED = INVALID_ID;
-
-	// Magic drawing samples
-	SND_MAGIC_AMBIENT = INVALID_ID;
-	SND_MAGIC_DRAW = INVALID_ID;
-	SND_MAGIC_FIZZLE = INVALID_ID;
-
-	// Magic symbols samples
-	SND_SYMB[RUNE_AAM] = INVALID_ID;
-	SND_SYMB[RUNE_CETRIUS] = INVALID_ID;
-	SND_SYMB[RUNE_COSUM] = INVALID_ID;
-	SND_SYMB[RUNE_COMUNICATUM] = INVALID_ID;
-	SND_SYMB[RUNE_FOLGORA] = INVALID_ID;
-	SND_SYMB[RUNE_FRIDD] = INVALID_ID;
-	SND_SYMB[RUNE_KAOM] = INVALID_ID;
-	SND_SYMB[RUNE_MEGA] = INVALID_ID;
-	SND_SYMB[RUNE_MORTE] = INVALID_ID;
-	SND_SYMB[RUNE_MOVIS] = INVALID_ID;
-	SND_SYMB[RUNE_NHI] = INVALID_ID;
-	SND_SYMB[RUNE_RHAA] = INVALID_ID;
-	SND_SYMB[RUNE_SPACIUM] = INVALID_ID;
-	SND_SYMB[RUNE_STREGUM] = INVALID_ID;
-	SND_SYMB[RUNE_TAAR] = INVALID_ID;
-	SND_SYMB[RUNE_TEMPUS] = INVALID_ID;
-	SND_SYMB[RUNE_TERA] = INVALID_ID;
-	SND_SYMB[RUNE_VISTA] = INVALID_ID;
-	SND_SYMB[RUNE_VITAE] = INVALID_ID;
-	SND_SYMB[RUNE_YOK] = INVALID_ID;
-
-	// Spells samples
-	SND_SPELL_ACTIVATE_PORTAL = INVALID_ID;
-	SND_SPELL_ARMOR_START	= INVALID_ID;
-	SND_SPELL_ARMOR_END		= INVALID_ID;
-	SND_SPELL_ARMOR_LOOP	= INVALID_ID;
-	SND_SPELL_LOWER_ARMOR = INVALID_ID;
-	SND_SPELL_LOWER_ARMOR_END = INVALID_ID;
-	SND_SPELL_BLESS = INVALID_ID;
-	SND_SPELL_COLD_PROTECTION_START = INVALID_ID;
-	SND_SPELL_COLD_PROTECTION_LOOP = INVALID_ID;
-	SND_SPELL_COLD_PROTECTION_END = INVALID_ID;
-	SND_SPELL_CONFUSE = INVALID_ID;
-	SND_SPELL_CONTROL_TARGET = INVALID_ID;
-	SND_SPELL_CREATE_FIELD = INVALID_ID;
-	SND_SPELL_CREATE_FOOD = INVALID_ID;
-	SND_SPELL_CURE_POISON = INVALID_ID;
-	SND_SPELL_CURSE = INVALID_ID;
-	SND_SPELL_DETECT_TRAP = INVALID_ID;
-	SND_SPELL_DETECT_TRAP_LOOP = INVALID_ID;
-	SND_SPELL_DISARM_TRAP = INVALID_ID;
-	SND_SPELL_DISPELL_FIELD = INVALID_ID;
-	SND_SPELL_DISPELL_ILLUSION = INVALID_ID;
-	SND_SPELL_DOUSE = INVALID_ID;
-	SND_SPELL_ELECTRIC = INVALID_ID;
-	SND_SPELL_ENCHANT_WEAPON = INVALID_ID;
-	SND_SPELL_EXPLOSION = INVALID_ID;
-	SND_SPELL_EYEBALL_IN = INVALID_ID;
-	SND_SPELL_EYEBALL_OUT = INVALID_ID;
-	SND_SPELL_FIRE_FIELD = INVALID_ID;
-	SND_SPELL_FIRE_HIT = INVALID_ID;
-	SND_SPELL_FIRE_LAUNCH = INVALID_ID;
-	SND_SPELL_FIRE_PROTECTION = INVALID_ID;
-	SND_SPELL_FIRE_PROTECTION_LOOP = INVALID_ID;
-	SND_SPELL_FIRE_PROTECTION_END = INVALID_ID;
-	SND_SPELL_FIRE_WIND = INVALID_ID;
-	SND_SPELL_FREEZETIME = INVALID_ID;
-	SND_SPELL_HARM = INVALID_ID;
-	SND_SPELL_HEALING = INVALID_ID;
-	SND_SPELL_ICE_FIELD = INVALID_ID;
-	SND_SPELL_ICE_FIELD_LOOP = INVALID_ID;
-	SND_SPELL_ICE_FIELD_END = INVALID_ID;
-	SND_SPELL_ICE_PROJECTILE_LAUNCH = INVALID_ID;
-	SND_SPELL_INCINERATE = INVALID_ID;
-	SND_SPELL_INCINERATE_LOOP = INVALID_ID;
-	SND_SPELL_INCINERATE_END = INVALID_ID;
-	SND_SPELL_IGNITE = INVALID_ID;
-	SND_SPELL_INVISIBILITY_START = INVALID_ID;
-	SND_SPELL_INVISIBILITY_END = INVALID_ID;
-	SND_SPELL_LEVITATE_START = INVALID_ID;
-	SND_SPELL_LEVITATE_LOOP = INVALID_ID;
-	SND_SPELL_LEVITATE_END = INVALID_ID;
-	SND_SPELL_LIGHTNING_START = INVALID_ID;
-	SND_SPELL_LIGHTNING_LOOP = INVALID_ID;
-	SND_SPELL_LIGHTNING_END = INVALID_ID;
-	SND_SPELL_MAGICAL_HIT = INVALID_ID;
-
-	//SND_SPELL_MASS_LIGHTNING_END = INVALID_ID;
-	SND_SPELL_FIRE_FIELD_START = INVALID_ID;
-	SND_SPELL_FIRE_FIELD_LOOP = INVALID_ID;
-	SND_SPELL_FIRE_FIELD_END = INVALID_ID;
-
-	SND_SPELL_MAGICAL_SHIELD = INVALID_ID;
-	SND_SPELL_MASS_INCINERATE = INVALID_ID;
-	SND_SPELL_MASS_PARALYSE = INVALID_ID;
-	SND_SPELL_MM_CREATE = INVALID_ID;
-	SND_SPELL_MM_HIT = INVALID_ID;
-	SND_SPELL_MM_LAUNCH = INVALID_ID;
-	SND_SPELL_MM_LOOP = INVALID_ID;
-	SND_SPELL_NEGATE_MAGIC = INVALID_ID;
-	SND_SPELL_PARALYSE = INVALID_ID;
-	SND_SPELL_PARALYSE_END = INVALID_ID;
-	SND_SPELL_POISON_PROJECTILE_LAUNCH = INVALID_ID;
-	SND_SPELL_RAISE_DEAD = INVALID_ID;
-	SND_SPELL_REPEL_UNDEAD = INVALID_ID;
-	SND_SPELL_REPEL_UNDEAD_LOOP = INVALID_ID;
-	SND_SPELL_RUNE_OF_GUARDING = INVALID_ID;
-	SND_SPELL_RUNE_OF_GUARDING_END = INVALID_ID;
-	SND_SPELL_SLOW_DOWN = INVALID_ID;
-	SND_SPELL_SLOW_DOWN_END = INVALID_ID;
-	SND_SPELL_SPARK = INVALID_ID;
-	SND_SPELL_SPEED_START = INVALID_ID;
-	SND_SPELL_SPEED_LOOP = INVALID_ID;
-	SND_SPELL_SPEED_END = INVALID_ID;
-	SND_SPELL_SUMMON_CREATURE = INVALID_ID;
-	SND_SPELL_TELEKINESIS_START = INVALID_ID;
-	SND_SPELL_TELEKINESIS_END = INVALID_ID;
-	SND_SPELL_TELEPORT = INVALID_ID;
-	SND_SPELL_TELEPORTED = INVALID_ID;
-	SND_SPELL_VISION_START = INVALID_ID;
-	SND_SPELL_VISION_LOOP = INVALID_ID;
-}
-
-bool ARX_MATERIAL_GetNameById(long id, char * name)
-{
-	switch (id)
-	{
-		case MATERIAL_WEAPON:
-			strcpy(name, "weapon");
-			return true;
-			break;
-		case MATERIAL_FLESH:
-			strcpy(name, "flesh");
-			return true;
-			break;
-		case MATERIAL_METAL:
-			strcpy(name, "metal");
-			return true;
-			break;
-		case MATERIAL_GLASS:
-			strcpy(name, "glass");
-			return true;
-			break;
-		case MATERIAL_CLOTH:
-			strcpy(name, "cloth");
-			return true;
-			break;
-		case MATERIAL_WOOD:
-			strcpy(name, "wood");
-			return true;
-			break;
-		case MATERIAL_EARTH:
-			strcpy(name, "earth");
-			return true;
-			break;
-		case MATERIAL_WATER:
-			strcpy(name, "water");
-			return true;
-			break;
-		case MATERIAL_ICE:
-			strcpy(name, "ice");
-			return true;
-			break;
-		case MATERIAL_GRAVEL:
-			strcpy(name, "gravel");
-			return true;
-			break;
-		case MATERIAL_STONE:
-			strcpy(name, "stone");
-			return true;
-			break;
-		case MATERIAL_FOOT_LARGE:
-			strcpy(name, "foot_large");
-			return true;
-			break;
-		case MATERIAL_FOOT_BARE:
-			strcpy(name, "foot_bare");
-			return true;
-			break;
-		case MATERIAL_FOOT_SHOE:
-			strcpy(name, "foot_shoe");
-			return true;
-			break;
-		case MATERIAL_FOOT_METAL:
-			strcpy(name, "foot_metal");
-			return true;
-			break;
-		case MATERIAL_FOOT_STEALTH:
-			strcpy(name, "foot_stealth");
-			return true;
-			break;
+	switch(id) {
+		case MATERIAL_NONE:   return "none";
+		case MATERIAL_WEAPON: return "weapon";
+		case MATERIAL_FLESH:  return "flesh";
+		case MATERIAL_METAL:  return "metal";
+		case MATERIAL_GLASS:  return "glass";
+		case MATERIAL_CLOTH:  return "cloth";
+		case MATERIAL_WOOD:   return "wood";
+		case MATERIAL_EARTH:  return "earth";
+		case MATERIAL_WATER:  return "water";
+		case MATERIAL_ICE:    return "ice";
+		case MATERIAL_GRAVEL: return "gravel";
+		case MATERIAL_STONE:  return "stone";
+		case MATERIAL_FOOT_LARGE:   return "foot_large";
+		case MATERIAL_FOOT_BARE:    return "foot_bare";
+		case MATERIAL_FOOT_SHOE:    return "foot_shoe";
+		case MATERIAL_FOOT_METAL:   return "foot_metal";
+		case MATERIAL_FOOT_STEALTH: return "foot_stealth";
+		case MAX_MATERIALS: arx_unreachable();
 	}
-
-	strcpy(name, "none");
-	return false;
-}
-static void ARX_SOUND_LoadCollision(const long & mat1, const long & mat2, const char * name)
-{
-	char path[256];
-
-	for (size_t i = 0; i < MAX_VARIANTS; i++)
-	{
-		sprintf(path, "%s_%lu.wav", name, (unsigned long)(i + 1));
-		Inter_Materials[mat1][mat2][i] = audio::createSample(path);
-
-		if (mat1 != mat2)
-			Inter_Materials[mat2][mat1][i] = Inter_Materials[mat1][mat2][i];
-	}
+	return "none";
 }
 
 static void ARX_SOUND_CreateCollisionMaps() {
 	
 	collisionMaps.clear();
 	
-	for(size_t i = 0; i < ARX_SOUND_COLLISION_MAP_COUNT; i++) {
+	for(size_t i = 0; i < ARRAY_SIZE(ARX_SOUND_COLLISION_MAP_NAMES); i++) {
 		
 		res::path file = ARX_SOUND_PATH_INI / ARX_SOUND_COLLISION_MAP_NAMES[i];
 		file.set_ext(ARX_SOUND_FILE_EXTENSION_INI);
 		
-		size_t fileSize;
-		char * data = resources->readAlloc(file, fileSize);
-		if(!data) {
-			LogWarning << "Could not find collision map " << file;
+		std::string data = g_resources->read(file);
+		if(data.empty()) {
+			LogWarning << "Could not read collision map " << file;
 			return;
 		}
 		
-		std::istringstream iss(std::string(data, fileSize));
-		free(data);
+		std::istringstream iss(data);
 		
 		IniReader reader;
 		if(!reader.read(iss)) {
@@ -1522,15 +1082,15 @@ static void ARX_SOUND_CreateCollisionMaps() {
 						oss << mi;
 					}
 					oss << ARX_SOUND_FILE_EXTENSION_WAV;
-					SampleId sample = audio::createSample(oss.str());
+					audio::SampleHandle sample = audio::createSample(sample_path / oss.str());
 					
-					if(sample == INVALID_ID) {
+					if(sample == audio::SampleHandle()) {
 						std::ostringstream oss2;
 						oss2 << boost::to_lower_copy(key.getValue()) << '_' << mi << ARX_SOUND_FILE_EXTENSION_WAV;
-						sample = audio::createSample(oss2.str());
+						sample = audio::createSample(sample_path / oss2.str());
 					}
 					
-					if(sample != INVALID_ID) {
+					if(sample != audio::SampleHandle()) {
 						mat.variants.push_back(sample);
 					}
 				}
@@ -1551,104 +1111,39 @@ static void ARX_SOUND_CreateCollisionMaps() {
 	
 }
 
-static void ARX_SOUND_CreateMaterials()
-{
-	memset(Inter_Materials, -1, sizeof(long) * MAX_MATERIALS * MAX_MATERIALS * MAX_VARIANTS);
-
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_WEAPON,       "weapon_on_weapon");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_FLESH,        "weapon_on_flesh");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_METAL,        "weapon_on_metal");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_GLASS,        "weapon_on_glass");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_CLOTH,        "weapon_on_cloth");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_WOOD,         "weapon_on_wood");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_EARTH,        "weapon_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_WATER,        "weapon_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_ICE,          "weapon_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_GRAVEL,       "weapon_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_WEAPON, MATERIAL_STONE,        "weapon_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_FLESH,        "flesh_on_flesh");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_METAL,        "flesh_on_metal");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_GLASS,        "flesh_on_glass");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_CLOTH,        "flesh_on_cloth");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_WOOD,         "flesh_on_wood");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_EARTH,        "flesh_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_WATER,        "flesh_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_ICE,          "flesh_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_GRAVEL,       "flesh_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_FLESH,  MATERIAL_STONE,        "flesh_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_METAL,        "metal_on_metal");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_GLASS,        "metal_on_glass");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_CLOTH,        "metal_on_cloth");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_WOOD,         "metal_on_wood");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_EARTH,        "metal_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_WATER,        "metal_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_ICE,          "metal_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_GRAVEL,       "metal_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_METAL,  MATERIAL_STONE,        "metal_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_GLASS,        "glass_on_glass");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_CLOTH,        "glass_on_cloth");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_WOOD,         "glass_on_wood");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_EARTH,        "glass_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_WATER,        "glass_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_ICE,          "glass_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_GRAVEL,       "glass_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_GLASS,  MATERIAL_STONE,        "glass_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_CLOTH,        "cloth_on_cloth");
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_WOOD,         "cloth_on_wood");
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_EARTH,        "cloth_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_WATER,        "cloth_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_ICE,          "cloth_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_GRAVEL,       "cloth_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_CLOTH,  MATERIAL_STONE,        "cloth_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_WOOD,   MATERIAL_WOOD,         "wood_on_wood");
-	ARX_SOUND_LoadCollision(MATERIAL_WOOD,   MATERIAL_EARTH,        "wood_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_WOOD,   MATERIAL_WATER,        "wood_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_WOOD,   MATERIAL_ICE,          "wood_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_WOOD,   MATERIAL_GRAVEL,       "wood_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_WOOD,   MATERIAL_STONE,        "wood_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_EARTH,  MATERIAL_EARTH,        "earth_on_earth");
-	ARX_SOUND_LoadCollision(MATERIAL_EARTH,  MATERIAL_WATER,        "earth_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_EARTH,  MATERIAL_ICE,          "earth_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_EARTH,  MATERIAL_GRAVEL,       "earth_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_EARTH,  MATERIAL_STONE,        "earth_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_WATER,  MATERIAL_WATER,        "water_on_water");
-	ARX_SOUND_LoadCollision(MATERIAL_WATER,  MATERIAL_ICE,          "water_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_WATER,  MATERIAL_GRAVEL,       "water_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_WATER,  MATERIAL_STONE,        "water_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_ICE,    MATERIAL_ICE,          "ice_on_ice");
-	ARX_SOUND_LoadCollision(MATERIAL_ICE,    MATERIAL_GRAVEL,       "ice_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_ICE,    MATERIAL_STONE,        "ice_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_GRAVEL, MATERIAL_GRAVEL,       "gravel_on_gravel");
-	ARX_SOUND_LoadCollision(MATERIAL_GRAVEL, MATERIAL_STONE,        "gravel_on_stone");
-
-	ARX_SOUND_LoadCollision(MATERIAL_STONE,  MATERIAL_STONE,        "stone_on_stone");
+static void ARX_SOUND_CreateMaterials() {
+	
+	for(size_t i = 0; i < size_t(MAX_MATERIALS); i++) {
+		for(size_t j = 0; j < size_t(MAX_MATERIALS); j++) {
+			g_soundMaterials[i][j] = audio::SampleHandle();
+		}
+	}
+	
+	std::ostringstream oss;
+	for(Material i = MATERIAL_WEAPON; i <= MATERIAL_STONE; i = Material(i + 1)) {
+		for(Material j = i; j <= MATERIAL_STONE; j = Material(j + 1)) {
+			oss.str(std::string());
+			oss << ARX_MATERIAL_GetNameById(i) << "_on_" << ARX_MATERIAL_GetNameById(j) << "_1.wav";
+			g_soundMaterials[j][i] = g_soundMaterials[i][j] = audio::createSample(sample_path / oss.str());
+		}
+	}
+	
 }
 
 
 static void ARX_SOUND_CreatePresenceMap() {
 	
-	presence.clear();
+	g_presenceFactors.clear();
 	
 	res::path file = (ARX_SOUND_PATH_INI / ARX_SOUND_PRESENCE_NAME).set_ext(ARX_SOUND_FILE_EXTENSION_INI);
 	
-	size_t fileSize;
-	char * data = resources->readAlloc(file, fileSize);
-	if(!data) {
-		LogWarning << "Could not find presence map " << file;
+	std::string data = g_resources->read(file);
+	if(data.empty()) {
+		LogWarning << "Could not read presence map " << file;
 		return;
 	}
 	
-	std::istringstream iss(std::string(data, fileSize));
-	free(data);
+	std::istringstream iss(data);
 	
 	IniReader reader;
 	if(!reader.read(iss)) {
@@ -1663,58 +1158,20 @@ static void ARX_SOUND_CreatePresenceMap() {
 	
 	for(IniSection::iterator i = section->begin(); i != section->end(); ++i) {
 		float factor = i->getValue(100.f) / 100.f;
-		presence[res::path::load(i->getName()).set_ext(ARX_SOUND_FILE_EXTENSION_WAV)] = factor;
+		g_presenceFactors[res::path::load(i->getName()).set_ext(ARX_SOUND_FILE_EXTENSION_WAV)] = factor;
 	}
 	
 }
 
 static float GetSamplePresenceFactor(const res::path & name) {
 	
-	arx_assert(name.string().find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ") == std::string::npos,
-	           "bad sample name: \"%s\"", name.string().c_str());
+	arx_assert_msg(name.string().find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ") == std::string::npos,
+	               "bad sample name: \"%s\"", name.string().c_str());
 	
-	PresenceFactors::const_iterator it = presence.find(name);
-	if(it != presence.end()) {
+	PresenceFactors::const_iterator it = g_presenceFactors.find(name);
+	if(it != g_presenceFactors.end()) {
 		return it->second;
 	}
 	
 	return 1.f;
-}
-
-class SoundUpdateThread : public StoppableThread {
-	
-	void run() {
-		
-		while(!isStopRequested()) {
-			
-			ARX_PROFILE("SoundUpdate");
-			
-			sleep(ARX_SOUND_UPDATE_INTERVAL);
-			
-			audio::update();
-		}
-		
-	}
-	
-};
-
-static SoundUpdateThread * updateThread = NULL;
-
-static void ARX_SOUND_LaunchUpdateThread() {
-	
-	arx_assert(!updateThread);
-	
-	updateThread = new SoundUpdateThread();
-	updateThread->setThreadName("Sound Update");
-	updateThread->start();
-}
-
-static void ARX_SOUND_KillUpdateThread() {
-	
-	if(!updateThread) {
-		return;
-	}
-	
-	updateThread->stop();
-	delete updateThread, updateThread = NULL;
 }

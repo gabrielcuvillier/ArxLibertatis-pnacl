@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -29,28 +29,27 @@
 #include "audio/AudioTypes.h"
 #include "audio/AudioSource.h"
 #include "math/Types.h"
+#include "platform/Platform.h"
 
 namespace audio {
 
 class Sample;
 class Stream;
 
-class OpenALSource : public Source {
+class OpenALSource arx_final : public Source {
 	
 public:
 	
 	explicit OpenALSource(Sample * sample);
 	~OpenALSource();
 	
-	aalError init(SourceId id, OpenALSource * instance, const Channel & channel);
+	aalError init(SourcedSample id, OpenALSource * instance, const Channel & channel);
 	
 	aalError setPitch(float pitch);
 	aalError setPan(float pan);
 	
 	aalError setPosition(const Vec3f & position);
 	aalError setVelocity(const Vec3f & velocity);
-	aalError setDirection(const Vec3f & direction);
-	aalError setCone(const SourceCone & cone);
 	aalError setFalloff(const SourceFalloff & falloff);
 	
 	aalError play(unsigned playCount = 1);
@@ -96,27 +95,27 @@ private:
 	 */
 	bool convertStereoToMono();
 	
-	bool tooFar; // True if the listener is too far from this source.
+	bool m_tooFar; // True if the listener is too far from this source.
 	
 	/*
 	 * Remaining play count, excluding queued buffers.
 	 * For stream mode, the loadCount is decremented after the whole sample has been loaded.
 	 * In that case, written will hold the amount ob bytes already loaded.
 	 */
-	bool streaming;
-	unsigned loadCount;
-	size_t written; // Streaming status
-	Stream * stream;
+	bool m_streaming;
+	unsigned m_loadCount;
+	size_t m_written; // Streaming status
+	Stream * m_stream;
 	
-	size_t read;
+	size_t m_read;
 	
-	ALuint source;
+	ALuint m_source;
 	
 	enum { NBUFFERS = 2 };
 
-	ALuint buffers[NBUFFERS];
-	size_t bufferSizes[NBUFFERS];
-	unsigned int * refcount; // reference count for shared buffers
+	ALuint m_buffers[NBUFFERS];
+	size_t m_bufferSizes[NBUFFERS];
+	unsigned int * m_refcount; // Reference count for shared buffers
 	
 	float m_volume;
 	

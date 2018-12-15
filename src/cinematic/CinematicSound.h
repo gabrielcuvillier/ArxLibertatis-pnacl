@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,12 +20,14 @@
 #ifndef ARX_CINEMATIC_CINEMATICSOUND_H
 #define ARX_CINEMATIC_CINEMATICSOUND_H
 
+#include <stddef.h>
+
 #include "io/resource/ResourcePath.h"
 #include "platform/Platform.h"
 
 void DeleteAllSound();
 void AddSoundToList(const res::path & path, bool isSpeech);
-bool PlaySoundKeyFramer(int index);
+bool PlaySoundKeyFramer(size_t index);
 void StopSoundKeyFramer();
 
 #endif // ARX_CINEMATIC_CINEMATICSOUND_H

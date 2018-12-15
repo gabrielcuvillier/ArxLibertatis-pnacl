@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,12 +20,14 @@
 #ifndef ARX_GUI_CINEMATICBORDER_H
 #define ARX_GUI_CINEMATICBORDER_H
 
+#include "core/TimeTypes.h"
+
 class CinematicBorder {
 public:
 	CinematicBorder();
 	
 	bool isActive();
-	float elapsedTime();
+	GameDuration elapsedTime();
 	
 	void reset();
 	
@@ -39,7 +41,7 @@ public:
 private:
 	bool m_active;
 	long m_direction;
-	float m_startTime;
+	GameInstant m_startTime;
 };
 
 extern CinematicBorder cinematicBorder;

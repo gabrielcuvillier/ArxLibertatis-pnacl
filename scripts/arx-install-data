@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+# Copyright 2013-2017 Arx Libertatis Team (see the AUTHORS file)
 #
 # This file is part of Arx Libertatis.
 #
@@ -40,7 +40,7 @@ disable_color() {
 	dim_cyan='' ; dim_white='' ; reset=''
 }
 disable_color
-if [ -t 1 ] && [ "$(tput colors 2> /dev/null)" != -1 ] ; then
+if [ -z "${NO_COLOR:-1}" ] && [ -t 1 ] && [ "$(tput colors 2> /dev/null)" != -1 ] ; then
 	
 	       red="$(printf '\033[1;31m')"
 	     green="$(printf '\033[1;32m')"
@@ -72,7 +72,6 @@ patch_name_localized="ArxFatalis_${patch_ver}_%s.exe"
 patch_url_path="arxfatalis/patches/${patch_ver}/${patch_name}"
 patch_url_master="http://cdn.bethsoft.com/${patch_url_path}"
 patch_urls="http://arx.vg/${patch_name} ${patch_url_master}"
-patch_urls="$patch_urls http://download.zenimax.com/${patch_url_path}"
 patch_urls="$patch_urls http://web.archive.org/web/${patch_url_master}"
 
 # Name and download locations for the Japanese 1.02j patch
@@ -111,7 +110,7 @@ platform="$(uname)"
 command="$(basename "$0")"
 scommand="$(printf '%s' "$command" | tr - _)"
 if [ "$platform" = 'Darwin' ] ; then
-	# Mac OS X
+	# macOS
 	data_dirs='/Applications'
 	data_home="$HOME/Library/Application Support"
 	config_home="$HOME/Library/Application Support"
@@ -213,8 +212,8 @@ fi
 
 cleanup_functions='' # List of functions to be run on exit
 
-# Add a function to ron on exit.
-# Functions are un in the order they are added.
+# Add a function to run on exit.
+# Functions are run in the order they are added.
 # Usage: on_exit <code>
 # Cleanup functions will receive one argument: the exit message if any or an empty string.
 on_exit() {
@@ -2706,16 +2705,20 @@ find_file_impl() {
 	_file_d="$(print "$_file" | sed 's/^\(.*\)\(\.[^.]*\)$/\1_default\2/')"
 	
 	# Prefer files from the patch - if availbale, they are most likely the correct ones
-	set -- -iname "$_file" -print -o -iname "$_file_d" -print
-	[ "$_patchable" = 1 ] && [ ! -z "$patchdir" ]  && find "$patchdir" "$@"
+	[ "$_patchable" = 1 ] && [ ! -z "$patchdir" ]  \
+		&& find "$patchdir" \( -name "$_file" -o -name "$_file_d" \)  -print
 	
 	# Find the file in the source
-	[ ! -z "$sourcedir" ] && find "$sourcedir" "$@"
-	[ -d "$sourcefile" ]  && find "$sourcefile" "$@"
+	[ ! -z "$sourcedir" ] && find "$sourcedir" -iname "$_file" -print
+	[ -d "$sourcefile" ]  && find "$sourcefile" -iname "$_file" -print
+	# Find the _default.pak variant only after the .pak variant
+	# This is required to detect the correct language fro Steam installs
+	# as the english version is always present as speech_default.pak and loc_default.pak
+	[ ! -z "$sourcedir" ] && find "$sourcedir" -iname "$_file_d" -print
+	[ -d "$sourcefile" ]  && find "$sourcefile" -iname "$_file_d" -print
 	
 	# Also find the file if it is already in the data directory, but don't ignore case
-	find "$datadir" -path '*-temp' -prune -o \
-		-name "$_file" -print -o -name "$_file_d" -print
+	find "$datadir" -path '*-temp' -prune \( -name "$_file" -o -name "$_file_d" \) -print
 	
 }
 # Find a file in patch, source and data directories.
@@ -2761,6 +2764,8 @@ data_lang_desc='' # Friendly data language/type label
 # <callback> receives a speech.pak checksum and sets data_lang and data_lang_desc
 detect_data_langauge() {
 	callback="$1"
+	
+	# TODO Add support for installing multiple languages at once
 	
 	if [ $install = 1 ]
 		then _detect_data_langauge_status=40
@@ -3087,6 +3092,7 @@ determine_language() {
 		'4edf9f8c799190590b4cd52cfa5f91b1') data_lang='french'        ;;
 		'81f05dea47c52d43f01c9b44dd8fe962') data_lang='italian'       ;;
 		'677163bc319cd1e9aa1b53b5fb3e9402') data_lang='russian'       ;;
+		'5df8ba0d4ec58bd43d04307eb4c06d86') data_lang='russian'       ;;
 		'235b86700fc80b3eb86731d748013a38') data_lang='japanese'      ;;
 		'62ca7b1751c0615ee131a94f0856b389') data_lang='english-demo'  ;;
 		'09038e43508232c44537c162f9e3ecde') data_lang='french-demo'   ;;
@@ -3244,7 +3250,8 @@ case "$data_lang" in
 	data_checksum_original='a91a0b39a046233debbb10b4850e13eb'
 	data_checksum_censored='a88d239dc7919ab113ff45483cb4ad46'
 	data_checksum_frenchcd='7ae3632eef92700cd6c5e143aa0fe67b'
-	f 0 'data.pak' "$data_checksum_original $data_checksum_censored $data_checksum_frenchcd"
+	data_checksum_russiancd='b297ab9ae41a593b13cbdd0ecaf1f999'
+	f 0 'data.pak' "$data_checksum_original $data_checksum_censored $data_checksum_frenchcd $data_checksum_russiancd"
 	
 esac
 

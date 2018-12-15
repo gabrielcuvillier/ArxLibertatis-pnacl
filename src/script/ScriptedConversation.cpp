@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -52,6 +52,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/NPC.h"
 #include "gui/Speech.h"
 #include "gui/Interface.h"
+#include "gui/Notification.h"
 #include "io/resource/ResourcePath.h"
 #include "scene/Interactive.h"
 #include "scene/GameSound.h"
@@ -115,28 +116,29 @@ public:
 		
 		Entity * io = context.getEntity();
 		if(stop) {
-			ARX_SOUND_Stop(io->sound);
-			io->sound = audio::INVALID_ID;
-			
+			ARX_SOUND_Stop(io->m_sound);
+			io->m_sound = audio::SourcedSample();
 		} else {
 			
-			if(unique && io->sound != audio::INVALID_ID) {
-				ARX_SOUND_Stop(io->sound);
+			if(unique) {
+				ARX_SOUND_Stop(io->m_sound);
+				io->m_sound = audio::SourcedSample();
 			}
 			
-			audio::SampleId num;
+			audio::SourcedSample num = audio::SourcedSample();
+			bool tooFar = false;
 			// TODO(broken-scripts) should be a flag instead of depending on the event
 			if(no_pos || SM_INVENTORYUSE == context.getMessage()) {
-				num = ARX_SOUND_PlayScript(sample, NULL, pitch, loop);
+				num = ARX_SOUND_PlayScript(sample, tooFar, NULL, pitch, loop);
 			} else {
-				num = ARX_SOUND_PlayScript(sample, io, pitch, loop);
+				num = ARX_SOUND_PlayScript(sample, tooFar, io, pitch, loop);
 			}
 			
 			if(unique) {
-				io->sound = (num == ARX_SOUND_TOO_FAR) ? audio::INVALID_ID : num;
+				io->m_sound = num;
 			}
 			
-			if(num == audio::INVALID_ID) {
+			if(!tooFar && num == audio::SourcedSample()) {
 				ScriptWarning << "unable to load sound file " << sample;
 				return Failed;
 			}
@@ -161,9 +163,12 @@ public:
 		DebugScript(' ' << sample);
 		
 		Entity * io = context.getEntity();
-		audio::SampleId num = ARX_SOUND_PlaySpeech(sample, io && io->show == 1 ? io : NULL);
 		
-		if(num == audio::INVALID_ID) {
+		// TODO check if we actually need to succeed if tooFar becomes true
+		bool tooFar = false;
+		audio::SourcedSample num = ARX_SOUND_PlaySpeech(sample, &tooFar, io && io->show == 1 ? io : NULL);
+		
+		if(!tooFar && num == audio::SourcedSample()) {
 			ScriptWarning << "unable to load sound file " << sample;
 			return Failed;
 		}
@@ -193,10 +198,25 @@ public:
 		DebugScript(' ' << options << " \"" << text << '"');
 		
 		if(!text.empty() && text[0] == '[') {
-			text = getLocalised(loadUnlocalized(text), "Not Found");
+			text = getLocalised(loadUnlocalized(text));
 		}
 		
-		ARX_SPEECH_Add(text);
+		notification_add(text);
+		
+		return Success;
+	}
+	
+	Result peek(Context & context) {
+		
+		/*
+		 * TODO Technically this command has a side effect so it should abort non-destructive execution.
+		 * However, the on combine event for books unconditionally uses this command. resulting
+		 * in all books lighting up in the inventory when an item is selected for combining.
+		 */
+		
+		(void)context.getFlags();
+		
+		context.skipWord();
 		
 		return Success;
 	}
@@ -249,7 +269,7 @@ class SpeakCommand : public Command {
 		}
 	}
 	
-	static void parseParams(CinematicSpeech & acs, Context & context, bool player) {
+	static void parseParams(CinematicSpeech & acs, Context & context, Entity * speaker) {
 		
 		std::string target = context.getWord();
 		Entity * t = entities.getById(target, context.getEntity());
@@ -258,11 +278,49 @@ class SpeakCommand : public Command {
 		acs.startpos = context.getFloat();
 		acs.endpos = context.getFloat();
 		
-		if(player) {
-			computeACSPos(acs, entities.player(), acs.ionum);
+		computeACSPos(acs, speaker, acs.ionum);
+	}
+	
+	void parseCinematicSpeech(CinematicSpeech & acs, Context & context, Entity * speaker) {
+		
+		std::string command = context.getWord();
+		
+		if(command == "keep") {
+			acs.type = ARX_CINE_SPEECH_KEEP;
+			acs.pos1 = LASTCAMPOS;
+			acs.pos2.x = LASTCAMANGLE.getPitch();
+			acs.pos2.y = LASTCAMANGLE.getYaw();
+			acs.pos2.z = LASTCAMANGLE.getRoll();
+			
+		} else if(command == "zoom") {
+			acs.type = ARX_CINE_SPEECH_ZOOM;
+			acs.startangle.setPitch(context.getFloat());
+			acs.startangle.setYaw(context.getFloat());
+			acs.endangle.setPitch(context.getFloat());
+			acs.endangle.setYaw(context.getFloat());
+			acs.startpos = context.getFloat();
+			acs.endpos = context.getFloat();
+			acs.ionum = context.getEntity()->index();
+			computeACSPos(acs, speaker, acs.ionum);
+			
+		} else if(command == "ccctalker_l" || command == "ccctalker_r") {
+			acs.type = (command == "ccctalker_r") ? ARX_CINE_SPEECH_CCCTALKER_R : ARX_CINE_SPEECH_CCCTALKER_L;
+			parseParams(acs, context, speaker);
+			
+		} else if(command == "ccclistener_l" || command == "ccclistener_r") {
+			acs.type = (command == "ccclistener_r") ? ARX_CINE_SPEECH_CCCLISTENER_R :  ARX_CINE_SPEECH_CCCLISTENER_L;
+			parseParams(acs, context, speaker);
+			
+		} else if(command == "side" || command == "side_l" || command == "side_r") {
+			acs.type = (command == "side_l") ? ARX_CINE_SPEECH_SIDE_LEFT : ARX_CINE_SPEECH_SIDE;
+			parseParams(acs, context, speaker);
+			acs.m_startdist = context.getFloat(); // startdist
+			acs.m_enddist = context.getFloat(); // enddist
+			acs.m_heightModifier = context.getFloat(); // height modifier
 		} else {
-			computeACSPos(acs, context.getEntity(), acs.ionum);
+			ScriptWarning << "unexpected command: " << command;
 		}
+		
 	}
 	
 public:
@@ -274,16 +332,18 @@ public:
 		CinematicSpeech acs;
 		acs.type = ARX_CINE_SPEECH_NONE;
 		
-		Entity * io = context.getEntity();
+		Entity * speaker = context.getEntity();
 		
-		bool player = false, unbreakable = false;
+		bool unbreakable = false;
 		SpeechFlags voixoff = 0;
 		AnimationNumber mood = ANIM_TALK_NEUTRAL;
 		HandleFlags("tuphaoc") {
 			
 			voixoff |= (flg & flag('t')) ? ARX_SPEECH_FLAG_NOTEXT : SpeechFlags(0);
 			unbreakable = test_flag(flg, 'u');
-			player = test_flag(flg, 'p');
+			if(flg & flag('p')) {
+				speaker = entities.player();
+			}
 			if(flg & flag('h')) {
 				mood = ANIM_TALK_HAPPY;
 			}
@@ -296,50 +356,9 @@ public:
 			voixoff |= (flg & flag('o')) ? ARX_SPEECH_FLAG_OFFVOICE : SpeechFlags(0);
 			
 			if(flg & flag('c')) {
-				
-				std::string command = context.getWord();
-				
-				if(command == "keep") {
-					acs.type = ARX_CINE_SPEECH_KEEP;
-					acs.pos1 = LASTCAMPOS;
-					acs.pos2.x = LASTCAMANGLE.getYaw();
-					acs.pos2.y = LASTCAMANGLE.getPitch();
-					acs.pos2.z = LASTCAMANGLE.getRoll();
-					
-				} else if(command == "zoom") {
-					acs.type = ARX_CINE_SPEECH_ZOOM;
-					acs.startangle.setYaw(context.getFloat());
-					acs.startangle.setPitch(context.getFloat());
-					acs.endangle.setYaw(context.getFloat());
-					acs.endangle.setPitch(context.getFloat());
-					acs.startpos = context.getFloat();
-					acs.endpos = context.getFloat();
-					acs.ionum = (io == NULL) ? EntityHandle() : io->index();
-					if(player) {
-						computeACSPos(acs, entities.player(), acs.ionum);
-					} else {
-						computeACSPos(acs, io, EntityHandle());
-					}
-					
-				} else if(command == "ccctalker_l" || command == "ccctalker_r") {
-					acs.type = (command == "ccctalker_r") ? ARX_CINE_SPEECH_CCCTALKER_R : ARX_CINE_SPEECH_CCCTALKER_L;
-					parseParams(acs, context, player);
-					
-				} else if(command == "ccclistener_l" || command == "ccclistener_r") {
-					acs.type = (command == "ccclistener_r") ? ARX_CINE_SPEECH_CCCLISTENER_R :  ARX_CINE_SPEECH_CCCLISTENER_L;
-					parseParams(acs, context, player);
-					
-				} else if(command == "side" || command == "side_l" || command == "side_r") {
-					acs.type = (command == "side_l") ? ARX_CINE_SPEECH_SIDE_LEFT : ARX_CINE_SPEECH_SIDE;
-					parseParams(acs, context, player);
-					acs.m_startdist = context.getFloat(); // startdist
-					acs.m_enddist = context.getFloat(); // enddist
-					acs.m_heightModifier = context.getFloat(); // height modifier
-				} else {
-					ScriptWarning << "unexpected command: " << options << ' ' << command;
-				}
-				
+				parseCinematicSpeech(acs, context, speaker);
 			}
+			
 		}
 		
 		std::string text = context.getWord();
@@ -359,7 +378,7 @@ public:
 		DebugScript(' ' << options << ' ' << data); // TODO debug more
 		
 		if(data.empty()) {
-			ARX_SPEECH_ClearIOSpeech(io);
+			ARX_SPEECH_ClearIOSpeech(context.getEntity());
 			return Success;
 		}
 		
@@ -368,26 +387,55 @@ public:
 			voixoff |= ARX_SPEECH_FLAG_NOTEXT;
 		}
 		
-		long speechnum;
-		if(player) {
-			speechnum = ARX_SPEECH_AddSpeech(entities.player(), data, mood, voixoff);
-		} else {
-			speechnum = ARX_SPEECH_AddSpeech(io, data, mood, voixoff);
-		}
+		long speechnum = ARX_SPEECH_AddSpeech(speaker, data, mood, voixoff);
 		if(speechnum < 0) {
 			return Failed;
 		}
 		
 		size_t onspeechend = context.skipCommand();
 		
-		if(onspeechend != (size_t)-1) {
-			aspeech[speechnum].scrpos = onspeechend;
-			aspeech[speechnum].es = context.getScript();
-			aspeech[speechnum].ioscript = io;
+		if(onspeechend != size_t(-1)) {
+			g_aspeech[speechnum].scrpos = onspeechend;
+			g_aspeech[speechnum].es = context.getScript();
+			g_aspeech[speechnum].ioscript = context.getEntity();
 			if(unbreakable) {
-				aspeech[speechnum].flags |= ARX_SPEECH_FLAG_UNBREAKABLE;
+				g_aspeech[speechnum].flags |= ARX_SPEECH_FLAG_UNBREAKABLE;
 			}
-			aspeech[speechnum].cine = acs;
+			g_aspeech[speechnum].cine = acs;
+		}
+		
+		return Success;
+	}
+	
+	Result peek(Context & context) {
+		
+		HandleFlags("tuphaoc") {
+			
+			if(flg & flag('c')) {
+				CinematicSpeech acs;
+				parseCinematicSpeech(acs, context, context.getEntity());
+			}
+			
+		}
+		
+		std::string text = context.getWord();
+		
+		if(text == "killall") {
+			return Success;
+		}
+		
+		std::string data = loadUnlocalized(context.getStringVar(text));
+		
+		if(data.empty()) {
+			return Success;
+		}
+		
+		std::string command = context.getCommand(false);
+		
+		size_t onspeechend = context.skipCommand();
+		
+		if((!command.empty() && command != "nop") || onspeechend != size_t(-1)) {
+			return AbortDestructive;
 		}
 		
 		return Success;
@@ -412,7 +460,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedConversation() {
 	

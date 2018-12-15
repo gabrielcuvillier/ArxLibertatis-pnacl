@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "graphics/Color.h"
+#include "graphics/texture/TextureStage.h"
 #include "math/Types.h"
 #include "platform/Platform.h"
 #include "util/Flags.h"
@@ -32,10 +33,8 @@ struct TexturedVertex;
 struct SMY_VERTEX;
 struct SMY_VERTEX3;
 class TextureContainer;
-class TextureStage;
 class Image;
 class Texture;
-class Texture2D;
 template <class Vertex> class VertexBuffer;
 
 enum BlendingFactor {
@@ -69,7 +68,7 @@ class RenderState {
 	enum Offsets {
 		Cull,
 		Fog = Cull + CullSize,
-		ColorKey,
+		AlphaCutout,
 		DepthTest,
 		DepthWrite,
 		DepthOffset,
@@ -78,7 +77,7 @@ class RenderState {
 		End = BlendDst + BlendSize
 	};
 	
-	// We coul use bitfields here instead but they are missing (an efficient) operator==.
+	// We could use bitfields here instead but they are missing (an efficient) operator==.
 	u32 m_state;
 	
 	template <size_t Offset, size_t Size>
@@ -132,18 +131,18 @@ public:
 		return get<Fog, 1>() != 0;
 	}
 	
-	void setColorKey(bool enable) {
-		set<ColorKey, 1>(enable);
+	void setAlphaCutout(bool enable) {
+		set<AlphaCutout, 1>(enable);
 	}
 	
-	RenderState colorKey(bool enable = true) const {
+	RenderState alphaCutout(bool enable = true) const {
 		RenderState copy = *this;
-		copy.setColorKey(enable);
+		copy.setAlphaCutout(enable);
 		return copy;
 	}
 	
-	bool getColorKey() const {
-		return get<ColorKey, 1>() != 0;
+	bool getAlphaCutout() const {
+		return get<AlphaCutout, 1>() != 0;
 	}
 	
 	void setDepthTest(bool enable) {
@@ -206,6 +205,10 @@ public:
 		set<BlendDst, BlendSize>(dst);
 	}
 	
+	void setBlendAdditive() {
+		setBlend(BlendSrcAlpha, BlendOne);
+	}
+	
 	void disableBlend() {
 		setBlend(BlendOne, BlendZero);
 	}
@@ -214,6 +217,12 @@ public:
 	                  BlendingFactor dst = BlendInvSrcAlpha) const {
 		RenderState copy = *this;
 		copy.setBlend(src, dst);
+		return copy;
+	}
+	
+	RenderState blendAdditive() const {
+		RenderState copy = *this;
+		copy.setBlendAdditive();
 		return copy;
 	}
 	
@@ -247,8 +256,8 @@ public:
 		
 		virtual ~Listener() { }
 		
-		virtual void onRendererInit(Renderer &) { }
-		virtual void onRendererShutdown(Renderer &) { }
+		virtual void onRendererInit(Renderer & renderer) { ARX_UNUSED(renderer); }
+		virtual void onRendererShutdown(Renderer & renderer) { ARX_UNUSED(renderer); }
 		
 	};
 	
@@ -271,10 +280,10 @@ public:
 	
 	//! Target surface
 	enum BufferType {
-		ColorBuffer   = (1<<0),
-		DepthBuffer   = (1<<1)
+		ColorBuffer = 1 << 0,
+		DepthBuffer = 1 << 1
 	};
-	DECLARE_FLAGS(BufferType, BufferFlags);
+	DECLARE_FLAGS(BufferType, BufferFlags)
 	
 	enum Primitive {
 		TriangleList,
@@ -288,6 +297,12 @@ public:
 		Static,
 		Dynamic,
 		Stream
+	};
+	
+	enum AlphaCutoutAntialising {
+		NoAlphaCutoutAA = 0,
+		FuzzyAlphaCutoutAA = 1,
+		CrispAlphaCutoutAA = 2
 	};
 	
 	Renderer();
@@ -322,22 +337,18 @@ public:
 	
 	// Matrices
 	virtual void SetViewMatrix(const glm::mat4x4 & matView) = 0;
-	virtual void GetViewMatrix(glm::mat4x4 & matView) const = 0;
 	virtual void SetProjectionMatrix(const glm::mat4x4 & matProj) = 0;
-	virtual void GetProjectionMatrix(glm::mat4x4 & matProj) const = 0;
 	
 	// Texture management
-	virtual void ReleaseAllTextures() {}
-	virtual void RestoreAllTextures() {}
+	virtual void ReleaseAllTextures() = 0;
+	virtual void RestoreAllTextures() = 0;
+	virtual void reloadColorKeyTextures() = 0;
 
 	// Factory
-	virtual Texture2D * CreateTexture2D() = 0;
-	
-	virtual void SetAlphaFunc(PixelCompareFunc func, float fef) = 0; // Ref = [0.0f, 1.0f]
+	virtual Texture * createTexture() = 0;
 	
 	// Viewport
 	virtual void SetViewport(const Rect & viewport) = 0;
-	virtual Rect GetViewport() = 0;
 	
 	// Scissor
 	virtual void SetScissor(const Rect & rect) = 0;
@@ -348,16 +359,15 @@ public:
 	// Fog
 	virtual void SetFogColor(Color color) = 0;
 	virtual void SetFogParams(float fogStart, float fogEnd) = 0;
-	virtual bool isFogInEyeCoordinates() = 0;
 	
 	// Rasterizer
 	virtual void SetAntialiasing(bool enable) = 0;
 	virtual void SetFillMode(FillMode mode) = 0;
 	
 	// Texturing
-	unsigned int GetTextureStageCount() const { return m_TextureStages.size(); }
-	TextureStage * GetTextureStage(unsigned int textureStage);
-	const TextureStage * GetTextureStage(unsigned int textureStage) const;
+	size_t getTextureStageCount() const { return m_TextureStages.size(); }
+	TextureStage * GetTextureStage(size_t textureStage);
+	const TextureStage * GetTextureStage(size_t textureStage) const;
 	void ResetTexture(unsigned int textureStage);
 	Texture * GetTexture(unsigned int textureStage) const;
 	void SetTexture(unsigned int textureStage, Texture * pTexture);
@@ -365,6 +375,8 @@ public:
 	
 	virtual float getMaxSupportedAnisotropy() const = 0;
 	virtual void setMaxAnisotropy(float value) = 0;
+	
+	virtual AlphaCutoutAntialising getMaxSupportedAlphaCutoutAntialiasing() const = 0;
 	
 	virtual VertexBuffer<TexturedVertex> * createVertexBufferTL(size_t capacity, BufferUsage usage) = 0;
 	virtual VertexBuffer<SMY_VERTEX> * createVertexBuffer(size_t capacity, BufferUsage usage) = 0;
@@ -378,34 +390,11 @@ public:
 	void setRenderState(RenderState state) { m_state = state; }
 	RenderState getRenderState() const { return m_state; }
 	
-	// TODO remove these when all uses are changed to RenderState
-	enum RenderStateFlag {
-		AlphaBlending,
-		ColorKey,
-		DepthTest,
-		DepthWrite,
-		Fog,
-	};
-	void SetRenderState(RenderStateFlag renderState, bool enable);
-	void SetCulling(CullingMode mode) { m_state.setCull(mode); }
-	void SetDepthBias(int depthBias) { m_state.setDepthOffset(depthBias); }
-	void SetBlendFunc(BlendingFactor srcFactor, BlendingFactor dstFactor) {
-		m_srcBlend = srcFactor, m_dstBlend = dstFactor;
-		if(m_hasBlend) {
-			m_state.setBlend(srcFactor, dstFactor);
-		}
-	}
-	
 protected:
 	
 	std::vector<TextureStage *> m_TextureStages;
 	bool m_initialized;
 	RenderState m_state;
-	
-	// TODO remove these when all uses are changed to RenderState
-	bool m_hasBlend;
-	BlendingFactor m_srcBlend;
-	BlendingFactor m_dstBlend;
 	
 	void onRendererInit();
 	void onRendererShutdown();
@@ -431,14 +420,14 @@ extern Renderer * GRenderer;
  * Example usage:
  * \code
  * {
- *   UseRenderState state(RenderState().blend(BlendOne, BlendOne);
+ *   UseRenderState state(RenderState().blendAdditive();
  *   // render with additive blending
  * }
  * \endcode
  */
 class UseRenderState {
 	
-	RenderState  m_old;
+	RenderState m_old;
 	
 public:
 	
@@ -454,6 +443,49 @@ public:
 	
 };
 
+/*!
+ * RAII helper class to set a texture state for the current scope
+ *
+ * Sets the requested texture state on construction and restores the old texture state
+ * on destruction.
+ */
+class UseTextureState {
+	
+	TextureStage::WrapMode m_oldWrapMode;
+	TextureStage::FilterMode m_oldMinFilter;
+	TextureStage::FilterMode m_oldMagFilter;
+	
+public:
+	
+	UseTextureState(TextureStage::FilterMode minFilter, TextureStage::FilterMode magFilter,
+	                TextureStage::WrapMode wrapMode)
+		: m_oldWrapMode(GRenderer->GetTextureStage(0)->getWrapMode())
+		, m_oldMinFilter(GRenderer->GetTextureStage(0)->getMinFilter())
+		, m_oldMagFilter(GRenderer->GetTextureStage(0)->getMagFilter())
+	{
+		GRenderer->GetTextureStage(0)->setWrapMode(wrapMode);
+		GRenderer->GetTextureStage(0)->setMinFilter(minFilter);
+		GRenderer->GetTextureStage(0)->setMagFilter(magFilter);
+	}
+	
+	UseTextureState(TextureStage::FilterMode filter, TextureStage::WrapMode wrapMode)
+		: m_oldWrapMode(GRenderer->GetTextureStage(0)->getWrapMode())
+		, m_oldMinFilter(GRenderer->GetTextureStage(0)->getMinFilter())
+		, m_oldMagFilter(GRenderer->GetTextureStage(0)->getMagFilter())
+	{
+		GRenderer->GetTextureStage(0)->setWrapMode(wrapMode);
+		GRenderer->GetTextureStage(0)->setMinFilter(filter);
+		GRenderer->GetTextureStage(0)->setMagFilter(filter);
+	}
+	
+	~UseTextureState() {
+		GRenderer->GetTextureStage(0)->setWrapMode(m_oldWrapMode);
+		GRenderer->GetTextureStage(0)->setMinFilter(m_oldMinFilter);
+		GRenderer->GetTextureStage(0)->setMagFilter(m_oldMagFilter);
+	}
+	
+};
+
 //! Default render state for 2D compositing
 inline RenderState render2D() {
 	return RenderState().blend();
@@ -461,7 +493,7 @@ inline RenderState render2D() {
 
 //! Default render state for 3D rendering
 inline RenderState render3D() {
-	return RenderState().depthTest().depthWrite().cull().colorKey();
+	return RenderState().depthTest().depthWrite().fog();
 }
 
 #endif // ARX_GRAPHICS_RENDERER_H

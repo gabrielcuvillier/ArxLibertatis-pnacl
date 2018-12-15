@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,28 +23,33 @@
 #include "graphics/effects/SpellEffects.h"
 
 class RotatingCone {
+	
 public:
+	
 	RotatingCone();
-	~RotatingCone();
 	
 	void Init(float rbase, float rhaut, float hauteur);
-	void Update(float timeDelta, Vec3f pos, float coneScale);
+	void Update(GameDuration timeDelta, Vec3f pos, float coneScale);
 	void Render();
 	
 private:
+	
+	enum Constants {
+		Def = 16,
+		VertexCount = Def * 2 + 2,
+		FaceCount = Def * 2 + 2,
+	};
+	
 	Vec3f m_pos;
-	short m_def;
-	unsigned long ulCurrentTime;
-	int m_currdurationang;
+	GameDuration m_currdurationang;
 	float m_ang;
 	float m_coneScale;
 	TextureContainer * m_tsouffle;
 	
-	int conenbvertex;
-	int conenbfaces;
-	Vec3f * conevertex;
-	TexturedVertex * coned3d;
-	unsigned short * coneind;
+	Vec3f conevertex[VertexCount];
+	TexturedVertexUntransformed coned3d[VertexCount];
+	unsigned short coneind[VertexCount];
+	
 };
 
 #endif // ARX_GRAPHICS_EFFECTS_ROTATINGCONE_H

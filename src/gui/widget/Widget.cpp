@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,96 +19,72 @@
 
 #include "gui/widget/Widget.h"
 
+#include "gui/MainMenu.h"
 #include "gui/MenuWidgets.h"
 #include "gui/widget/CheckboxWidget.h"
 #include "gui/widget/CycleTextWidget.h"
 #include "input/Input.h"
+#include "scene/GameSound.h"
 
 Widget::Widget()
 	: m_rect(0, 0, 0, 0)
-	, pRef(NULL)
-	, m_id(BUTTON_INVALID)
-	, m_savegame(0)
-	, enabled(true)
-	, bCheck(true)
-{
-	ePlace=NOCENTER;
-	eState=TNOP;
-	m_targetMenu = NOP;
-	m_shortcut = -1;
+	, m_enabled(true)
+	, m_targetPage(NOP)
+	, m_shortcut(ActionKey::UNUSED)
+{ }
+
+Widget::~Widget() { }
+
+bool Widget::click() {
+	
+	if(!m_enabled) {
+		return false;
+	}
+	
+	ARX_SOUND_PlayMenu(g_snd.MENU_CLICK);
+	
+	if(m_enabled && m_targetPage != NOP && g_mainMenu) {
+		g_mainMenu->requestPage(m_targetPage);
+	}
+	
+	if(clicked) {
+		clicked(this);
+	}
+	
+	return false;
+	
 }
 
-extern TextWidget * pMenuElementApply;
-extern TextWidget * pLoadConfirm;
-extern TextWidget * pDeleteConfirm;
-extern TextWidget * pDeleteButton;
-
-Widget::~Widget() {
-
-	if(this == pMenuElementApply) {
-		pMenuElementApply = NULL;
+bool Widget::doubleClick() {
+	
+	if(!doubleClicked) {
+		return click();
 	}
-
-	if(this == pLoadConfirm) {
-		pLoadConfirm = NULL;
+	
+	if(!m_enabled) {
+		return false;
 	}
-
-	if(this == pDeleteConfirm) {
-		pDeleteConfirm = NULL;
-	}
-
-	if(this == pDeleteButton) {
-		pDeleteButton = NULL;
-	}
+	
+	ARX_SOUND_PlayMenu(g_snd.MENU_CLICK);
+	
+	doubleClicked(this);
+	
+	return false;
+	
 }
 
-void Widget::Move(const Vec2f & offset) {
+void Widget::move(const Vec2f & offset) {
 	m_rect.move(offset.x, offset.y);
 }
 
-void Widget::SetPos(Vec2f pos) {
-	
-	Vec2f size = m_rect.size();
-	
-	m_rect.left   = pos.x;
-	m_rect.top    = pos.y;
-	m_rect.right  = pos.x + size.x;
-	m_rect.bottom = pos.y + size.y;
+Widget * Widget::getWidgetAt(const Vec2f & mousePos) {
+	return m_rect.contains(mousePos) ? this : NULL;
 }
 
-Widget * Widget::IsMouseOver(const Vec2f & mousePos) const {
-	
-	if(   mousePos.x >= m_rect.left
-	   && mousePos.y >= m_rect.top
-	   && mousePos.x <= m_rect.right
-	   && mousePos.y <= m_rect.bottom
-	) {
-		return pRef;
-	}
-
-	return NULL;
-}
-
-Widget *Widget::GetZoneWithID(MenuButton zoneId) {
-	return (m_id == zoneId) ? this : NULL;
-}
-
-void Widget::SetShortCut(int _iShortCut) {
-	m_shortcut = _iShortCut;
+void Widget::setShortcut(int key) {
+	m_shortcut = key;
 }
 
 void Widget::setEnabled(bool enable) {
-	enabled = enable;
-}
-
-void Widget::SetCheckOff() {
-	bCheck = false;
-}
-
-void Widget::SetCheckOn() {
-	bCheck = true;
-}
-
-bool Widget::getCheck() {
-	return bCheck;
+	m_enabled = enable;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -70,10 +70,11 @@ const size_t MAX_SPELLS = 20;
 class SpellManager {
 	
 public:
+	
 	void init();
 	void clearAll();
 	
-	SpellBase * operator[] (const SpellHandle handle);
+	SpellBase * operator[](SpellHandle handle);
 	
 	void endSpell(SpellBase * spell);
 	
@@ -89,7 +90,7 @@ public:
 	SpellBase * getSpellOnTarget(EntityHandle target, SpellType type);
 	
 	void replaceCaster(EntityHandle oldCaster, EntityHandle newCaster);
-	void removeTarget(Entity *io);
+	void removeTarget(Entity * io);
 	
 	bool hasFreeSlot();
 	void addSpell(SpellBase * spell);
@@ -98,17 +99,17 @@ public:
 	SpellHandle create();
 	
 private:
+	
 	SpellBase * m_spells[MAX_SPELLS];
+	
 };
 
 extern SpellManager spells;
 
-extern unsigned char ucFlick;
-
 SpellType GetSpellId(const std::string & spell);
-void TryToCastSpell(Entity * io, SpellType spellid, long level, EntityHandle target, SpellcastFlags flags, long duration);
+void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle target, SpellcastFlags flags, GameDuration duration);
 
-bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags, long level, EntityHandle target, long duration);
+bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags, long level, EntityHandle target, GameDuration duration);
 void ARX_SPELLS_Update();
 
 void ARX_SPELLS_Fizzle(SpellBase * spell);

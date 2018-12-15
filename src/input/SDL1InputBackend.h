@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -25,10 +25,13 @@
 #include "input/InputBackend.h"
 #include "input/Keyboard.h"
 #include "input/Mouse.h"
+#include "input/TextInput.h"
 #include "math/Vector.h"
+#include "math/Types.h"
+#include "platform/Platform.h"
 #include "window/SDL1Window.h"
 
-class SDL1InputBackend : public InputBackend {
+class SDL1InputBackend arx_final : public InputBackend {
 	
 public:
 	
@@ -41,21 +44,24 @@ public:
 	bool getAbsoluteMouseCoords(int & absX, int & absY) const;
 	void setAbsoluteMouseCoords(int absX, int absY);
 	void getRelativeMouseCoords(int & relX, int & relY, int & wheelDir) const;
-	bool isMouseButtonPressed(int buttonId, int & deltaTime) const;
 	void getMouseButtonClickCount(int buttonId, int & numClick, int & numUnClick) const;
 	
 	// Keyboard
-	bool isKeyboardKeyPressed(int dikkey) const;
+	bool isKeyboardKeyPressed(int keyId) const;
+	void startTextInput(const Rect & box, TextInputHandler * handler);
+	void stopTextInput();
+	std::string getKeyName(Keyboard::Key key) const;
 	
 	void onEvent(const SDL_Event & event);
 	
 private:
 	
+	TextInputHandler * m_textHandler;
+	
 	int wheel;
 	Vec2i cursorAbs;
 	bool cursorInWindow;
 	bool keyStates[Keyboard::KeyCount];
-	bool buttonStates[Mouse::ButtonCount];
 	size_t clickCount[Mouse::ButtonCount];
 	size_t unclickCount[Mouse::ButtonCount];
 	

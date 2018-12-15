@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,9 +24,12 @@
 
 #include "graphics/particle/ParticleSystem.h"
 #include "graphics/effects/Lightning.h"
+#include "platform/Platform.h"
 
-class FlyingEyeSpell : public SpellBase {
+class FlyingEyeSpell arx_final : public SpellBase {
+	
 public:
+	
 	FlyingEyeSpell();
 	
 	bool CanLaunch();
@@ -37,11 +40,18 @@ public:
 	Vec3f getPosition();
 	
 private:
-	unsigned long m_lastupdate;
+	
+	GameInstant m_lastupdate;
+	
+	LightHandle m_light1;
+	LightHandle m_light2;
+	
 };
 
-class FireFieldSpell : public SpellBase {
+class FireFieldSpell arx_final : public SpellBase {
+	
 public:
+	
 	FireFieldSpell();
 	
 	void Launch();
@@ -51,16 +61,20 @@ public:
 	Vec3f getPosition();
 	
 private:
+	
 	Vec3f m_pos;
 	LightHandle m_light;
 	DamageHandle m_damage;
 	
 	ParticleSystem pPSStream;
 	ParticleSystem pPSStream1;
+	
 };
 
-class IceFieldSpell : public SpellBase {
+class IceFieldSpell arx_final : public SpellBase {
+	
 public:
+	
 	IceFieldSpell();
 	
 	void Launch();
@@ -70,6 +84,7 @@ public:
 	Vec3f getPosition();
 	
 private:
+	
 	LightHandle m_light;
 	DamageHandle m_damage;
 	
@@ -82,20 +97,27 @@ private:
 	Vec3f tPos[50];
 	Vec3f tSize[50];
 	Vec3f tSizeMax[50];
+	
 };
 
-class LightningStrikeSpell : public SpellBase {
+class LightningStrikeSpell arx_final : public SpellBase {
+	
 public:
+	
 	void Launch();
 	void End();
 	void Update();
 	
 private:
+	
 	CLightning m_lightning;
+	
 };
 
-class ConfuseSpell : public SpellBase {
+class ConfuseSpell arx_final : public SpellBase {
+	
 public:
+	
 	ConfuseSpell();
 	
 	void Launch();
@@ -105,11 +127,13 @@ public:
 	Vec3f getPosition();
 	
 private:
+	
 	LightHandle m_light;
 	TextureContainer * tex_p1;
 	TextureContainer * tex_trail;
 	AnimLayer animlayer[MAX_ANIM_LAYERS];
 	Vec3f eCurPos;
+	
 };
 
 #endif // ARX_GAME_MAGIC_SPELLS_SPELLSLVL07_H

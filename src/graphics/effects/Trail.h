@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,6 +23,7 @@
 #include <vector>
 #include <boost/circular_buffer.hpp>
 
+#include "core/TimeTypes.h"
 #include "math/Vector.h"
 #include "graphics/Color.h"
 
@@ -33,7 +34,7 @@ public:
 
 	void SetNextPosition(Vec3f & nextPosition);
 
-	void Update(float timeDelta);
+	void Update(GameDuration timeDelta);
 	void Render();
 
 private:
@@ -48,8 +49,8 @@ private:
 		float m_size;
 	};
 
-	float m_timePerSegment;
-	float m_timeOfLastSegment;
+	GameDuration m_timePerSegment;
+	GameDuration m_lastSegmentDuration;
 	std::vector<TrailSegment> m_segments;
 
 	Vec3f m_nextPosition;

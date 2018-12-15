@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -51,15 +51,17 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/particle/ParticleSystem.h"
 #include "math/Types.h"
 #include "math/Vector.h"
+#include "platform/Platform.h"
 
 // Done By : Didier Pedreno
-class CLightning : public CSpellFx {
+class CLightning arx_final : public CSpellFx {
 	
 public:
+	
 	CLightning();
 	
-	void Create(Vec3f, Vec3f);
-	void Update(float timeDelta);
+	void Create(Vec3f aeFrom, Vec3f aeTo);
+	void Update(GameDuration timeDelta);
 	void Render();
 	
 	Vec3f m_pos;
@@ -68,10 +70,11 @@ public:
 	EntityHandle m_caster;
 	float m_level;
 	
-	float	m_fDamage;
+	float m_fDamage;
 	bool m_isMassLightning;
 	
 private:
+	
 	float fTotoro;
 	float fMySize;
 	size_t m_nbtotal;
@@ -83,8 +86,7 @@ private:
 	Vec3f m_fAngleMax;
 	Vec3f m_eSrc;
 	Vec3f m_eDest;
-	TextureContainer * m_tex_light;
-	int m_iTTL;
+	GameDuration m_iTTL;
 	
 	struct CLightningNode {
 		Vec3f pos;
@@ -95,11 +97,12 @@ private:
 	
 	static const size_t MAX_NODES = 2000;
 	
-	CLightningNode	m_cnodetab[MAX_NODES];
+	CLightningNode m_cnodetab[MAX_NODES];
 	
 	struct LIGHTNING;
 	void BuildS(LIGHTNING * lightingInfo);
 	void ReCreate(float rootSize);
+	
 };
 
 #endif // ARX_GRAPHICS_EFFECTS_LIGHTNING_H

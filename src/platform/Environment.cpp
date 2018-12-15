@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -36,10 +36,6 @@
 #include <objbase.h>
 #endif
 
-#if ARX_HAVE_WORDEXP
-#include <wordexp.h>
-#endif
-
 #if ARX_HAVE_READLINK
 #include <unistd.h>
 #endif
@@ -49,7 +45,7 @@
 #include <errno.h>
 #endif
 
-#if ARX_PLATFORM == ARX_PLATFORM_MACOSX
+#if ARX_PLATFORM == ARX_PLATFORM_MACOS
 #include <mach-o/dyld.h>
 #include <sys/param.h>
 #endif
@@ -68,6 +64,7 @@
 #include "io/fs/FilePath.h"
 #include "io/fs/Filesystem.h"
 
+#include "platform/Lock.h"
 #include "platform/WindowsUtils.h"
 
 #include "util/String.h"
@@ -77,28 +74,7 @@ namespace platform {
 
 std::string expandEnvironmentVariables(const std::string & in) {
 	
-	#if ARX_HAVE_WORDEXP
-	
-	wordexp_t p;
-	
-	if(wordexp(in.c_str(), &p, 0)) {
-		return in;
-	}
-	
-	std::ostringstream oss;
-	for(size_t i = 0; i < p.we_wordc; i++) {
-		
-		oss << p.we_wordv[i];
-		
-		if(i != (p.we_wordc-1))
-			oss << " ";
-	}
-	
-	wordfree(&p);
-	
-	return oss.str();
-	
-	#elif ARX_PLATFORM == ARX_PLATFORM_WIN32
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 	
 	platform::WideString win(in);
 	
@@ -120,8 +96,104 @@ std::string expandEnvironmentVariables(const std::string & in) {
 	return out.toUTF8();
 	
 	#else
-	# warning "Environment variable expansion not supported on this system."
-	return in;
+	
+	std::ostringstream oss;
+	
+	size_t depth = 0;
+	size_t skip = 0;
+	
+	for(size_t i = 0; i < in.size(); ) {
+		
+		if(in[i] == '\\') {
+			i++;
+			if(i < in.size()) {
+				if(skip == 0) {
+					oss << in[i];
+				}
+				i++;
+			}
+			continue;
+		}
+		
+		if(in[i] == '$') {
+			i++;
+			
+			bool nested = false;
+			if(i < in.size() && in[i] == '{') {
+				nested = true;
+				i++;
+			}
+			
+			size_t start = i;
+			while(i < in.size() && (in[i] == '_' || (in[i] >= '0' && in[i] <= '9')
+			                                     || (in[i] >= 'a' && in[i] <= 'z')
+			                                     || (in[i] >= 'A' && in[i] <= 'Z'))) {
+				i++;
+			}
+			
+			if(skip) {
+				if(nested) {
+					depth++;
+					skip++;
+				}
+				continue;
+			}
+			
+			const char * value = std::getenv(in.substr(start, i - start).c_str());
+			if(!nested) {
+				if(value) {
+					oss << value;
+				}
+				continue;
+			}
+			
+			bool empty = (value == NULL);
+			if(i < in.size() && in[i] == ':') {
+				empty = empty || *value == '\0';
+				i++;
+			}
+			
+			depth++;
+			
+			if(i < in.size() && in[i] == '+') {
+				if(empty) {
+					skip++;
+				}
+				i++;
+			} else {
+				if(!empty) {
+					oss << value;
+				}
+				if(i < in.size() && in[i] == '-') {
+					if(!empty) {
+						skip++;
+					}
+					i++;
+				} else {
+					skip++;
+				}
+			}
+			
+			continue;
+		}
+		
+		if(depth > 0 && in[i] == '}') {
+			if(skip > 0) {
+				skip--;
+			}
+			depth--;
+			i++;
+			continue;
+		}
+		
+		if(skip == 0) {
+			oss << in[i];
+		}
+		i++;
+	}
+	
+	return oss.str();
+	
 	#endif
 }
 
@@ -149,11 +221,11 @@ static bool getRegistryValue(HKEY hkey, const std::string & name, std::string & 
 		buffer.resize(length / sizeof(WCHAR) + 1);
 		ret = RegQueryValueExW(handle, wname, NULL, &type, LPBYTE(buffer.data()), &length);
 	}
-	buffer.resize(length / sizeof(WCHAR));
 	
 	RegCloseKey(handle);
 	
 	if(ret == ERROR_SUCCESS && type == REG_SZ) {
+		buffer.resize(length / sizeof(WCHAR));
 		buffer.compact();
 		result = buffer.toUTF8();
 		return true;
@@ -263,23 +335,13 @@ std::vector<fs::path> getSystemPaths(SystemPathId id) {
 
 #endif
 
-#if ARX_PLATFORM == ARX_PLATFORM_WIN32 || ARX_PLATFORM == ARX_PLATFORM_MACOSX
-
-void initializeEnvironment(const char * argv0) {
-	ARX_UNUSED(argv0);
-}
-
-#else
-
 static const char * executablePath = NULL;
 
 void initializeEnvironment(const char * argv0) {
 	executablePath = argv0;
 }
 
-#endif
-
-#if ARX_HAVE_READLINK && ARX_PLATFORM != ARX_PLATFORM_MACOSX
+#if ARX_HAVE_READLINK && ARX_PLATFORM != ARX_PLATFORM_MACOS
 static bool try_readlink(std::vector<char> & buffer, const char * path) {
 	
 	int ret = readlink(path, &buffer.front(), buffer.size());
@@ -299,7 +361,7 @@ static bool try_readlink(std::vector<char> & buffer, const char * path) {
 
 fs::path getExecutablePath() {
 	
-#if ARX_PLATFORM == ARX_PLATFORM_MACOSX
+#if ARX_PLATFORM == ARX_PLATFORM_MACOS
 	
 	uint32_t bufsize = 0;
 	
@@ -363,8 +425,12 @@ fs::path getExecutablePath() {
 	if(try_readlink(buffer, "/proc/self/exe")) {
 		return fs::path(&*buffer.begin(), &*buffer.end());
 	}
-	// BSD
+	// FreeBSD, DragonFly BSD
 	if(try_readlink(buffer, "/proc/curproc/file")) {
+		return fs::path(&*buffer.begin(), &*buffer.end());
+	}
+	// NetBSD
+	if(try_readlink(buffer, "/proc/curproc/exe")) {
 		return fs::path(&*buffer.begin(), &*buffer.end());
 	}
 	// Solaris
@@ -372,6 +438,8 @@ fs::path getExecutablePath() {
 		return fs::path(&*buffer.begin(), &*buffer.end());
 	}
 	#endif
+	
+#endif
 	
 	// Fall back to argv[0] if possible
 	if(executablePath != NULL) {
@@ -381,10 +449,22 @@ fs::path getExecutablePath() {
 		}
 	}
 	
-#endif
-	
 	// Give up - we couldn't determine the exe path.
 	return fs::path();
+}
+
+std::string getCommandName() {
+	
+	// Prefer the name passed on the command-line to the actual executable name
+	fs::path path = executablePath ? fs::path(executablePath) : getExecutablePath();
+	
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	if(path.ext() == ".exe") {
+		return path.basename();
+	}
+	#endif
+	
+	return path.filename();
 }
 
 fs::path getHelperExecutable(const std::string & name) {
@@ -448,16 +528,15 @@ bool isFileDescriptorDisabled(int fd) {
 		return true; // Not a valid handle
 	}
 	
+	// Redirected to NUL
 	BY_HANDLE_FILE_INFORMATION fi;
-	if(!GetFileInformationByHandle(h, &fi) && GetLastError() == ERROR_INVALID_FUNCTION) {
-		return true; // Redirected to NUL
-	}
+	return (!GetFileInformationByHandle(h, &fi) && GetLastError() == ERROR_INVALID_FUNCTION);
 	
 	#else
 	
 	#if ARX_HAVE_FCNTL && defined(F_GETFD)
 	if(fcntl(fd, F_GETFD) == -1 && errno == EBADF) {
-		return 0; // Not a valid file descriptor
+		return false; // Not a valid file descriptor
 	}
 	#endif
 	
@@ -469,7 +548,7 @@ bool isFileDescriptorDisabled(int fd) {
 	
 	bool valid = false;
 	#if ARX_HAVE_FCNTL && defined(F_GETPATH) && defined(MAXPATHLEN)
-	// OS X
+	// macOS
 	valid = (fcntl(fd, F_GETPATH, path) != -1 && path[9] == '\0');
 	#elif ARX_HAVE_READLINK
 	// Linux
@@ -479,13 +558,62 @@ bool isFileDescriptorDisabled(int fd) {
 	}
 	#endif
 	
-	if(valid && !memcmp(path, "/dev/null", 9)) {
-		return true; // Redirected to /dev/null
-	}
+	// Redirected to /dev/null
+	return (valid && !memcmp(path, "/dev/null", 9));
 	
 	#endif
 	
-	return false;
+}
+
+static Lock g_environmentLock;
+
+bool hasEnvironmentVariable(const char * name) {
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	return GetEnvironmentVariable(platform::WideString(name), NULL, 0) != 0;
+	#else
+	return std::getenv(name) != NULL;
+	#endif
+}
+
+void setEnvironmentVariable(const char * name, const char * value) {
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	SetEnvironmentVariableW(platform::WideString(name), platform::WideString(value));
+	#elif ARX_HAVE_SETENV
+	setenv(name, value, 1);
+	#endif
+}
+
+void unsetEnvironmentVariable(const char * name) {
+	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+	SetEnvironmentVariableW(platform::WideString(name), NULL);
+	#elif ARX_HAVE_UNSETENV
+	unsetenv(name);
+	#endif
+}
+
+void EnvironmentLock::lock() {
+	g_environmentLock.lock();
+	for(size_t i = 0; i < m_count; i++) {
+		if(m_overrides[i].name) {
+			if(hasEnvironmentVariable(m_overrides[i].name)) {
+				// Don't override variables already set by the user
+				m_overrides[i].name = NULL;
+			} else if(m_overrides[i].value) {
+				setEnvironmentVariable(m_overrides[i].name, m_overrides[i].value);
+			} else {
+				unsetEnvironmentVariable(m_overrides[i].name);
+			}
+		}
+	}
+}
+
+void EnvironmentLock::unlock() {
+	for(size_t i = 0; i < m_count; i++) {
+		if(m_overrides[i].name) {
+			unsetEnvironmentVariable(m_overrides[i].name);
+		}
+	}
+	g_environmentLock.unlock();
 }
 
 } // namespace platform

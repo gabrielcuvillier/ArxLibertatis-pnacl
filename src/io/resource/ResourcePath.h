@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -46,20 +46,19 @@ public:
 	static const char ext_sep = '.';
 	
 	path() { }
-	path(const path & other) : pathstr(other.pathstr) { }
 	/* implicit */ path(const std::string & str) : pathstr(str) { check(); }
 	/* implicit */ path(const char * str) : pathstr(str) { check(); }
 	
-	path & operator=(const path & other) {
-		return (pathstr = other.pathstr, *this);
-	}
-	
 	path & operator=(const std::string & str) {
-		return (pathstr = str, check(), *this);
+		pathstr = str;
+		check();
+		return *this;
 	}
 	
 	path & operator=(const char * str) {
-		return (pathstr = str, check(), *this);
+		pathstr = str;
+		check();
+		return *this;
 	}
 	
 	path operator/(const path & other) const;
@@ -212,7 +211,10 @@ public:
 	path & append(const std::string & str);
 	
 	//! \return append(str)
-	path & operator+=(const std::string & str) { append(str); return *this; }
+	path & operator+=(const std::string & str) {
+		append(str);
+		return *this;
+	}
 	
 	//! \return path(*this).append(str)
 	path operator+(const std::string & str) const {
@@ -251,6 +253,6 @@ inline std::ostream & operator<<(std::ostream & strm, const path & path) {
 	return strm << '"' << path.string() << '"';
 }
 
-} // namespace fs
+} // namespace res
 
 #endif // ARX_IO_RESOURCE_RESOURCEPATH_H

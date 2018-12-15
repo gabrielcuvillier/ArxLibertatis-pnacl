@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -82,50 +82,68 @@ static const size_t MAX_ANIM_LAYERS = 4;
 static const float BASE_RUBBER = 1.5f;
 
 struct IO_PHYSICS {
+	
 	Cylinder cyl;
 	Vec3f startpos;
 	Vec3f targetpos;
 	Vec3f velocity;
 	Vec3f forces;
+	
+	IO_PHYSICS()
+		: startpos(0.f)
+		, targetpos(0.f)
+		, velocity(0.f)
+		, forces(0.f)
+	{ }
+	
 };
 
 enum IOCollisionFlag {
-	COLLIDE_WITH_PLAYER = (1<<0),
-	COLLIDE_WITH_WORLD  = (1<<1)
+	COLLIDE_WITH_PLAYER = 1 << 0,
+	COLLIDE_WITH_WORLD  = 1 << 1
 };
 DECLARE_FLAGS(IOCollisionFlag, IOCollisionFlags)
 DECLARE_FLAGS_OPERATORS(IOCollisionFlags)
 
 enum ItemTypeFlag {
-	OBJECT_TYPE_WEAPON   = (1<<0),
-	OBJECT_TYPE_DAGGER   = (1<<1),
-	OBJECT_TYPE_1H       = (1<<2),
-	OBJECT_TYPE_2H       = (1<<3),
-	OBJECT_TYPE_BOW      = (1<<4),
-	OBJECT_TYPE_SHIELD   = (1<<5),
-	OBJECT_TYPE_FOOD     = (1<<6),
-	OBJECT_TYPE_GOLD     = (1<<7),
-	OBJECT_TYPE_ARMOR    = (1<<8),
-	OBJECT_TYPE_HELMET   = (1<<9),
-	OBJECT_TYPE_RING     = (1<<10),
-	OBJECT_TYPE_LEGGINGS = (1<<11)
+	OBJECT_TYPE_WEAPON   = 1 << 0,
+	OBJECT_TYPE_DAGGER   = 1 << 1,
+	OBJECT_TYPE_1H       = 1 << 2,
+	OBJECT_TYPE_2H       = 1 << 3,
+	OBJECT_TYPE_BOW      = 1 << 4,
+	OBJECT_TYPE_SHIELD   = 1 << 5,
+	OBJECT_TYPE_FOOD     = 1 << 6,
+	OBJECT_TYPE_GOLD     = 1 << 7,
+	OBJECT_TYPE_ARMOR    = 1 << 8,
+	OBJECT_TYPE_HELMET   = 1 << 9,
+	OBJECT_TYPE_RING     = 1 << 10,
+	OBJECT_TYPE_LEGGINGS = 1 << 11
 };
 DECLARE_FLAGS(ItemTypeFlag, ItemType)
 DECLARE_FLAGS_OPERATORS(ItemType)
 
 enum HaloFlag {
-	HALO_ACTIVE   = (1<<0),
-	HALO_NEGATIVE = (1<<1),
-	HALO_DYNLIGHT = (1<<2)
+	HALO_ACTIVE   = 1 << 0,
+	HALO_NEGATIVE = 1 << 1,
+	HALO_DYNLIGHT = 1 << 2  //!< Unused
 };
 DECLARE_FLAGS(HaloFlag, HaloFlags)
 DECLARE_FLAGS_OPERATORS(HaloFlags)
 
 struct IO_HALO {
+	
 	Color3f color;
 	float radius;
 	HaloFlags flags;
 	Vec3f offset;
+	
+	IO_HALO()
+		: color(Color3f::black)
+		, radius(0.f)
+		, flags(0)
+		, offset(0.f)
+	{ }
+	
 };
 
 struct IO_TWEAKER_INFO {
@@ -135,87 +153,88 @@ struct IO_TWEAKER_INFO {
 };
 
 struct IO_SPELLCAST_DATA {
+	
 	SpellType castingspell; // spell being casted...
 	Rune symb[4]; // symbols to draw before casting...
 	SpellcastFlags spell_flags;
 	short spell_level;
 	EntityHandle target;
-	long duration;
+	GameDuration duration;
 	
 	IO_SPELLCAST_DATA()
 		: castingspell(SPELL_NONE)
-		, spell_flags()
 		, spell_level(0)
-		, target()
 		, duration(0)
 	{
-		for(unsigned long j(0); j < 4; j++)
+		for(unsigned long j(0); j < 4; j++) {
 			symb[j] = RUNE_NONE;
+		}
 	}
+	
 };
 
 enum EntityFlag {
-	IO_UNDERWATER          = (1<<0),
-	IO_FREEZESCRIPT        = (1<<1),
-	IO_ITEM                = (1<<2),
-	IO_NPC                 = (1<<3),
-	IO_FIX                 = (1<<4),
-	IO_NOSHADOW            = (1<<5),
-	IO_CAMERA              = (1<<6),
-	IO_MARKER              = (1<<7),
-	IO_ICONIC              = (1<<8),
-	IO_NO_COLLISIONS       = (1<<9),
-	IO_GOLD                = (1<<10),
-	IO_INVULNERABILITY     = (1<<11),
-	IO_NO_PHYSICS_INTERPOL = (1<<12),
-	IO_HIT                 = (1<<13),
-	IO_PHYSICAL_OFF        = (1<<14),
-	IO_MOVABLE             = (1<<15),
-	IO_UNIQUE              = (1<<16),
-	IO_SHOP                = (1<<17),
-	IO_BLACKSMITH          = (1<<18),
-	IO_NOSAVE              = (1<<19),
-	IO_FORCEDRAW           = (1<<20),
-	IO_FIELD               = (1<<21),
-	IO_BUMP                = (1<<22),
-	IO_ANGULAR             = (1<<23),
-	IO_BODY_CHUNK          = (1<<24),
+	IO_UNDERWATER          = 1 << 0,
+	IO_FREEZESCRIPT        = 1 << 1,
+	IO_ITEM                = 1 << 2,
+	IO_NPC                 = 1 << 3,
+	IO_FIX                 = 1 << 4,
+	IO_NOSHADOW            = 1 << 5,
+	IO_CAMERA              = 1 << 6,
+	IO_MARKER              = 1 << 7,
+	IO_ICONIC              = 1 << 8,
+	IO_NO_COLLISIONS       = 1 << 9,
+	IO_GOLD                = 1 << 10,
+	IO_INVULNERABILITY     = 1 << 11,
+	IO_NO_PHYSICS_INTERPOL = 1 << 12,
+	IO_HIT                 = 1 << 13,
+	IO_PHYSICAL_OFF        = 1 << 14,
+	IO_MOVABLE             = 1 << 15,
+	IO_UNIQUE              = 1 << 16,
+	IO_SHOP                = 1 << 17,
+	IO_BLACKSMITH          = 1 << 18,
+	IO_NOSAVE              = 1 << 19,
+	IO_FORCEDRAW           = 1 << 20,
+	IO_FIELD               = 1 << 21,
+	IO_BUMP                = 1 << 22,
+	IO_ANGULAR             = 1 << 23,
+	IO_BODY_CHUNK          = 1 << 24,
 	// IO_ZMAP Currently has no effect, but keep for now as it affects save state
-	IO_ZMAP                = (1<<25),
-	IO_INVERTED            = (1<<26),
-	IO_JUST_COLLIDE        = (1<<27),
-	IO_FIERY               = (1<<28),
-	IO_NO_NPC_COLLIDE      = (1<<29),
-	IO_CAN_COMBINE         = (1<<30)
+	IO_ZMAP                = 1 << 25,
+	IO_INVERTED            = 1 << 26,
+	IO_JUST_COLLIDE        = 1 << 27,
+	IO_FIERY               = 1 << 28,
+	IO_NO_NPC_COLLIDE      = 1 << 29,
+	IO_CAN_COMBINE         = 1 << 30
 };
 DECLARE_FLAGS(EntityFlag, EntityFlags)
 DECLARE_FLAGS_OPERATORS(EntityFlags)
 
 enum EntitySfxFlag {
-	SFX_TYPE_YLSIDE_DEATH = (1<<0),
-	SFX_TYPE_INCINERATE   = (1<<1)
+	SFX_TYPE_YLSIDE_DEATH = 1 << 0,
+	SFX_TYPE_INCINERATE   = 1 << 1
 };
 DECLARE_FLAGS(EntitySfxFlag, EntitySfxFlags)
 DECLARE_FLAGS_OPERATORS(EntitySfxFlags)
 
 // TODO 16-bit due to save format
 enum GameFlag {
-	GFLAG_INTERACTIVITY     = (1<<0),
-	GFLAG_ISINTREATZONE     = (1<<1),
-	GFLAG_WASINTREATZONE    = (1<<2),
-	GFLAG_NEEDINIT          = (1<<3),
-	GFLAG_INTERACTIVITYHIDE = (1<<4),
-	GFLAG_DOOR              = (1<<5),
-	GFLAG_INVISIBILITY      = (1<<6),
-	GFLAG_NO_PHYS_IO_COL    = (1<<7),
-	GFLAG_VIEW_BLOCKER      = (1<<8),
-	GFLAG_PLATFORM          = (1<<9),
-	GFLAG_ELEVATOR          = (1<<10),
-	GFLAG_MEGAHIDE          = (1<<11),
-	GFLAG_HIDEWEAPON        = (1<<12),
-	GFLAG_NOGORE            = (1<<13),
-	GFLAG_GOREEXPLODE       = (1<<14),
-	GFLAG_NOCOMPUTATION     = (1<<15)
+	GFLAG_INTERACTIVITY     = 1 << 0,
+	GFLAG_ISINTREATZONE     = 1 << 1,
+	GFLAG_WASINTREATZONE    = 1 << 2,
+	GFLAG_NEEDINIT          = 1 << 3,
+	GFLAG_INTERACTIVITYHIDE = 1 << 4,
+	GFLAG_DOOR              = 1 << 5,
+	GFLAG_INVISIBILITY      = 1 << 6,
+	GFLAG_NO_PHYS_IO_COL    = 1 << 7,
+	GFLAG_VIEW_BLOCKER      = 1 << 8,
+	GFLAG_PLATFORM          = 1 << 9,
+	GFLAG_ELEVATOR          = 1 << 10,
+	GFLAG_MEGAHIDE          = 1 << 11,
+	GFLAG_HIDEWEAPON        = 1 << 12,
+	GFLAG_NOGORE            = 1 << 13,
+	GFLAG_GOREEXPLODE       = 1 << 14,
+	GFLAG_NOCOMPUTATION     = 1 << 15
 };
 DECLARE_FLAGS(GameFlag, GameFlags)
 DECLARE_FLAGS_OPERATORS(GameFlags)
@@ -235,7 +254,7 @@ enum EntityVisilibity {
 
 struct AnimationBlendStatus {
 	bool m_active;
-	unsigned long lastanimtime;
+	GameInstant lastanimtime;
 };
 
 class Entity {
@@ -253,7 +272,7 @@ public:
 	Vec3f forcedmove;
 	
 	Anglef angle; // IO angle
-	IO_PHYSICS physics;	// Movement Collision Data
+	IO_PHYSICS physics; // Movement Collision Data
 	short room;
 	bool requestRoomUpdate;
 	float original_height;
@@ -270,7 +289,7 @@ public:
 
 	res::path usemesh; // Alternate Mesh/path
 	EERIE_3DOBJ * tweaky; // tweaked original obj backup
-	audio::SourceId sound;
+	audio::SourcedSample m_sound;
 	ItemType type_flags; // object type (weapon,goblin...)
 	long scriptload; // Is This object Loaded by Script ?
 	Vec3f target; // Target position
@@ -287,17 +306,14 @@ public:
 	INVENTORY_DATA * inventory; // Inventory Data
 	EntityVisilibity show; // Show status (in scene, in inventory...)
 	IOCollisionFlags collision; // collision type
-	std::string mainevent;
+	ScriptEventName mainevent;
 	Color3f infracolor; // Improve Vision Color (Heat)
-	long changeanim;
 	
 	float weight;
-	std::string locname; //localisation
+	std::string locname; // Localisation key for the entity's name
 	GameFlags gameFlags;
-	Vec3f velocity; // velocity
 	float fall;
 
-	long stopped;
 	Vec3f initpos; // Initial Position
 	Anglef initangle; // Initial Angle
 	float scale;
@@ -310,6 +326,9 @@ public:
 	IO_HALO halo;
 	IO_HALO halo_native;
 	
+	SCRIPT_VARIABLES m_variables;
+	GameInstant m_scriptTimers[MAX_SCRIPTTIMERS];
+	DisabledEvents m_disabledEvents;
 	EERIE_SCRIPT script; // Primary Script
 	EERIE_SCRIPT over_script; // Overriding Script
 	short stat_count;
@@ -319,19 +338,18 @@ public:
 	
 	std::set<std::string> groups;
 	Vec2s m_inventorySize;// Inventory Icon size
-	unsigned long soundtime;
+	GameInstant soundtime;
 	unsigned long soundcount;
 	
-	unsigned long sfx_time;
-	unsigned long collide_door_time;
-	unsigned long ouch_time;
+	GameInstant sfx_time;
+	GameInstant collide_door_time;
+	GameInstant ouch_time;
 	float dmg_sum;
 	
 	IO_SPELLCAST_DATA spellcast_data;
 	short flarecount;
 	EntityHandle no_collide;
 	float invisibility;
-	float frameloss;
 	float basespeed;
 	
 	float speed_modif;
@@ -344,7 +362,7 @@ public:
 	
 	float ignition;
 	LightHandle ignit_light;
-	audio::SampleId ignit_sound;
+	audio::SourcedSample ignit_sound;
 	float head_rot;
 	
 	short damager_damages;
@@ -443,7 +461,7 @@ private:
 };
 
 inline Vec3f actionPointPosition(const EERIE_3DOBJ * obj, ActionPoint ap) {
-	return obj->vertexlist3[ap.handleData()].v;
+	return obj->vertexWorldPositions[ap.handleData()].v;
 }
 
 // TODO move this somewhere else

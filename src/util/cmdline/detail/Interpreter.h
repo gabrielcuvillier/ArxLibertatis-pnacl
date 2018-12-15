@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -50,16 +50,16 @@ public:
 	typedef TypeCast                        type_cast_t;
 	
 	template <typename Handler>
-	void add(const Handler &, const op_name_t &);
+	void add(const Handler & handler, const op_name_t & key);
 	
 	template <typename HndlSign, typename Handler>
-	void add(const Handler &, const op_name_t &);
+	void add(const Handler & handler, const op_name_t & key);
 	
 	void erase(const string_type & option_name);
 	
 	template <typename It>
 	void invoke(const string_type & option_name, It & args_begin, It args_optend, It args_end,
-	            type_cast_t &) const;
+	            type_cast_t & type_cast) const;
 	
 	template <typename It>
 	void invoke(const string_type & option_name, It & args_begin, It args_end,
@@ -81,7 +81,7 @@ private:
 	template <typename Iter, typename Visitor>
 	void do_visit(Iter begin, Iter end, Visitor & visitor) const {
 		for(; begin != end; ++begin) {
-			visitor(begin->second.key);
+			visitor(begin->second.m_key);
 		}
 	}
 	
@@ -89,19 +89,19 @@ private:
 	
 	struct ikey_t {
 		
-		function_type function;
-		op_name_t     key;
+		function_type m_function;
+		op_name_t m_key;
 		
 		void key_erase(const string_type & v) {
-			typename op_name_t::iterator it(std::find(key.begin(), key.end(), v));
-			if(key.end() != it) {
-				key.erase(it);
+			typename op_name_t::iterator it(std::find(m_key.begin(), m_key.end(), v));
+			if(m_key.end() != it) {
+				m_key.erase(it);
 			}
 		}
 		
 		ikey_t(const function_type & function, const op_name_t & key)
-			: function(function)
-			, key(key)
+			: m_function(function)
+			, m_key(key)
 		{ }
 		
 	};
@@ -186,18 +186,18 @@ void interpreter<StringType, TypeCast>::do_add(const function_type & handler,
 
 template <typename StringType, typename TypeCast>
 template <typename It>
-void interpreter<StringType, TypeCast>::invoke(const string_type & key,
+void interpreter<StringType, TypeCast>::invoke(const string_type & option_name,
                                               It & args_begin, It args_optend, It args_end,
                                               type_cast_t & type_cast) const {
 	
-	typename alt_name_t::const_iterator primary_key = alt_name.find(key);
+	typename alt_name_t::const_iterator primary_key = alt_name.find(option_name);
 	
 	if(alt_name.end() == primary_key) {
 		throw error(error::cmd_not_found);
 	}
 	
 	typename storage_t::const_iterator it(storage.find(primary_key->second));
-	it->second.function(args_begin, args_optend, args_end, type_cast);
+	it->second.m_function(args_begin, args_optend, args_end, type_cast);
 }
 
 } } } // namespace util::cmdline::detail

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,6 +19,7 @@
 
 #include "cinematic/CinematicController.h"
 
+#include "core/Application.h"
 #include "core/GameTime.h"
 
 #include "io/log/Logger.h"
@@ -37,6 +38,8 @@
 #include "graphics/Renderer.h"
 #include "input/Input.h"
 
+#include "window/RenderWindow.h"
+
 enum CinematicState {
 	Cinematic_Stopped,
 	Cinematic_StartRequested,
@@ -48,32 +51,41 @@ static bool CINE_PRELOAD = false;
 static std::string WILL_LAUNCH_CINE;
 static std::string LAST_LAUNCHED_CINE;
 
-Cinematic			*ControlCinematique=NULL;	// 2D Cinematic Controller
+Cinematic * ControlCinematique = NULL; // 2D Cinematic Controller
 
-void cinematicPrepare(std::string name, bool preload) {
+void cinematicInit() {
+	const Vec2i & size = mainApp->getWindow()->getSize();
+	ControlCinematique = new Cinematic(size);
+}
+
+void cinematicDestroy() {
+	delete ControlCinematique, ControlCinematique = NULL;
+}
+
+void cinematicPrepare(const std::string & name, bool preload) {
 
 	WILL_LAUNCH_CINE = name;
 	CINE_PRELOAD = preload;
 }
 
 void cinematicRequestStart() {
-
 	PLAY_LOADED_CINEMATIC = Cinematic_StartRequested;
+	g_gameTime.pause(GameTime::PauseCinematic);
 }
 
-void DANAE_KillCinematic() {
+void cinematicKill() {
 	if(ControlCinematique && ControlCinematique->projectload) {
 		ControlCinematique->projectload = false;
 		ControlCinematique->OneTimeSceneReInit();
-		ControlCinematique->DeleteDeviceObjects();
 		PLAY_LOADED_CINEMATIC = Cinematic_Stopped;
+		g_gameTime.resume(GameTime::PauseCinematic);
 		CINE_PRELOAD = false;
 	}
 }
 
-Vec3f ePos;
+static Vec3f g_originalCameraPosition;
 
-void LaunchWaitingCine() {
+void cinematicLaunchWaiting() {
 
 	// A cinematic is waiting to be played...
 	if(WILL_LAUNCH_CINE.empty()) {
@@ -81,16 +93,16 @@ void LaunchWaitingCine() {
 	}
 
 	LogDebug("LaunchWaitingCine " << CINE_PRELOAD);
-
-	if(ACTIVECAM) {
-		ePos = ACTIVECAM->orgTrans.pos;
+	
+	if(g_camera) {
+		g_originalCameraPosition = g_camera->m_pos;
 	}
-
-	DANAE_KillCinematic();
+	
+	cinematicKill();
 
 	res::path cinematic = res::path("graph/interface/illustrations") / WILL_LAUNCH_CINE;
 
-	if(resources->getFile(cinematic)) {
+	if(g_resources->getFile(cinematic)) {
 
 		ControlCinematique->OneTimeSceneReInit();
 
@@ -101,8 +113,7 @@ void LaunchWaitingCine() {
 				PLAY_LOADED_CINEMATIC = Cinematic_Stopped;
 			} else {
 				LogDebug("starting cinematic");
-				PLAY_LOADED_CINEMATIC = Cinematic_StartRequested;
-				arxtime.pause();
+				cinematicRequestStart();
 			}
 
 			LAST_LAUNCHED_CINE = WILL_LAUNCH_CINE;
@@ -121,61 +132,43 @@ bool cinematicIsStopped() {
 	return PLAY_LOADED_CINEMATIC == Cinematic_Stopped;
 }
 
-
 bool isInCinematic() {
-	return PLAY_LOADED_CINEMATIC != Cinematic_Stopped
-			&& ControlCinematique
-			&& ControlCinematique->projectload;
+	return PLAY_LOADED_CINEMATIC != Cinematic_Stopped && ControlCinematique && ControlCinematique->projectload;
 }
 
-static float LastFrameTicks = 0;
+void cinematicEnd() {
+	
+	StopSoundKeyFramer();
+	cinematicKill();
+	
+	if(g_camera) {
+		arx_assert(isallfinite(g_originalCameraPosition));
+		g_camera->m_pos = g_originalCameraPosition;
+	}
+	
+	ARX_SPEECH_Reset();
+	SendMsgToAllIO(NULL, SM_CINE_END, LAST_LAUNCHED_CINE);
+	
+}
 
 // Manages Currently playing 2D cinematic
 void cinematicRender() {
-	
-	arxtime.update(false);
-	float now = arxtime.now_f();
+
+	PlatformDuration diff = g_platformTime.lastFrameDuration();
 
 	if(PLAY_LOADED_CINEMATIC == Cinematic_StartRequested) {
 		LogDebug("really starting cinematic now");
-		LastFrameTicks = now;
+		diff = 0;
 		PLAY_LOADED_CINEMATIC = Cinematic_Started;
 	}
 
 	PlayTrack(ControlCinematique);
-	ControlCinematique->InitDeviceObjects();
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
 
-	ControlCinematique->Render(now - LastFrameTicks);
+	ControlCinematique->Render(diff);
 
 	// end the animation
-	if(   !ControlCinematique->key
-	   || GInput->isKeyPressedNowUnPressed(Keyboard::Key_Escape)
-	) {
-		ControlCinematique->projectload=false;
-		StopSoundKeyFramer();
-		ControlCinematique->OneTimeSceneReInit();
-		ControlCinematique->DeleteDeviceObjects();
-		arxtime.resume();
-		PLAY_LOADED_CINEMATIC = Cinematic_Stopped;
-
-		bool bWasBlocked = false;
-		if(BLOCK_PLAYER_CONTROLS) {
-			bWasBlocked = true;
-		}
-
-		// !! avant le cine end
-		if(ACTIVECAM) {
-			ACTIVECAM->orgTrans.pos = ePos;
-		}
-
-		if(bWasBlocked) {
-			BLOCK_PLAYER_CONTROLS = true;
-		}
-
-		ARX_SPEECH_Reset();
-		SendMsgToAllIO(SM_CINE_END, LAST_LAUNCHED_CINE);
+	if(!ControlCinematique->m_key) {
+		cinematicEnd();
 	}
-
-	LastFrameTicks = now;
+	
 }

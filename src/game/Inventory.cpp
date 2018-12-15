@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -78,7 +78,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "math/Angle.h"
 #include "math/Vector.h"
 
-#include "physics/Box.h"
+#include "physics/Physics.h"
 
 #include "platform/Platform.h"
 
@@ -91,14 +91,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 void ARX_INVENTORY_ReOrder();
 
-//------------------------------------------------------------------------------------
-//CInventory Inventory;
-INVENTORY_SLOT inventory[INVENTORY_BAGS][INVENTORY_X][INVENTORY_Y];
+INVENTORY_SLOT g_inventory[INVENTORY_BAGS][INVENTORY_X][INVENTORY_Y];
 INVENTORY_DATA * SecondaryInventory = NULL;
 Entity * DRAGINTER = NULL;
 Entity * ioSteal = NULL;
-long InventoryY = 100;
-long HERO_OR_SECONDARY = 0;
 
 // 1 player 2 secondary
 short sInventory = -1;
@@ -118,19 +114,15 @@ void ARX_INVENTORY_Declare_InventoryIn(Entity * io) {
 		
 		lightHandleDestroy(io->ignit_light);
 		
-		if (io->ignit_sound != audio::INVALID_ID) {
-			ARX_SOUND_Stop(io->ignit_sound);
-			io->ignit_sound = audio::INVALID_ID;
-		}
+		ARX_SOUND_Stop(io->ignit_sound);
+		io->ignit_sound = audio::SourcedSample();
 		
 		io->ignition = 0;
 	}
 	
-	EVENT_SENDER = io;
-	SendIOScriptEvent(entities.player(), SM_INVENTORYIN);
-	EVENT_SENDER = entities.player();
-	SendIOScriptEvent(io, SM_INVENTORYIN);
-	EVENT_SENDER = NULL;
+	SendIOScriptEvent(io, entities.player(), SM_INVENTORYIN);
+	SendIOScriptEvent(entities.player(), io, SM_INVENTORYIN);
+	
 }
 
 /*!
@@ -141,58 +133,45 @@ void CleanInventory() {
 	for(size_t bag = 0; bag < INVENTORY_BAGS; bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		INVENTORY_SLOT & slot = inventory[bag][x][y];
-		
-		slot.io	 = NULL;
+		INVENTORY_SLOT & slot = g_inventory[bag][x][y];
+		slot.io = NULL;
 		slot.show = true;
 	}
 	
-	g_currentInventoryBag = 0;
+	g_playerInventoryHud.setCurrentBag(0);
 }
 
-Entity * GetInventoryObj_INVENTORYUSE(const Vec2s & pos)
-{
-	Entity * io = GetFromInventory(pos);
-
-	if(io) {
-		if(HERO_OR_SECONDARY == 2) {
-			if(SecondaryInventory) {
-				Entity *temp = SecondaryInventory->io;
-
-				if(temp->ioflags & IO_SHOP)
-					return NULL;
+Entity * GetInventoryObj_INVENTORYUSE(const Vec2s & pos) {
+	
+	std::pair<Entity *, int> result = GetFromInventory(pos);
+	
+	if(result.first) {
+		if(result.second == 2 && SecondaryInventory) {
+			Entity * temp = SecondaryInventory->io;
+			if(temp->ioflags & IO_SHOP) {
+				return NULL;
 			}
 		}
-
-		return io;
+		return result.first;
 	}
 
 	if(InInventoryPos(pos))
 		return NULL;
-
-	io = InterClick(pos);
-
-	return io;
+	
+	return InterClick(pos);
 }
 
-/*!
- * \brief Puts an IO in front of the player
- * \param io
- */
+//! Puts an IO in front of the player
 void PutInFrontOfPlayer(Entity * io)
 {
 	if(!io)
 		return;
 	
 	io->pos = player.pos;
-	io->pos += angleToVectorXZ(player.angle.getPitch()) * 80.f;
+	io->pos += angleToVectorXZ(player.angle.getYaw()) * 80.f;
 	io->pos += Vec3f(0.f, 20.f, 0.f);
 	
-	io->velocity.y = 0.3f;
-	io->velocity.x = 0; 
-	io->velocity.z = 0; 
-	io->angle = Anglef::ZERO;
-	io->stopped = 0;
+	io->angle = Anglef();
 	io->show = SHOW_FLAG_IN_SCENE;
 
 	if(io->obj && io->obj->pbox) {
@@ -342,11 +321,11 @@ private:
 			return false;
 		}
 		
+		arx_assert(item != NULL && (item->ioflags & IO_ITEM));
+		
 		if(pos.x + item->m_inventorySize.x > width || pos.y + item->m_inventorySize.y > height) {
 			return false;
 		}
-		
-		arx_assert(item != NULL && (item->ioflags & IO_ITEM));
 		
 		// Check if the whole area required by this item is empty
 		for(index_type j = pos.y; j < pos.y + item->m_inventorySize.y; j++) {
@@ -404,34 +383,34 @@ private:
 			return false;
 		}
 		
+		arx_assert(item != NULL && (item->ioflags & IO_ITEM));
+		
 		if(pos.x + item->m_inventorySize.x > width || pos.y + item->m_inventorySize.y > height) {
 			return false;
 		}
 		
-		arx_assert(item != NULL && (item->ioflags & IO_ITEM));
-		
-		Entity * io = index(pos).io;
+		Entity * oldItem = index(pos).io;
 		
 		// Ignore empty slots and different or non-stackeable items
-		if(!io || io->_itemdata->playerstacksize <= 1 || !IsSameObject(item, io)) {
+		if(!oldItem || oldItem->_itemdata->playerstacksize <= 1 || !IsSameObject(item, oldItem)) {
 			return false;
 		}
 		
 		// Ignore full stacks
-		if(io->_itemdata->count >= io->_itemdata->playerstacksize) {
+		if(oldItem->_itemdata->count >= oldItem->_itemdata->playerstacksize) {
 			return false;
 		}
 		
 		// Get the number of items to add to the stack
-		short int remainingSpace = io->_itemdata->playerstacksize - io->_itemdata->count;
+		short int remainingSpace = oldItem->_itemdata->playerstacksize - oldItem->_itemdata->count;
 		short int count = std::min(item->_itemdata->count, remainingSpace);
 		
-		LogDebug(" - " << pos << " " << io->idString()
-		         << " [" << io->_itemdata->count << '/'
-		         << io->_itemdata->playerstacksize << "] += "
+		LogDebug(" - " << pos << " " << oldItem->idString()
+		         << " [" << oldItem->_itemdata->count << '/'
+		         << oldItem->_itemdata->playerstacksize << "] += "
 		         << item->idString() << " x" << count << '/' << item->_itemdata->count);
 		
-		io->_itemdata->count += count, item->_itemdata->count -= count;
+		oldItem->_itemdata->count += count, item->_itemdata->count -= count;
 		
 		if(item->_itemdata->count != 0) {
 			// We inserted some of the items into the stack, but there was not enough
@@ -465,11 +444,8 @@ private:
 	
 public:
 	
-	Inventory(long io, array_type & data, size_type bags, size_type width, size_type height)
-		: io(io), data(data), bags(bags), width(width), height(height) { }
-		
-	Inventory(const Inventory & o)
-		: io(o.io), data(o.data), bags(o.bags), width(o.width), height(o.height) { }
+	Inventory(long io_, array_type & data_, size_type bags_, size_type width_, size_type height_)
+		: io(io_), data(data_), bags(bags_), width(width_), height(height_) { }
 	
 	/*!
 	 * Insert an item into the inventory
@@ -539,12 +515,12 @@ public:
 		std::sort(items.begin(), items.end(), ItemSizeComaparator());
 		
 		LogDebug("sorting");
-	#ifdef ARX_DEBUG
+		#ifdef ARX_DEBUG
 		BOOST_FOREACH(const Entity * item, items) {
 			LogDebug(" - " << item->idString() << ": "
-							<< int(item->m_inventorySize.x) << 'x' << int(item->m_inventorySize.y));
+			         << int(item->m_inventorySize.x) << 'x' << int(item->m_inventorySize.y));
 		}
-	#endif
+		#endif
 		
 		LogDebug("putting back items");
 		
@@ -612,7 +588,7 @@ public:
 };
 
 Inventory<INVENTORY_BAGS, INVENTORY_X, INVENTORY_Y> getPlayerInventory() {
-	return Inventory<INVENTORY_BAGS, INVENTORY_X, INVENTORY_Y>(0, inventory, player.bag,
+	return Inventory<INVENTORY_BAGS, INVENTORY_X, INVENTORY_Y>(0, g_inventory, player.m_bags,
 	                                              INVENTORY_X, INVENTORY_Y);
 }
 
@@ -720,7 +696,7 @@ InventoryPos locateInInventories(const Entity * item) {
 
 bool insertIntoInventory(Entity * item, const InventoryPos & pos) {
 	
-	if(pos.io == PlayerEntityHandle) {
+	if(pos.io == EntityHandle_Player) {
 		return giveToPlayer(item, pos);
 	}
 	
@@ -865,10 +841,7 @@ bool CanBePutInSecondaryInventory(INVENTORY_DATA * id, Entity * io)
 	return false;
 }
 
-/*!
- * \brief Try to put DRAGINTER object in an inventory
- * \return
- */
+//! Try to put DRAGINTER object in an inventory
 void PutInInventory() {
 	// Check Validity
 	if(!DRAGINTER || (DRAGINTER->ioflags & IO_MOVABLE))
@@ -892,17 +865,23 @@ bool InInventoryPos(const Vec2s & pos) {
 /*!
  * \brief Returns IO under position xx,yy in any INVENTORY or NULL if no IO was found
  */
-Entity * GetFromInventory(const Vec2s & pos) {
-	HERO_OR_SECONDARY = 0;
-
-	if(!InInventoryPos(pos))
-		return NULL;
+std::pair<Entity *, int> GetFromInventory(const Vec2s & pos) {
+	
+	if(!InInventoryPos(pos)) {
+		return std::pair<Entity *, int>(NULL, 0);
+	}
 	
 	Entity * result = g_secondaryInventoryHud.getObj(pos);
-	if(result)
-		return result;
-
-	return g_playerInventoryHud.getObj(pos);
+	if(result) {
+		return std::pair<Entity *, int>(result, 2);
+	}
+	
+	result = g_playerInventoryHud.getObj(pos);
+	if(result) {
+		return std::pair<Entity *, int>(result, 1);
+	}
+	
+	return std::pair<Entity *, int>(NULL, 0);
 }
 
 /*!
@@ -912,7 +891,7 @@ Entity * GetFromInventory(const Vec2s & pos) {
  * Put the position in "pos". returns true if position was found
  * or false if object is invalid, or position not defined.
  */
-Vec3f GetItemWorldPosition(Entity * io) {
+Vec3f GetItemWorldPosition(const Entity * io) {
 	arx_assert(io);
 	
 	// Is this object being Dragged by player ?
@@ -929,14 +908,14 @@ Vec3f GetItemWorldPosition(Entity * io) {
 			return player.pos + Vec3f(0.f, 80.f, 0.f);
 		}
 		
-		arx_assert(player.bag >= 0);
-		arx_assert(player.bag <= 3);
+		arx_assert(player.m_bags >= 0);
+		arx_assert(player.m_bags <= 3);
 		
 		// Is it in any player inventory ?
-		for(size_t bag = 0; bag < size_t(player.bag); bag++)
+		for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 		for(size_t y = 0; y < INVENTORY_Y; y++)
 		for(size_t x = 0; x < INVENTORY_X; x++) {
-			const INVENTORY_SLOT & slot = inventory[bag][x][y];
+			const INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 			
 			if(slot.io == io) {
 				return player.pos + Vec3f(0.f, 80.f, 0.f);
@@ -984,13 +963,13 @@ Vec3f GetItemWorldPositionSound(const Entity * io) {
 			return ARX_PLAYER_FrontPos();
 		}
 		
-		arx_assert(player.bag >= 0);
-		arx_assert(player.bag <= 3);
+		arx_assert(player.m_bags >= 0);
+		arx_assert(player.m_bags <= 3);
 		
-		for(size_t bag = 0; bag < size_t(player.bag); bag++)
+		for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 		for(size_t y = 0; y < INVENTORY_Y; y++)
 		for(size_t x = 0; x < INVENTORY_X; x++) {
-			const INVENTORY_SLOT & slot = inventory[bag][x][y];
+			const INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 			
 			if(slot.io == io) {
 				// in player inventory
@@ -1071,7 +1050,7 @@ void CheckForInventoryReplaceMe(Entity * io, Entity * old) {
 				if(CanBePutInSecondaryInventory(id, io)) {
 					return;
 				}
-				PutInFrontOfPlayer(io); 
+				PutInFrontOfPlayer(io);
 				return;
 			}
 		}
@@ -1087,22 +1066,22 @@ void CheckForInventoryReplaceMe(Entity * io, Entity * old) {
  * \return true if an object was taken
  */
 bool TakeFromInventory(const Vec2s & pos) {
-	Entity * io = GetFromInventory(pos);
 	
-	if(io == NULL) {
+	std::pair<Entity *, int> result = GetFromInventory(pos);
+	
+	if(result.first == NULL) {
 		return false;
 	}
 	
-	switch(HERO_OR_SECONDARY) {
-		case 1: //player inventory
-			g_playerInventoryHud.dragEntity(io, pos);
+	switch(result.second) {
+		case 1:
+			g_playerInventoryHud.dragEntity(result.first, pos);
 			break;
-		case 2: //secondary inventory
-			g_secondaryInventoryHud.dragEntity(io, pos);
+		case 2:
+			g_secondaryInventoryHud.dragEntity(result.first, pos);
 			break;
 		default:
-			ARX_DEAD_CODE();
-			return false;
+			arx_unreachable();
 	}
 	
 	return true;
@@ -1110,13 +1089,13 @@ bool TakeFromInventory(const Vec2s & pos) {
 
 bool IsInPlayerInventory(Entity * io) {
 	
-	arx_assert(player.bag >= 0);
-	arx_assert(player.bag <= 3);
+	arx_assert(player.m_bags >= 0);
+	arx_assert(player.m_bags <= 3);
 	
-	for(size_t bag = 0; bag < size_t(player.bag); bag++)
+	for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		const INVENTORY_SLOT & slot = inventory[bag][x][y];
+		const INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 		
 		if(slot.io == io) {
 			return true;
@@ -1144,13 +1123,13 @@ bool IsInSecondaryInventory(Entity * io) {
 // TODO don't use texture name to find entity
 void SendInventoryObjectCommand(const std::string & _lpszText, ScriptMessage _lCommand) {
 	
-	arx_assert(player.bag >= 0);
-	arx_assert(player.bag <= 3);
+	arx_assert(player.m_bags >= 0);
+	arx_assert(player.m_bags <= 3);
 	
-	for(size_t bag = 0; bag < size_t(player.bag); bag++)
+	for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		const INVENTORY_SLOT & slot = inventory[bag][x][y];
+		const INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 		
 		if(!slot.io || !slot.io->obj)
 			continue;
@@ -1161,7 +1140,7 @@ void SendInventoryObjectCommand(const std::string & _lpszText, ScriptMessage _lC
 			   && slot.io->obj->texturecontainer[lTex]->m_texName == _lpszText
 			) {
 				if(slot.io->gameFlags & GFLAG_INTERACTIVITY) {
-					SendIOScriptEvent(slot.io, _lCommand);
+					SendIOScriptEvent(entities.player(), slot.io, _lCommand);
 				}
 				return;
 			}
@@ -1173,13 +1152,13 @@ Entity * ARX_INVENTORY_GetTorchLowestDurability() {
 	
 	Entity * io = NULL;
 	
-	arx_assert(player.bag >= 0);
-	arx_assert(player.bag <= 3);
+	arx_assert(player.m_bags >= 0);
+	arx_assert(player.m_bags <= 3);
 	
-	for(size_t bag = 0; bag < size_t(player.bag); bag++)
+	for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		const INVENTORY_SLOT & slot = inventory[bag][x][y];
+		const INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 		
 		if(!slot.io || slot.io->locname != "description_torch")
 			continue;
@@ -1196,13 +1175,13 @@ long Player_Arrow_Count() {
 	
 	long count = 0;
 	
-	arx_assert(player.bag >= 0);
-	arx_assert(player.bag <= 3);
+	arx_assert(player.m_bags >= 0);
+	arx_assert(player.m_bags <= 3);
 	
-	for(size_t bag = 0; bag < size_t(player.bag); bag++)
+	for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		INVENTORY_SLOT & slot = inventory[bag][x][y];
+		INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 		
 		if(slot.io && slot.io->className() == "arrows" && slot.io->durability >= 1.f) {
 			count += checked_range_cast<long>(slot.io->durability);
@@ -1216,10 +1195,10 @@ Entity * Player_Arrow_Count_Decrease() {
 	
 	Entity * io = NULL;
 	
-	for(size_t bag = 0; bag < size_t(player.bag); bag++)
+	for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		INVENTORY_SLOT & slot = inventory[bag][x][y];
+		INVENTORY_SLOT & slot = g_inventory[bag][x][y];
 		
 		if(slot.io && slot.io->className() == "arrows" && slot.io->durability >= 1.f) {
 			if(!io || io->durability > slot.io->durability)
@@ -1234,20 +1213,20 @@ void ARX_INVENTORY_IdentifyIO(Entity * _pIO) {
 	if(_pIO && (_pIO->ioflags & IO_ITEM) && _pIO->_itemdata->equipitem) {
 		if(player.m_skillFull.objectKnowledge + player.m_attributeFull.mind
 		   >= _pIO->_itemdata->equipitem->elements[IO_EQUIPITEM_ELEMENT_Identify_Value].value) {
-			SendIOScriptEvent(_pIO, SM_IDENTIFY);
+			SendIOScriptEvent(entities.player(), _pIO, SM_IDENTIFY);
 		}
 	}
 }
 
 void ARX_INVENTORY_IdentifyAll() {
 	
-	arx_assert(player.bag >= 0);
-	arx_assert(player.bag <= 3);
+	arx_assert(player.m_bags >= 0);
+	arx_assert(player.m_bags <= 3);
 	
-	for(size_t bag = 0; bag < size_t(player.bag); bag++)
+	for(size_t bag = 0; bag < size_t(player.m_bags); bag++)
 	for(size_t y = 0; y < INVENTORY_Y; y++)
 	for(size_t x = 0; x < INVENTORY_X; x++) {
-		Entity * io = inventory[bag][x][y].io;
+		Entity * io = g_inventory[bag][x][y].io;
 		
 		ARX_INVENTORY_IdentifyIO(io);
 	}
@@ -1259,7 +1238,7 @@ void ARX_INVENTORY_OpenClose(Entity * _io)
 	// CLOSING
 	if(!_io || SecondaryInventory == _io->inventory) {
 		if(SecondaryInventory && SecondaryInventory->io)
-			SendIOScriptEvent(SecondaryInventory->io, SM_INVENTORY2_CLOSE);
+			SendIOScriptEvent(entities.player(), SecondaryInventory->io, SM_INVENTORY2_CLOSE);
 
 		g_secondaryInventoryHud.m_fadeDirection = SecondaryInventoryHud::Fade_left;
 		TSecondaryInventory = SecondaryInventory;
@@ -1267,13 +1246,13 @@ void ARX_INVENTORY_OpenClose(Entity * _io)
 		DRAGGING = false;
 	} else {
 		if(TSecondaryInventory && TSecondaryInventory->io)
-			SendIOScriptEvent(TSecondaryInventory->io, SM_INVENTORY2_CLOSE);
+			SendIOScriptEvent(entities.player(), TSecondaryInventory->io, SM_INVENTORY2_CLOSE);
 
 		g_secondaryInventoryHud.m_fadeDirection = SecondaryInventoryHud::Fade_right;
 		TSecondaryInventory = SecondaryInventory = _io->inventory;
 
 		if(SecondaryInventory && SecondaryInventory->io != NULL) {
-			if(SendIOScriptEvent(SecondaryInventory->io, SM_INVENTORY2_OPEN) == REFUSE) {
+			if(SendIOScriptEvent(entities.player(), SecondaryInventory->io, SM_INVENTORY2_OPEN) == REFUSE) {
 				g_secondaryInventoryHud.m_fadeDirection = SecondaryInventoryHud::Fade_left;
 				TSecondaryInventory = SecondaryInventory = NULL;
 				return;
@@ -1281,10 +1260,10 @@ void ARX_INVENTORY_OpenClose(Entity * _io)
 		}
 
 		if(player.Interface & INTER_COMBATMODE) {
-			ARX_INTERFACE_Combat_Mode(0);
+			ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
 		}
 
-		if(!config.input.autoReadyWeapon) {
+		if(config.input.autoReadyWeapon != AlwaysAutoReadyWeapon) {
 			TRUE_PLAYER_MOUSELOOK_ON = false;
 		}
 
@@ -1295,8 +1274,8 @@ void ARX_INVENTORY_OpenClose(Entity * _io)
 	}
 
 	if(player.Interface & INTER_INVENTORYALL) {
-		ARX_SOUND_PlayInterface(SND_BACKPACK, Random::getf(0.9f, 1.1f));
-		bInventoryClosing = true;
+		ARX_SOUND_PlayInterface(g_snd.BACKPACK, Random::getf(0.9f, 1.1f));
+		g_playerInventoryHud.close();
 	}
 }
 
@@ -1329,9 +1308,9 @@ void ARX_INVENTORY_TakeAllFromSecondaryInventory() {
 	}
 
 	if(bSound)
-		ARX_SOUND_PlayInterface(SND_INVSTD);
+		ARX_SOUND_PlayInterface(g_snd.INVSTD);
 	else
-		ARX_SOUND_PlayInterface(SND_INVSTD, 0.1f);
+		ARX_SOUND_PlayInterface(g_snd.INVSTD, 0.1f);
 }
 
 //-----------------------------------------------------------------------------
@@ -1351,7 +1330,7 @@ void ARX_INVENTORY_ReOrder() {
 		
 		RemoveFromAllInventories(io);
 		sInventory = 2;
-		sInventoryPos = Vec2s_ZERO;
+		sInventoryPos = Vec2s(0);
 		
 		if(CanBePutInSecondaryInventory(TSecondaryInventory, io)) {
 		} else{

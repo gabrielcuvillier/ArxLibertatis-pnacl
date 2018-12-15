@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -54,6 +54,6 @@ class Entity;
 
 void EERIE_LINKEDOBJ_ReleaseData(EERIE_3DOBJ * obj);
 void EERIE_LINKEDOBJ_UnLinkObjectFromObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tounlink);
-bool EERIE_LINKEDOBJ_LinkObjectToObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tolink, const std::string & actiontext, const std::string & actiontext2, Entity * io = NULL);
+void EERIE_LINKEDOBJ_LinkObjectToObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tolink, const std::string & actiontext, const std::string & actiontext2, Entity * io = NULL);
 
 #endif // ARX_SCENE_LINKEDOBJECT_H

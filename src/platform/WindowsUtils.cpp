@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,7 +49,7 @@ void WideString::allocateDynamic(size_t size) {
 	} else {
 		WCHAR backup[ARRAY_SIZE(m_static)];
 		std::copy(m_static, m_static + m_size, backup);
-		new (reinterpret_cast<char *>(&m_dynamic)) DynamicType(size, L'\0');
+		new(reinterpret_cast<char *>(&m_dynamic)) DynamicType(size, L'\0');
 		std::copy(backup, backup + m_size, str().begin());
 		m_size = size_t(-1);
 	}

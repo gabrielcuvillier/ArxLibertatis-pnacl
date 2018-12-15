@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -198,22 +198,16 @@ public:
 			for(size_t k = 0; k < entities.size(); k++) {
 				const EntityHandle handle = EntityHandle(k);
 				Entity * ioo = entities[handle];
-				
 				if(ioo && IsCollidingIO(io, ioo)) {
-					Entity * oes = EVENT_SENDER;
-					EVENT_SENDER = ioo;
-					Stack_SendIOScriptEvent(io, SM_COLLISION_ERROR_DETAIL);
-					EVENT_SENDER = oes;
+					Stack_SendIOScriptEvent(ioo, io, SM_COLLISION_ERROR_DETAIL);
 					colliding = true;
 				}
 			}
 			
 			if(colliding) {
-				Entity * oes = EVENT_SENDER;
-				EVENT_SENDER = NULL;
-				Stack_SendIOScriptEvent(io, SM_COLLISION_ERROR);
-				EVENT_SENDER = oes;
+				Stack_SendIOScriptEvent(NULL, io, SM_COLLISION_ERROR);
 			}
+			
 		}
 		
 		io->ioflags &= ~IO_NO_COLLISIONS;
@@ -271,7 +265,7 @@ public:
 				if(t->ioflags & IO_NPC) {
 					float dist = t->physics.cyl.radius + ioo->physics.cyl.radius + 10;
 					
-					ioo->pos += angleToVectorXZ(t->angle.getPitch()) * dist;
+					ioo->pos += angleToVectorXZ(t->angle.getYaw()) * dist;
 				}
 				
 				TREATZONE_AddIO(ioo);
@@ -425,16 +419,11 @@ class IfVisibleCommand : public Command {
 			return false;
 		}
 		
-		float ab = MAKEANGLE(io->angle.getPitch());
+		float ab = MAKEANGLE(io->angle.getYaw());
 		float aa = getAngle(io->pos.x, io->pos.z, ioo->pos.x, ioo->pos.z);
 		aa = MAKEANGLE(glm::degrees(aa));
 		
-		if((aa < ab + 90.f) && (aa > ab - 90.f)) {
-			//font
-			return true;
-		}
-		
-		return false;
+		return (aa < ab + 90.f && aa > ab - 90.f);
 	}
 	
 public:
@@ -496,7 +485,7 @@ public:
 				t->animlayer[0].cur_anim = t->anims[ANIM_DIE];
 				t->animlayer[1].cur_anim = NULL;
 				t->animlayer[2].cur_anim = NULL;
-				t->animlayer[0].ctime = 9999999;
+				t->animlayer[0].ctime = AnimationDurationMs(9999999);
 			}
 		}
 		
@@ -524,8 +513,8 @@ public:
 				float fangle = context.getFloat();
 				angle = static_cast<long>(fangle);
 				if(!(flg & flag('l'))) {
-					player.desiredangle.setPitch(fangle);
-					player.angle.setPitch(fangle);
+					player.desiredangle.setYaw(fangle);
+					player.angle.setYaw(fangle);
 				}
 			}
 			
@@ -542,12 +531,12 @@ public:
 				TELEPORT_TO_POSITION = target;
 				
 				if(angle == -1) {
-					TELEPORT_TO_ANGLE	=	static_cast<long>(player.angle.getPitch());
+					TELEPORT_TO_ANGLE = static_cast<long>(player.angle.getYaw());
 				} else {
 					TELEPORT_TO_ANGLE = angle;
 				}
 				
-				CHANGE_LEVEL_ICON =  confirm ? 1 : 200;
+				CHANGE_LEVEL_ICON = confirm ? ConfirmChangeLevel : ChangeLevelNow;
 				
 				DebugScript(' ' << options << ' ' << angle << ' ' << level << ' ' << target);
 				
@@ -563,7 +552,7 @@ public:
 			target = context.getWord();
 		}
 		
-		DebugScript(' ' << options << ' ' << player.angle.getPitch() << ' ' << target);
+		DebugScript(' ' << options << ' ' << player.angle.getYaw() << ' ' << target);
 		
 		if(target == "behind") {
 			ARX_INTERACTIVE_TeleportBehindTarget(context.getEntity());
@@ -657,13 +646,15 @@ public:
 		}
 		
 		// Delay destruction of the object to avoid invalid references
-		ARX_INTERACTIVE_DestroyIOdelayed(entity);
+		bool destroyed = ARX_INTERACTIVE_DestroyIOdelayed(entity);
 		
 		// Prevent further script events as the object has been destroyed!
-		entity->show = SHOW_FLAG_MEGAHIDE;
-		entity->ioflags |= IO_FREEZESCRIPT;
-		if(entity == context.getEntity()) {
-			return AbortAccept;
+		if(destroyed) {
+			entity->show = SHOW_FLAG_MEGAHIDE;
+			entity->ioflags |= IO_FREEZESCRIPT;
+			if(entity == context.getEntity()) {
+				return AbortAccept;
+			}
 		}
 		
 		return Success;
@@ -755,7 +746,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedIOControl() {
 	

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,15 +20,21 @@
 #ifndef ARX_INPUT_SDL2INPUTBACKEND_H
 #define ARX_INPUT_SDL2INPUTBACKEND_H
 
+#include <string>
+#include <stddef.h>
+
 #include <SDL.h>
 
 #include "input/InputBackend.h"
 #include "input/Keyboard.h"
 #include "input/Mouse.h"
+#include "input/TextInput.h"
 #include "math/Vector.h"
+#include "math/Types.h"
+#include "platform/Platform.h"
 #include "window/SDL2Window.h"
 
-class SDL2InputBackend : public InputBackend {
+class SDL2InputBackend arx_final : public InputBackend {
 	
 public:
 	
@@ -41,11 +47,13 @@ public:
 	bool getAbsoluteMouseCoords(int & absX, int & absY) const;
 	void setAbsoluteMouseCoords(int absX, int absY);
 	void getRelativeMouseCoords(int & relX, int & relY, int & wheelDir) const;
-	bool isMouseButtonPressed(int buttonId, int & deltaTime) const;
 	void getMouseButtonClickCount(int buttonId, int & numClick, int & numUnClick) const;
 	
 	// Keyboard
-	bool isKeyboardKeyPressed(int dikkey) const;
+	bool isKeyboardKeyPressed(int keyId) const;
+	void startTextInput(const Rect & box, TextInputHandler * handler);
+	void stopTextInput();
+	std::string getKeyName(Keyboard::Key key) const;
 	
 	void onEvent(const SDL_Event & event);
 	
@@ -53,13 +61,17 @@ private:
 	
 	SDL2Window * m_window;
 	
+	TextInputHandler * m_textHandler;
+	std::string m_editText;
+	size_t m_editCursorPos;
+	size_t m_editCursorLength;
+	
 	int wheel;
 	Vec2i cursorAbs;
 	Vec2i cursorRel;
 	Vec2i cursorRelAccum;
 	bool cursorInWindow;
 	bool keyStates[Keyboard::KeyCount];
-	bool buttonStates[Mouse::ButtonCount];
 	size_t clickCount[Mouse::ButtonCount];
 	size_t unclickCount[Mouse::ButtonCount];
 	

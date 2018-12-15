@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -22,34 +22,41 @@
 
 #include <string>
 
+#include "core/TimeTypes.h"
 #include "platform/Platform.h"
 
 namespace profiler {
-	
-	//! Initialize the Profiler
-	void initialize();
-	
-	//! Write the collected profile data to disk
-	void flush();
-	
-	void registerThread(const std::string& threadName);
-	void unregisterThread();
-	
-#if BUILD_PROFILER_INSTRUMENT
-	class Scope {
-		const char* m_tag;
-		u64         m_startTime;
-		
-	public:
-		explicit Scope(const char* tag);
-		~Scope();
-	};
-#endif // BUILD_PROFILER_INSTRUMENT
-}
+
+//! Initialize the Profiler
+void initialize();
+
+//! Write the collected profile data to disk
+void flush();
+
+void registerThread(const std::string & threadName);
+void unregisterThread();
 
 #if BUILD_PROFILER_INSTRUMENT
-	#define ARX_PROFILE(tag)           profiler::Scope profileScope##__LINE__(#tag)
-	#define ARX_PROFILE_FUNC()         profiler::Scope profileScope##__LINE__(__FUNCTION__)
+
+class Scope {
+	
+	const char * m_tag;
+	PlatformInstant m_startTime;
+	
+public:
+	
+	explicit Scope(const char * tag);
+	~Scope();
+	
+};
+
+#endif // BUILD_PROFILER_INSTRUMENT
+
+} // namespace profiler
+
+#if BUILD_PROFILER_INSTRUMENT
+	#define ARX_PROFILE(tag)           profiler::Scope profileScopeTag##__LINE__(#tag)
+	#define ARX_PROFILE_FUNC()         profiler::Scope profileScopeFunc##__LINE__(__FUNCTION__)
 #else
 	#define ARX_PROFILE(tag)           ARX_DISCARD(tag)
 	#define ARX_PROFILE_FUNC()         ARX_DISCARD()

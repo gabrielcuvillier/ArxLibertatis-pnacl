@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,93 +20,107 @@
 #ifndef ARX_GAME_CAMERA_H
 #define ARX_GAME_CAMERA_H
 
+#include <glm/glm.hpp>
+
 #include "graphics/GraphicsTypes.h"
 #include "math/Rectangle.h"
 #include "platform/Alignment.h"
 
-//TODO Remove
-#define CAM_SUBJVIEW 0
-#define CAM_TOPVIEW 1
-
-struct EERIE_TRANSFORM {
-	Vec3f pos;
-	float ycos;
-	float ysin;
-	float xsin;
-	float xcos;
-	float zcos;
-	float zsin;
-	Vec2f mod;
-
-	glm::mat4x4 worldToView;
-
-	void updateFromAngle(const Anglef &angle);
-};
-
-struct EERIE_CAMERA {
-
-	EERIE_TRANSFORM orgTrans;
-
+struct Camera {
+	
+private:
+	
+	static float imagePlaneHeight() { return 480.f; }
+	
+public:
+	
+	Vec3f m_pos;
 	float focal;
-
 	Anglef angle;
-
-	Vec3f d_pos;
-	Anglef d_angle;
-	Vec3f lasttarget;
-	Vec3f lastpos;
-	Vec3f translatetarget;
-	bool lastinfovalid;
-	Color3f fadecolor;
-	Rect clip;
-	Vec2i center;
-
-	float smoothing;
-
-	Color bkgcolor; // TODO was BGR!
 	float cdepth;
 	
-	glm::mat4x4 ProjectionMatrix;
-
-	void setTargetCamera(const Vec3f &target) {
-		setTargetCamera(target.x, target.y, target.z);
-	}
-
-	void setTargetCamera(float x, float y, float z)
-	{
-		if(orgTrans.pos.x == x && orgTrans.pos.y == y && orgTrans.pos.z == z)
-			return;
-
-		angle.setYaw((glm::degrees(getAngle(orgTrans.pos.y, orgTrans.pos.z, y, orgTrans.pos.z + glm::distance(Vec2f(x, z), Vec2f(orgTrans.pos.x, orgTrans.pos.z)))))); //alpha entre orgn et dest;
-		angle.setPitch((180.f + glm::degrees(getAngle(orgTrans.pos.x, orgTrans.pos.z, x, z)))); //beta entre orgn et dest;
-		angle.setRoll(0.f);
+	Camera()
+		: m_pos(0.f)
+		, focal(0.f)
+		, cdepth(0.f)
+	{ }
+	
+	float fov() const {
+		return focalToFov(focal);
 	}
 	
-	ARX_USE_ALIGNED_NEW(EERIE_CAMERA) // for ProjectionMatrix
+	void setFov(const float fov) {
+		focal = fovToFocal(fov);
+	}
+	
+	void lookAt(const Vec3f & target) {
+		if(m_pos != target) {
+			angle = getLookAtAngle(m_pos, target);
+		}
+	}
+	
+	//! \param fov vertical angle in radians
+	static float fovToFocal(float fov) {
+		return imagePlaneHeight() / 2.f / glm::tan(fov / 2.f);
+	}
+	
+	//! \return vertical angle in radians
+	static float focalToFov(float focal) {
+		return 2.f * glm::atan(imagePlaneHeight() / 2.f / focal);
+	}
+	
+	static Anglef getLookAtAngle(const Vec3f & origin, const Vec3f & target);
+	
 };
-
 
 struct IO_CAMDATA {
-	EERIE_CAMERA cam;
-	ARX_USE_ALIGNED_NEW(IO_CAMDATA) // for cam
+	
+	Camera cam;
+	
+	Vec3f lasttarget;
+	Vec3f translatetarget;
+	bool lastinfovalid;
+	float smoothing;
+	
+	IO_CAMDATA()
+		: lasttarget(0.f)
+		, translatetarget(0.f)
+		, lastinfovalid(false)
+		, smoothing(0.f)
+	{ }
+	
 };
 
-
-struct MASTER_CAMERA_STRUCT {
-	long exist; // 2== want to change to want_vars...
-	Entity * io;
-	Entity * want_io;
+struct PreparedCamera {
+	
+	glm::mat4x4 m_worldToView;
+	glm::mat4x4 m_viewToClip;
+	glm::mat4x4 m_viewToScreen;
+	glm::mat4x4 m_worldToScreen;
+	
+	PreparedCamera()
+		: m_worldToView(1.f)
+		, m_viewToClip(1.f)
+		, m_viewToScreen(1.f)
+		, m_worldToScreen(1.f)
+	{ }
+	
+	ARX_USE_ALIGNED_NEW(PreparedCamera) // for matrices
+	
 };
 
-extern MASTER_CAMERA_STRUCT MasterCamera;
+extern Entity * g_cameraEntity;
+extern PreparedCamera g_preparedCamera;
+extern Camera * g_camera;
+extern Camera g_playerCamera;
 
-void SP_PrepareCamera(EERIE_CAMERA * cam);
-void PrepareCamera(EERIE_CAMERA *cam, const Rect & size);
+void PrepareCamera(Camera * cam, const Rect & viewport, const Vec2i & projectionCenter);
+inline void PrepareCamera(Camera * cam, const Rect & viewport) {
+	PrepareCamera(cam, viewport, viewport.center());
+}
 
-extern EERIE_CAMERA * ACTIVECAM;
-void SetActiveCamera(EERIE_CAMERA* cam);
+void SetActiveCamera(Camera * cam);
 
-ARX_USE_ALIGNED_ALLOCATOR(EERIE_CAMERA) // for ProjectionMatrix
-ARX_USE_ALIGNED_ALLOCATOR(IO_CAMDATA) // for cam
+ARX_USE_ALIGNED_ALLOCATOR(PreparedCamera) // for matrices
 
 #endif // ARX_GAME_CAMERA_H
