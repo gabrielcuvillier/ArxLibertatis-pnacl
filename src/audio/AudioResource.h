@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -47,6 +47,9 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <stddef.h>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
+
+#include <boost/noncopyable.hpp>
 
 #include "audio/AudioTypes.h"
 #include "platform/Platform.h"
@@ -56,8 +59,6 @@ class PakFileHandle;
 namespace res { class path; }
 
 namespace audio {
-
-PakFileHandle * OpenResource(const res::path & name, const res::path & resource_path);
 
 class ResourceHandle {
 	
@@ -85,118 +86,110 @@ private:
 	
 };
 
-template <class T>
-class ResourceList {
+template <typename T, typename Handle = size_t>
+class ResourceList : private boost::noncopyable {
+	
+	template <typename Tag, typename IndexType, IndexType InvalidValue>
+	static size_t get(HandleType<Tag, IndexType, InvalidValue> handle) {
+		return size_t(handle.handleData());
+	}
+	
+	template <typename IndexType>
+	static size_t get(IndexType index) {
+		return size_t(index);
+	}
 	
 public:
 	
-	static const size_t ALIGNMENT = 16;
-	
 	typedef T * const * iterator;
+	typedef const T * const * const_iterator;
 	
-	ResourceList();
-	~ResourceList();
+	ResourceList() { }
+	~ResourceList() { clear(); }
 	
-	bool isValid(s32 index) { return ((size_t)index < _size && list[index]); } 
-	T * operator[](s32 index) { return list[index]; }
-	size_t size() { return _size; }
-	s32 add(T * element);
-	void remove(s32 index);
+	bool isValid(Handle handle) const {
+		return (get(handle) < m_list.size() && m_list[get(handle)]);
+	}
+	
+	T * operator[](Handle handle) { return m_list[get(handle)]; }
+	const T * operator[](Handle handle) const { return m_list[get(handle)]; }
+	size_t size() const { return m_list.size(); }
+
+	Handle add(T * element);
+	void remove(Handle handle);
 	void clear();
 	
-	iterator begin() { return list; }
-	iterator end() { return list + _size; }
+	iterator begin() { return &m_list[0]; }
+	iterator end() { return &m_list[0] + m_list.size(); }
+	const_iterator begin() const { return &m_list[0]; }
+	const_iterator end() const { return &m_list[0] + m_list.size(); }
+	
 	iterator remove(iterator i);
 	
 private:
 	
-	size_t _size;
-	T ** list;
+	std::vector<T *> m_list;
 	
 };
 
-template <class T>
-inline ResourceList<T>::ResourceList() : _size(0), list(NULL) { }
-
-template <class T>
-inline ResourceList<T>::~ResourceList() {
-	clear();
-}
-
-template <class T>
-inline s32 ResourceList<T>::add(T * element) {
+template <typename T, typename Handle>
+Handle ResourceList<T, Handle>::add(T * element) {
 	
-	size_t i = 0;
-	for(; i < _size; i++) {
-		if(!list[i]) {
-			list[i] = element;
-			return i;
+	for(size_t i = 0; i < m_list.size(); i++) {
+		if(!m_list[i]) {
+			m_list[i] = element;
+			return Handle(i);
 		}
 	}
 	
-	void * ptr = std::realloc(list, (_size + ALIGNMENT) * sizeof(*list));
-	if(!ptr) {
-		return INVALID_ID;
-	}
+	m_list.push_back(element);
 	
-	list = (T **)ptr, _size += ALIGNMENT;
-	
-	std::memset(&list[i], 0, ALIGNMENT * sizeof(*list));
-	list[i] = element;
-	
-	return i;
+	return Handle(m_list.size() - 1);
 }
 
-template <class T>
-inline void ResourceList<T>::remove(s32 index) {
+template <typename T, typename Handle>
+void ResourceList<T, Handle>::remove(Handle handle) {
 	
-	if((size_t)index >= _size || !list[index]) {
+	if(!isValid(handle)) {
 		return;
 	}
 	
-	T * toDelete = list[index];
-	list[index] = NULL;
+	size_t i = get(handle);
+	delete m_list[i];
+	m_list[i] = NULL;
 	
-	if(_size <= ALIGNMENT) {
-		delete toDelete;
-		return;
-	}
-	
-	for(size_t j(_size - ALIGNMENT); j < _size; j++) {
-		if(list[j]) {
-			delete toDelete;
+	for(size_t j = i + 1; j < m_list.size(); j++) {
+		if(m_list[j]) {
 			return;
 		}
 	}
 	
-	list = (T **)std::realloc(list, (_size -= ALIGNMENT) * sizeof(*list));
-	delete toDelete;
+	m_list.resize(i);
+	
 }
 
-template <class T>
-inline void ResourceList<T>::clear() {
+template <typename T, typename Handle>
+void ResourceList<T, Handle>::clear() {
 	
-	for(size_t i = 0; i < _size; i++) {
-		if(list[i]) {
-			T * toDelete = list[i];
-			list[i] = NULL;
-			delete toDelete;
-		}
+	for(size_t i = 0; i < m_list.size(); i++) {
+		delete m_list[i];
 	}
 	
-	std::free(list);
-	list = NULL;
-	_size = 0;
+	m_list.clear();
+	
 }
 
-template <class T>
-inline typename ResourceList<T>::iterator ResourceList<T>::remove(iterator i) {
-	size_t idx = i - begin();
-	remove(idx);
-	if(idx >= _size) {
+template <typename T, typename Handle>
+typename ResourceList<T, Handle>::iterator ResourceList<T, Handle>::remove(iterator i) {
+	
+	size_t index = i - begin();
+	
+	remove(Handle(index));
+	if(index >= m_list.size()) {
 		return end();
 	}
-	return begin() + idx + 1;
+	
+	return begin() + index + 1;
 }
 
 } // namespace audio

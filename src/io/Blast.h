@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -46,6 +46,8 @@
 
 #include <stddef.h>
 
+#include <string>
+
 /*
  * blast() decompresses the PKWare Data Compression Library (DCL) compressed
  * format.  It provides the same functionality as the explode() function in
@@ -57,8 +59,8 @@
 /* Definitions for input/output functions passed to blast().  See below for
  * what the provided functions need to do.
  */
-typedef size_t (*blast_in)(void *how, const unsigned char **buf);
-typedef int (*blast_out)(void *how, unsigned char *buf, size_t len);
+typedef size_t (*blast_in)(void * how, const unsigned char ** buf);
+typedef int (*blast_out)(void * how, unsigned char * buf, size_t len);
 
 enum BlastResult {
 	BLAST_TRUNCATED_INPUT = 2, // ran out of input before completing decompression
@@ -90,7 +92,7 @@ enum BlastResult {
  * At the bottom of blast.c is an example program that uses blast() that can be
  * compiled to produce a command-line decompression filter by defining TEST.
  */
-BlastResult blast(blast_in infun, void *inhow, blast_out outfun, void *outhow);
+BlastResult blast(blast_in infun, void * inhow, blast_out outfun, void * outhow);
 
 // Convenience implementations.
 
@@ -114,15 +116,11 @@ struct BlastMemInBuffer {
 	
 };
 
-struct BlastMemOutBufferRealloc {
+struct BlastMemOutString {
 	
-	char * buf;
+	std::string & buffer;
 	
-	size_t allocSize;
-	size_t fillSize;
-	
-	explicit BlastMemOutBufferRealloc(char * b = NULL, size_t alloc = 0, size_t fill = 0)
-		: buf(b), allocSize(alloc), fillSize(fill) { }
+	explicit BlastMemOutString(std::string & destination) : buffer(destination) { }
 	
 };
 
@@ -130,34 +128,29 @@ struct BlastMemOutBufferRealloc {
  * Writes data to a BlastMemOutBuffer.
  * Advances the buf pointer and decreases size.
  */
-int blastOutMem(void * Param, unsigned char * buf, size_t len);
+int blastOutMem(void * param, unsigned char * buf, size_t len);
 
 /*!
  * Reads data from a BlastMemInBuffer.
  * Advances the buf pointer and decrises size.
  */
-size_t blastInMem(void * Param, const unsigned char ** buf);
+size_t blastInMem(void * param, const unsigned char ** buf);
 
 /*!
- * Writes data to a BlastMemOutBufferRealloc.
- * Increases fillSize and resizes the buffer if needed.
- * Uses realloc() for resize:
- *  - If there is an intitial buffer, it must be allocated with malloc()
- *  - The final buffer must be deallocated using free(), not delete
+ * Writes data to a BlastMemOutString.
  */
-int blastOutMemRealloc(void * Param, unsigned char * buf, size_t len);
-
-/*!
- * Decompress data and allocate memory as needed.
- * Returned pointer should be deallocated using free(), not delete.
- * 
- * If the uncompressed size is known, always uses blastMem instead.
- */
-char * blastMemAlloc(const char * from, size_t fromSize, size_t & toSize);
+int blastOutString(void * param, unsigned char * buf, size_t len);
 
 /*!
  * Decompress data.
  */
-size_t blastMem(const char * from, size_t fromSize, char * to, size_t toSize);
+std::string blast(const char * from, size_t fromSize, size_t toSizeHint = size_t(-1));
+
+/*!
+ * Decompress data.
+ */
+inline std::string blast(const std::string & from, size_t toSizeHint = size_t(-1)) {
+	return blast(from.data(), from.size(), toSizeHint);
+}
 
 #endif // ARX_IO_BLAST_H

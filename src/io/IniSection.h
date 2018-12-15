@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,7 +23,14 @@
 #include <string>
 #include <vector>
 
-struct IniKey {
+class IniKey {
+	
+	std::string name;
+	std::string value;
+	
+	friend class IniSection;
+	
+public:
 	
 	IniKey(const std::string & _name, const std::string & _value)
 		: name(_name)
@@ -40,17 +47,9 @@ struct IniKey {
 	//! Support either boolean specified as strings (true, false) or 0, 1
 	bool getValue(bool defaultValue) const;
 	
-private:
-	
-	std::string name;
-	std::string value;
-	
-	friend class IniSection;
 };
 
 class IniSection {
-	
-private:
 	
 	typedef std::vector<IniKey> Keys;
 	Keys keys;
@@ -60,6 +59,11 @@ private:
 	 * All preceding space and trailing space / commens must already be removed.
 	 */
 	void addKey(const std::string & key, const std::string & value);
+	/*!
+	 * Set a key in the ini format (name=value or name="value")
+	 * All preceding space and trailing space / commens must already be removed.
+	 */
+	void setKey(const std::string & key, const std::string & value);
 	
 	friend class IniReader;
 	

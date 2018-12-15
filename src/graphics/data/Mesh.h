@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -48,77 +48,19 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_GRAPHICS_DATA_MESH_H
 
 #include <set>
+#include <vector>
 
+#include "ai/Anchors.h"
 #include "graphics/GraphicsTypes.h"
 #include "math/Rectangle.h"
 #include "game/Camera.h"
+#include "scene/Background.h"
 
 class Entity;
 
-struct EERIE_BKG_INFO
-{
-	bool				treat;
-	short				nbpoly;
-	short				nbianchors;
-	short				nbpolyin;
-	EERIEPOLY *			polydata;
-	EERIEPOLY **		polyin;
-	long *				ianchors; // index on anchors list
-	
-	EERIE_BKG_INFO()
-		: treat(false)
-		, nbpoly(0)
-		, nbianchors(0)
-		, nbpolyin(0)
-		, polydata(NULL)
-		, polyin(NULL)
-		, ianchors(NULL)
-	{}
-};
-
-static const short MAX_BKGX = 160;
-static const short MAX_BKGZ = 160;
-static const short BKG_SIZX = 100;
-static const short BKG_SIZZ = 100;
-
-struct ANCHOR_DATA;
-
-struct EERIE_BACKGROUND
-{
-	EERIE_BKG_INFO	fastdata[MAX_BKGX][MAX_BKGZ];
-	long		exist;
-	short		Xsize;
-	short		Zsize;
-	short		Xdiv;
-	short		Zdiv;
-	float		Xmul;
-	float		Zmul;
-	long		  nbanchors;
-	ANCHOR_DATA * anchors;
-	
-	EERIE_BACKGROUND()
-		: exist(false)
-		, Xsize(0)
-		, Zsize(0)
-		, Xdiv(0)
-		, Zdiv(0)
-		, Xmul(0)
-		, Zmul(0)
-		, nbanchors(0)
-		, anchors(NULL)
-	{ }
-};
-
 extern long EERIEDrawnPolys;
 
-extern EERIE_BACKGROUND * ACTIVEBKG;
-extern EERIE_CAMERA * ACTIVECAM;
-
-//	Entity Struct End
-
-bool Visible(const Vec3f & orgn, const Vec3f & dest, Vec3f * hit);
-
-EERIE_BKG_INFO * getFastBackgroundData(float x, float z);
+extern BackgroundData * ACTIVEBKG;
 
 EERIEPOLY * CheckTopPoly(const Vec3f & pos);
 EERIEPOLY * CheckInPoly(const Vec3f & poss, float * needY = NULL);
@@ -139,70 +81,45 @@ EERIEPOLY * EEIsUnderWater(const Vec3f & pos);
  *         on the xz plane, true otherwise.
  */
 bool GetTruePolyY(const EERIEPOLY * ep, const Vec3f & pos, float * ret);
+bool GetTruePolyY(const PortalPoly * ep, const Vec3f & pos, float * ret);
 
 bool IsAnyPolyThere(float x, float z);
-bool IsVertexIdxInGroup(EERIE_3DOBJ * eobj, size_t idx, size_t grs);
 EERIEPOLY * GetMinPoly(const Vec3f & pos);
 EERIEPOLY * GetMaxPoly(const Vec3f & pos);
  
 int PointIn2DPolyXZ(const EERIEPOLY * ep, float x, float z);
-
-int EERIELaunchRay3(const Vec3f & orgn, const Vec3f & dest, Vec3f & hit, long flag);
+int PointIn2DPolyXZ(const PortalPoly * ep, float x, float z);
 
 Vec3f EE_RT(const Vec3f & in);
-void EE_P(const Vec3f & in, TexturedVertex & out);
-void EE_RTP(const Vec3f & in, TexturedVertex & out);
+Vec4f worldToClipSpace(const Vec3f & in);
+void worldToClipSpace(const Vec3f & in, TexturedVertex & out);
 
 
 // FAST SAVE LOAD
-bool FastSceneLoad(const res::path & path);
+bool FastSceneLoad(const res::path & path, Vec3f & trans);
 
 struct RenderMaterial;
 
 void Draw3DObject(EERIE_3DOBJ * eobj, const Anglef & angle, const Vec3f & pos, const Vec3f & scale, const Color4f & coll, RenderMaterial mat);
 
-//****************************************************************************
-// BACKGROUND MANAGEMENT FUNCTIONS START
-long BKG_CountPolys(const EERIE_BACKGROUND & eb);
-long BKG_CountIgnoredPolys(const EERIE_BACKGROUND & eb);
+long MakeTopObjString(Entity * io, std::string & dest);
 
-#if BUILD_EDIT_LOADSAVE
-void SceneAddMultiScnToBackground(EERIE_MULTI3DSCENE * ms);
-#endif
+Vec2f getWaterFxUvOffset(float watereffect, const Vec3f & odtv);
 
-void ClearBackground(EERIE_BACKGROUND * eb);
-int InitBkg(EERIE_BACKGROUND * eb, short sx, short sz, short Xdiv, short Zdiv);
+float PtIn2DPolyProj(const std::vector<Vec4f> & verts, EERIE_FACE * ef, float x, float z);
 
-void EERIEAddPoly(TexturedVertex * vert, TexturedVertex * vert2, TextureContainer * tex, long render, float transval);
-// BACKGROUND MANAGEMENT FUNCTIONS END
-//****************************************************************************
-
-long MakeTopObjString(Entity * io, std::string& dest);
-bool TryToQuadify(EERIEPOLY * ep,EERIE_3DOBJ * eobj);
-Vec2f getWaterFxUvOffset(const Vec3f & odtv);
-
-//*************************************************************************************
-//*************************************************************************************
-
-long EERIERTPPoly(EERIEPOLY *ep);
-
-float PtIn2DPolyProj(const std::vector<EERIE_VERTEX> & verts, EERIE_FACE * ef, float x, float z);
-
-long CountBkgVertex();
+void EERIE_PORTAL_Release();
 
 bool RayCollidingPoly(const Vec3f & orgn, const Vec3f & dest, const EERIEPOLY & ep, Vec3f * hit);
-
-void EERIEPOLY_Compute_PolyIn();
 
 
 #define MAX_FRUSTRUMS 32
 
-struct Plane
-{
-	float	a;
-	float	b;
-	float	c;
-	float	d; // dist to origin
+struct Plane {
+	float a;
+	float b;
+	float c;
+	float d; // dist to origin
 };
 
 inline float distanceToPoint(const Plane & plane, const Vec3f & point) {
@@ -219,37 +136,42 @@ inline void normalizePlane(Plane & plane) {
 	plane.d = plane.d * n;
 }
 
-struct EERIE_FRUSTRUM
-{
+struct EERIE_FRUSTRUM {
 	Plane plane[4];
 };
 
-struct EERIE_FRUSTRUM_DATA
-{
+struct EERIE_FRUSTRUM_DATA {
 	long nb_frustrums;
 	EERIE_FRUSTRUM frustrums[MAX_FRUSTRUMS];
 };
 
-struct PORTAL_ROOM_DRAW
-{
-	short			count;
-	EERIE_FRUSTRUM_DATA	frustrum;
+struct PORTAL_ROOM_DRAW {
+	short count;
+	EERIE_FRUSTRUM_DATA frustrum;
 };
 
-struct ROOM_DIST_DATA
-{
-	float	distance; // -1 means use truedist
+struct ROOM_DIST_DATA {
+	
+	float distance; // -1 means use truedist
 	Vec3f startpos;
 	Vec3f endpos;
+	
+	ROOM_DIST_DATA()
+		: distance(0.f)
+		, startpos(0.f)
+		, endpos(0.f)
+	{ }
+	
 };
 
-extern ROOM_DIST_DATA * RoomDistance;
+extern std::vector<ROOM_DIST_DATA> g_roomDistance;
 
 void UpdateIORoom(Entity * io);
+
+void FreeRoomDistance();
 float SP_GetRoomDist(const Vec3f & pos, const Vec3f & c_pos, long io_room, long Cam_Room);
+
 void EERIE_PORTAL_ReleaseOnlyVertexBuffer();
 void ComputePortalVertexBuffer();
-bool GetNameInfo( const std::string& name1,long& type,long& val1,long& val2);
-
 
 #endif // ARX_GRAPHICS_DATA_MESH_H

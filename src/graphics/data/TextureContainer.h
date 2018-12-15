@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -41,7 +41,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 ===========================================================================
 */
 // Code: Cyril Meynier
-//       Sébastien Scieux	(JPEG & PNG)
+//       Sébastien Scieux (JPEG & PNG)
 //
 // Copyright (c) 1999 ARKANE Studios SA. All rights reserved
 
@@ -57,6 +57,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #ifndef ARX_GRAPHICS_DATA_TEXTURECONTAINER_H
 #define ARX_GRAPHICS_DATA_TEXTURECONTAINER_H
 
+#include <stddef.h>
 #include <vector>
 #include <map>
 
@@ -67,12 +68,24 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "math/Vector.h"
 #include "util/Flags.h"
 
-struct SMY_ARXMAT;
-struct EERIEPOLY;
-struct TexturedVertex;
-class Texture2D;
+class Texture;
 
 extern long GLOBAL_EERIETEXTUREFLAG_LOADSCENE_RELEASE;
+
+enum BatchBucket {
+	BatchBucket_Opaque = 0,
+	BatchBucket_Blended,
+	BatchBucket_Multiplicative,
+	BatchBucket_Additive,
+	BatchBucket_Subtractive
+};
+
+struct SMY_ARXMAT {
+	unsigned long uslStartVertex;
+	unsigned long uslNbVertex;
+	unsigned long offset[5];
+	unsigned long count[5];
+};
 
 /*!
  * Linked list structure to hold info per texture.
@@ -84,11 +97,11 @@ class TextureContainer : private boost::noncopyable {
 public:
 	
 	enum TCFlag {
-		NoMipmap     = (1<<0),
-		NoInsert     = (1<<1),
-		Level        = (1<<2),
-		NoColorKey   = (1<<3),
-		Intensity    = (1<<4),
+		NoMipmap   = 1 << 0,
+		NoInsert   = 1 << 1,
+		Level      = 1 << 2,
+		NoColorKey = 1 << 3,
+		Intensity  = 1 << 4,
 	};
 	
 	DECLARE_FLAGS(TCFlag, TCFlags)
@@ -126,8 +139,8 @@ public:
 	 */
 	bool CreateHalo();
 
-	static const int HALO_RADIUS = 5;
-	TextureContainer *getHalo() {
+	static const size_t HALO_RADIUS = 5;
+	TextureContainer * getHalo() {
 		return (TextureHalo ? TextureHalo : (CreateHalo() ? TextureHalo : NULL));
 	}
 
@@ -142,46 +155,27 @@ public:
 	const res::path m_texName; // Name of texture
 	
 	Vec2i m_size;
-	Vec2i size() { return Vec2i(m_size.x, m_size.y); }
+	Vec2i size() { return m_size; }
 	
 	TCFlags m_dwFlags;
 	u32 userflags;
 	
-	Texture2D * m_pTexture; // Diffuse
+	Texture * m_pTexture; // Diffuse
 	
 	/*!
 	 * End of the image in texture coordinates (image size divided by stored size).
-	 * This is usually Vec2f_ONE but may differ if only power of two textures are supported.
+	 * This is usually Vec2f(1.f) but may differ if only power of two textures are supported.
 	 */
 	Vec2f uv;
 	
 	//! Size of half a pixel in normalized texture coordinates.
 	Vec2f hd;
 	
-	TextureContainer * TextureRefinement;
 	TextureContainer * m_pNext; // Linked list ptr
 	TCFlags systemflags;
 	
-	// BEGIN TODO: Move to a RenderBatch class... This RenderBatch class should contain a pointer to the TextureContainer used by the batch
-	
-	size_t tMatRoomSize;
-	SMY_ARXMAT * tMatRoom;
-	
-	enum TransparencyType {
-		Opaque = 0,
-		Blended,
-		Multiplicative,
-		Additive,
-		Subtractive
-	};
-
-	unsigned long max[5];
-	unsigned long count[5];
-	TexturedVertex * list[5];
-
-	// END TODO
-	
-	bool hasColorKey();
+	std::vector<SMY_ARXMAT> m_roomBatches;
+	std::vector<TexturedVertex> m_modelBatch[5];
 	
 };
 
@@ -192,9 +186,5 @@ DECLARE_FLAGS_OPERATORS(TextureContainer::TCFlags)
 // ASCII name.
  
 TextureContainer * GetTextureList();
-
-// Texture creation and deletion functions
-
-TextureContainer * GetAnyTexture();
 
 #endif // ARX_GRAPHICS_DATA_TEXTURECONTAINER_H

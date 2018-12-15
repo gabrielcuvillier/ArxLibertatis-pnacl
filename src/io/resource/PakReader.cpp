@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -40,7 +40,7 @@ namespace {
 
 const size_t PAK_READ_BUF_SIZE = 1024;
 
-static PakReader::ReleaseType guessReleaseType(u32 first_bytes) {
+PakReader::ReleaseType guessReleaseType(u32 first_bytes) {
 	switch(first_bytes) {
 		case 0x46515641:
 			return PakReader::FullGame;
@@ -51,7 +51,7 @@ static PakReader::ReleaseType guessReleaseType(u32 first_bytes) {
 	}
 }
 
-static void pakDecrypt(char * fat, size_t fat_size, PakReader::ReleaseType keyId) {
+void pakDecrypt(char * fat, size_t fat_size, PakReader::ReleaseType keyId) {
 	
 	static const char PAK_KEY_DEMO[] = "NSIARKPRQPHBTE50GRIH3AYXJP2AMF3FCEYAVQO5Q"
 		"GA0JGIIH2AYXKVOA1VOGGU5GSQKKYEOIAQG1XRX0J4F5OEAEFI4DD3LL45VJTVOA1VOGGUKE50GRI";
@@ -241,16 +241,20 @@ void CompressedFile::read(void * buf) const {
 	
 	archive.seekg(offset);
 	
-	BlastFileInBuffer in(&archive, storedSize);
+	std::string buffer;
+	buffer.resize(storedSize);
+	fs::read(archive, &buffer[0], storedSize);
+	
+	BlastMemInBuffer in(buffer.data(), buffer.size());
 	BlastMemOutBuffer out(reinterpret_cast<char *>(buf), size());
 	
-	int r = blast(blastInFile, &in, blastOutMem, &out);
+	int r = blast(blastInMem, &in, blastOutMem, &out);
 	if(r) {
 		LogError << "Blast error " << r << " outSize=" << size();
 	}
 	
 	arx_assert(!archive.fail());
-	arx_assert(in.remaining == 0);
+	arx_assert(in.size == 0);
 	arx_assert(out.size == 0);
 	
 	archive.clear();
@@ -389,7 +393,7 @@ public:
 	explicit  PlainFileHandle(const fs::path & path)
 		: ifs(path, fs::fstream::in | fs::fstream::binary) {
 		arx_assert(ifs.is_open());
-	};
+	}
 	
 	size_t read(void * buf, size_t size);
 	
@@ -420,14 +424,17 @@ size_t PlainFileHandle::read(void * buf, size_t size) {
 	return fs::read(ifs, buf, size).gcount();
 }
 
-std::ios_base::seekdir arxToStlSeekOrigin[] = {
-	std::ios_base::beg,
-	std::ios_base::cur,
-	std::ios_base::end
-};
+std::ios_base::seekdir arxToStlSeekOrigin(Whence whence) {
+	switch(whence) {
+		case SeekSet: return std::ios_base::beg;
+		case SeekCur: return std::ios_base::cur;
+		case SeekEnd: return std::ios_base::end;
+	}
+	arx_unreachable();
+}
 
 int PlainFileHandle::seek(Whence whence, int offset) {
-	return ifs.seekg(offset, arxToStlSeekOrigin[whence]).tellg();
+	return ifs.seekg(offset, arxToStlSeekOrigin(whence)).tellg();
 }
 
 size_t PlainFileHandle::tell() {
@@ -470,26 +477,25 @@ bool PakReader::addArchive(const fs::path & pakfile) {
 	}
 	
 	// Read the whole FAT.
-	char * fat = new char[fat_size];
-	if(ifs->read(fat, fat_size).fail()) {
+	std::vector<char> fat(fat_size);
+	if(ifs->read(&fat[0], fat_size).fail()) {
 		LogError << pakfile << ": error reading FAT at " << fat_offset
 		         << " with size " << fat_size;
-		delete[] fat;
 		delete ifs;
 		return false;
 	}
 	
 	// Decrypt the FAT.
-	ReleaseType key = guessReleaseType(*reinterpret_cast<const u32 *>(fat));
+	ReleaseType key = guessReleaseType(*reinterpret_cast<const u32 *>(&fat[0]));
 	if(key != Unknown) {
-		pakDecrypt(fat, fat_size, key);
+		pakDecrypt(&fat[0], fat_size, key);
 	} else {
 		LogWarning << pakfile << ": unknown PAK key ID 0x" << std::hex << std::setfill('0')
-		           << std::setw(8) << *(u32*)fat << ", assuming no key";
+		           << std::setw(8) << *reinterpret_cast<u32 *>(&fat[0]) << ", assuming no key";
 	}
 	release |= key;
 	
-	char * pos = fat;
+	char * pos = &fat[0];
 	
 	paks.push_back(ifs);
 	
@@ -498,7 +504,7 @@ bool PakReader::addArchive(const fs::path & pakfile) {
 		char * dirname = util::safeGetString(pos, fat_size);
 		if(!dirname) {
 			LogError << pakfile << ": error reading directory name from FAT, wrong key?";
-			goto error;
+			return false;
 		}
 		
 		PakDirectory * dir = addDirectory(res::path::load(dirname));
@@ -506,7 +512,7 @@ bool PakReader::addArchive(const fs::path & pakfile) {
 		u32 nfiles;
 		if(!util::safeGet(nfiles, pos, fat_size)) {
 			LogError << pakfile << ": error reading file count from FAT, wrong key?";
-			goto error;
+			return false;
 		}
 		
 		while(nfiles--) {
@@ -514,7 +520,7 @@ bool PakReader::addArchive(const fs::path & pakfile) {
 			char * filename =  util::safeGetString(pos, fat_size);
 			if(!filename) {
 				LogError << pakfile << ": error reading file name from FAT, wrong key?";
-				goto error;
+				return false;
 			}
 			
 			size_t len = std::strlen(filename);
@@ -528,7 +534,7 @@ bool PakReader::addArchive(const fs::path & pakfile) {
 			   || !util::safeGet(uncompressedSize, pos, fat_size)
 				 || !util::safeGet(size, pos, fat_size)) {
 				LogError << pakfile << ": error reading file attributes from FAT, wrong key?";
-				goto error;
+				return false;
 			}
 			
 			const u32 PAK_FILE_COMPRESSED = 1;
@@ -544,17 +550,9 @@ bool PakReader::addArchive(const fs::path & pakfile) {
 		
 	}
 	
-	delete[] fat;
-	
 	LogInfo << "Loaded PAK " << pakfile;
 	return true;
 	
-	
-error:
-	
-	delete[] fat;
-	
-	return false;
 }
 
 void PakReader::clear() {
@@ -569,28 +567,14 @@ void PakReader::clear() {
 	}
 }
 
-bool PakReader::read(const res::path & name, void * buf) {
+std::string PakReader::read(const res::path & name) {
 	
 	PakFile * f = getFile(name);
 	if(!f) {
-		return false;
+		return std::string();
 	}
 	
-	f->read(buf);
-	
-	return true;
-}
-
-char * PakReader::readAlloc(const res::path & name, size_t & sizeRead) {
-	
-	PakFile * f = getFile(name);
-	if(!f) {
-		return NULL;
-	}
-	
-	sizeRead = f->size();
-	
-	return f->readAlloc();
+	return f->read();
 }
 
 PakFileHandle * PakReader::open(const res::path & name) {
@@ -606,10 +590,11 @@ PakFileHandle * PakReader::open(const res::path & name) {
 bool PakReader::addFiles(const fs::path & path, const res::path & mount) {
 	
 	if(fs::is_directory(path)) {
-			
+		
 		bool ret = addFiles(addDirectory(mount), path);
-	
+		
 		if(ret) {
+			release |= External;
 			LogInfo << "Added dir " << path;
 		}
 		
@@ -652,7 +637,7 @@ bool PakReader::addFile(PakDirectory * dir, const fs::path & path,
 	}
 	
 	u64 size = fs::file_size(path);
-	if(size == (u64)-1) {
+	if(size == u64(-1)) {
 		return false;
 	}
 	
@@ -688,4 +673,4 @@ bool PakReader::addFiles(PakDirectory * dir, const fs::path & path) {
 	return ret;
 }
 
-PakReader * resources;
+PakReader * g_resources;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -31,8 +31,6 @@
  */
 class IniReader {
 	
-private:
-	
 	typedef std::map<std::string, IniSection> Sections;
 	Sections sections;
 	
@@ -44,57 +42,59 @@ public:
 	 * Parses an input stream for configuration section and respective keys.
 	 * Stores them all in a section map as IniSection objects.
 	 * \param is The input stream with the ini data.
+	 * \param overrideValues override values if key already exists
 	 * \return false if there were problems (some data may have been read)
 	 */
-	bool read(std::istream & input);
+	bool read(std::istream & is, bool overrideValues = false);
 	
 	void clear();
 	
 	/*!
 	 * Gets the specified configuration value from the map of ConfigSections
-	 * \param section The section to search in
-	 * \param key The key to look for in the section. Retuns the value of the first key if this is empty.
+	 * \param sectionName The section to search in
+	 * \param keyName The key to look for in the section. Retuns the value of the first key if this is empty.
 	 * \param defaultValue The default value to return if anything doesn't match
 	 * \return The value of the key found or the default value otherwise
 	 */
-	const std::string & getKey(const std::string & section, const std::string & key, const std::string & defaultValue) const;
+	const std::string & getKey(const std::string & sectionName, const std::string & keyName,
+	                           const std::string & defaultValue) const;
 	
 	/*!
 	 * Reads an int from the ini and returns its converted int value,
 	 * return the default value if an empty string is found.
-	 * \param section The section to read from
-	 * \param key The key in the section to return
+	 * \param sectionName The section to read from
+	 * \param keyName The key in the section to return
 	 * \param defaultValue The default value to return in the case of an empty string
 	 */
-	int getKey(const std::string & section, const std::string & key, int defaultValue) const;
+	int getKey(const std::string & sectionName, const std::string & keyName, int defaultValue) const;
 	
 	/*!
 	 * Reads a float from the ini and returns its converted int value,
 	 * return the default value if an empty string is found.
-	 * \param section The section to read from
-	 * \param key The key in the section to return
-	 * \param default_value The default value to return in the case of an empty string
+	 * \param sectionName The section to read from
+	 * \param keyName The key in the section to return
+	 * \param defaultValue The default value to return in the case of an empty string
 	 */
-	float getKey(const std::string & section, const std::string & key, float defaultValue) const;
+	float getKey(const std::string & sectionName, const std::string & keyName, float defaultValue) const;
 	
 	/*!
 	 * Reads a bool from the ini and returns its converted bool value,
 	 * return the default value if an empty string is found.
-	 * \param section The section to read from
-	 * \param key The key in the section to return
-	 * \param default_value The default value to return in the case of an empty string
+	 * \param sectionName The section to read from
+	 * \param keyName The key in the section to return
+	 * \param defaultValue The default value to return in the case of an empty string
 	 */
-	bool getKey(const std::string & section, const std::string & key, bool defaultValue) const;
+	bool getKey(const std::string & sectionName, const std::string & keyName, bool defaultValue) const;
 	
 	/*!
 	 * Get the value at the specified key in the specified section.
 	 * \return the value string or NULL if no such value is set.
 	 */
-	const IniKey * getKey(const std::string & section, const std::string & key) const;
+	const IniKey * getKey(const std::string & sectionName, const std::string & keyName) const;
 	
-	const IniSection * getSection(const std::string & section) const;
+	const IniSection * getSection(const std::string & sectionName) const;
 	
-	size_t getKeyCount(const std::string & section) const;
+	size_t getKeyCount(const std::string & sectionName) const;
 	
 	iterator begin() const { return sections.begin(); }
 	iterator end() const { return sections.end(); }

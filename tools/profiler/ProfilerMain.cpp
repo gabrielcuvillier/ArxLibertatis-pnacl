@@ -21,21 +21,13 @@
 
 #include "profiler/ui/ArxProfiler.h"
 
-#if defined(_WIN32) || defined(_WIN64)
-
-#include <windows.h>
-
-INT WINAPI WinMain(HINSTANCE, HINSTANCE, PSTR, INT) {
-	
-	QApplication app(__argc, __argv);
-	
-#else
-
 int main(int argc, char **argv) {
 	
-	QApplication app(argc, argv);
+	#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
+	QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+	#endif
 	
-#endif
+	QApplication app(argc, argv);
 
 	ArxProfiler w;
 	w.show();

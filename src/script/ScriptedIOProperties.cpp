@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -99,7 +99,7 @@ class GameFlagCommand : public Command {
 	
 public:
 	
-	GameFlagCommand(std::string name, GameFlag _flag, bool _inv = false)
+	GameFlagCommand(const std::string & name, GameFlag _flag, bool _inv = false)
 		: Command(name, AnyEntity), flag(_flag), inv(_inv) { }
 	
 	Result execute(Context & context) {
@@ -110,7 +110,7 @@ public:
 		
 		Entity * io = context.getEntity();
 		
-		if(enable ^ inv) {
+		if(enable != inv) {
 			io->gameFlags |= flag;
 		} else {
 			io->gameFlags &= ~flag;
@@ -128,7 +128,7 @@ class IOFlagCommand : public Command {
 	
 public:
 	
-	IOFlagCommand(std::string name, EntityFlag _flag, bool _inv = false)
+	IOFlagCommand(const std::string & name, EntityFlag _flag, bool _inv = false)
 		: Command(name, AnyEntity), flag(_flag), inv(_inv) { }
 	
 	Result execute(Context & context) {
@@ -139,7 +139,7 @@ public:
 		
 		Entity * io = context.getEntity();
 		
-		if(enable ^ inv) {
+		if(enable != inv) {
 			io->ioflags |= flag;
 		} else {
 			io->ioflags &= ~flag;
@@ -465,12 +465,6 @@ public:
 				io->halo_native.flags &= ~HALO_NEGATIVE;
 			}
 			
-			if(flg & flag('l')) {
-				io->halo_native.flags |= HALO_DYNLIGHT;
-			} else {
-				io->halo_native.flags &= ~HALO_DYNLIGHT;
-			}
-			
 			if(flg & flag('c')) {
 				io->halo_native.color.r = context.getFloat();
 				io->halo_native.color.g = context.getFloat();
@@ -509,7 +503,7 @@ public:
 			res::path oldskin = res::path::load(context.getWord());
 			res::path newskin = res::path::load(context.getWord());
 			
-			DebugScript(" skin " << oldskin << ' '<< newskin);
+			DebugScript(" skin " << oldskin << ' ' << newskin);
 			
 			ARX_INTERACTIVE_MEMO_TWEAK(io, TWEAK_TYPE_SKIN, oldskin, newskin);
 			EERIE_MESH_TWEAK_Skin(io->obj, oldskin, newskin);
@@ -591,7 +585,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedIOProperties() {
 	

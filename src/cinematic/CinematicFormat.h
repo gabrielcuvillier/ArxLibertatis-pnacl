@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,10 +49,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "platform/Platform.h"
 
 
-#pragma pack(push,1)
+#pragma pack(push, 1)
 
-static const s32 CINEMATIC_VERSION_1_75 = (1<<16) | 75;
-static const s32 CINEMATIC_VERSION_1_76 = (1<<16) | 76;
+static const s32 CINEMATIC_VERSION_1_75 = (1 << 16) | 75;
+static const s32 CINEMATIC_VERSION_1_76 = (1 << 16) | 76;
 static const s16 INTERP_NO_FADE = 2;
 
 // Version 1.75 structures
@@ -82,22 +82,22 @@ struct CinematicLight_1_71 {
 };
 
 // TODO macros
-//fx
+// Effects
 const u32 CinematicFxMask = 0x000000ff;
 #define FX_FADEIN  1
 #define FX_FADEOUT 2
 #define FX_BLUR    3
-//prefx
+// Pre-effects
 const u32 CinematicFxPreMask = 0x0000ff00;
-#define FX_DREAM   (1<<8)
-//post fx
+#define FX_DREAM   (1 << 8)
+// Post-effects
 const u32 CinematicFxPostMask = 0x00ff0000;
-#define FX_FLASH   (1<<16)
-#define FX_APPEAR  (2<<16)
-#define FX_APPEAR2 (3<<16)
-//all time
+#define FX_FLASH   (1 << 16)
+#define FX_APPEAR  (2 << 16)
+#define FX_APPEAR2 (3 << 16)
+// All time
 const u32 CinematicFxAllMask = 0xff000000;
-#define FX_LIGHT   (1<<24)
+#define FX_LIGHT   (1 << 24)
 
 struct C_KEY_1_75 {
 	s32 frame;

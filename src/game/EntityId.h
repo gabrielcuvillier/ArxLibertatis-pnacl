@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -34,12 +34,19 @@ namespace res { class path; }
  */
 struct EntityId {
 	
-	EntityId() : m_instance(-1) { }
+	EntityId()
+		: m_instance(-1)
+	{ }
 	
 	EntityId(const std::string & className, EntityInstance instance)
-		: m_className(className), m_instance(instance) { }
+		: m_className(className)
+		, m_instance(instance)
+	{ }
+	
 	EntityId(const char * className, EntityInstance instance)
-		: m_className(className), m_instance(instance) { }
+		: m_className(className)
+		, m_instance(instance)
+	{ }
 	
 	EntityId(const res::path & classPath, EntityInstance instance);
 	
@@ -57,7 +64,7 @@ struct EntityId {
 	 * "me" and "self" and "player" will have the \ref instance() number \c 0
 	 * All other valid IDs should have \ref instance() numbers greater than zero.
 	 *
-	 * To convert a \class EntityId back to such a string use the
+	 * To convert a \ref EntityId back to such a string use the
 	 * \ref string() member or operator<< overload.
 	 */
 	explicit EntityId(const std::string & idString);

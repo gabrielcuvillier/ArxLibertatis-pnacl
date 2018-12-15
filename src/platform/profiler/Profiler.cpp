@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -46,31 +46,34 @@
 class Profiler {
 	
 public:
+	
 	Profiler();
 	
 	void flush();
 	void reset();
 	
-	void registerThread(const std::string& threadName);
+	void registerThread(const std::string & threadName);
 	void unregisterThread();
 	
-	void addProfilePoint(const char* tag, thread_id_type threadId, u64 startTime, u64 endTime);
+	void addProfilePoint(const char * tag, thread_id_type threadId,
+	                     PlatformInstant startTime, PlatformInstant endTime);
 	
 private:
+	
 	static const u32 NB_SAMPLES = 100 * 1000;
 	
 	struct ProfilerSample {
-		const char*    tag;
+		const char * tag;
 		thread_id_type threadId;
-		u64            startTime;
-		u64            endTime;
+		PlatformInstant startTime;
+		PlatformInstant endTime;
 	};
 
 	struct ProfilerThread {
 		std::string    threadName;
 		thread_id_type threadId;
-		u64            startTime;
-		u64            endTime;
+		PlatformInstant startTime;
+		PlatformInstant endTime;
 	};
 
 	typedef std::map<thread_id_type, ProfilerThread> ThreadInfos;
@@ -82,6 +85,7 @@ private:
 	volatile bool    m_canWrite;
 	
 	void writeProfileLog();
+	
 };
 
 
@@ -95,22 +99,23 @@ void Profiler::reset() {
 	m_canWrite = true;
 }
 
-void Profiler::registerThread(const std::string& threadName) {
+void Profiler::registerThread(const std::string & threadName) {
 	thread_id_type threadId = Thread::getCurrentThreadId();
 	ProfilerThread & thread = m_threads[threadId];
 	thread.threadName = threadName;
 	thread.threadId = threadId;
-	thread.startTime = platform::getTimeUs();
+	thread.startTime = platform::getTime();
 	thread.endTime = thread.startTime;
 }
 	
 void Profiler::unregisterThread() {
 	thread_id_type threadId = Thread::getCurrentThreadId();
 	ProfilerThread & thread = m_threads[threadId];
-	thread.endTime = platform::getTimeUs();
+	thread.endTime = platform::getTime();
 }
 
-void Profiler::addProfilePoint(const char* tag, thread_id_type threadId, u64 startTime, u64 endTime) {
+void Profiler::addProfilePoint(const char * tag, thread_id_type threadId,
+                               PlatformInstant startTime, PlatformInstant endTime) {
 	
 	while(!m_canWrite);
 	
@@ -133,7 +138,7 @@ void Profiler::flush() {
 
 template <typename T>
 void writeStruct(std::ofstream & out, T & data, size_t & pos) {
-	out.write((const char*)&data, sizeof(T));
+	out.write(reinterpret_cast<const char *>(&data), sizeof(T));
 	pos += sizeof(T);
 }
 
@@ -209,8 +214,8 @@ void Profiler::writeProfileLog() {
 		SavedProfilerThread saved;
 		saved.stringIndex = stringIndex;
 		saved.threadId = thread.threadId;
-		saved.startTime = thread.startTime;
-		saved.endTime = thread.endTime;
+		saved.startTime = toUs(thread.startTime);
+		saved.endTime = toUs(thread.endTime);
 		threadsData.push_back(saved);
 	}
 	
@@ -231,8 +236,8 @@ void Profiler::writeProfileLog() {
 		SavedProfilerSample saved;
 		saved.stringIndex = stringIndex;
 		saved.threadId = sample.threadId;
-		saved.startTime = sample.startTime;
-		saved.endTime = sample.endTime;
+		saved.startTime = toUs(sample.startTime);
+		saved.endTime = toUs(sample.endTime);
 		samplesData.push_back(saved);
 	}
 	
@@ -245,7 +250,6 @@ void Profiler::writeProfileLog() {
 		std::string stringsData = stringTable.data();
 		size_t dataSize = stringsData.size() + 1; // termination
 		writeChunk(out, ArxProfilerChunkType_Strings, dataSize, pos);
-		
 		out.write(stringsData.c_str(), dataSize);
 		pos += dataSize;
 	}
@@ -253,17 +257,14 @@ void Profiler::writeProfileLog() {
 	{
 		size_t dataSize = threadsData.size() * sizeof(SavedProfilerThread);
 		writeChunk(out, ArxProfilerChunkType_Threads, dataSize, pos);
-		
-		out.write((const char*) threadsData.data(), dataSize);
+		out.write((const char *)threadsData.data(), dataSize);
 		pos += dataSize;
 	}
 	
 	{
 		size_t dataSize = samplesData.size() * sizeof(SavedProfilerSample);
 		writeChunk(out, ArxProfilerChunkType_Samples, dataSize, pos);
-		
-		out.write((const char*) samplesData.data(), dataSize);
-		pos += dataSize;
+		out.write((const char *)samplesData.data(), dataSize);
 	}
 	
 	out.close();
@@ -293,13 +294,13 @@ void profiler::unregisterThread() {
 
 profiler::Scope::Scope(const char * tag)
 	: m_tag(tag)
-	, m_startTime(platform::getTimeUs())
+	, m_startTime(platform::getTime())
 {
 	arx_assert(tag != 0 && tag[0] != '\0');
 }
 
 profiler::Scope::~Scope() {
-	g_profiler.addProfilePoint(m_tag, Thread::getCurrentThreadId(), m_startTime, platform::getTimeUs());
+	g_profiler.addProfilePoint(m_tag, Thread::getCurrentThreadId(), m_startTime, platform::getTime());
 }
 
 #else

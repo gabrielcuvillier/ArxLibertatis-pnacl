@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,6 +19,8 @@
 
 #include "gui/widget/CheckboxWidget.h"
 
+#include <algorithm>
+
 #include "core/Config.h"
 #include "core/Core.h"
 #include "graphics/DrawLine.h"
@@ -28,98 +30,74 @@
 #include "gui/MenuPublic.h"
 #include "gui/menu/MenuCursor.h"
 #include "gui/widget/TextWidget.h"
-#include "scene/GameSound.h"
 
-CheckboxWidget::CheckboxWidget(TextWidget * label)
-	: Widget()
+CheckboxWidget::CheckboxWidget(const Vec2f & size, Font * font, const std::string & label)
+	: m_label(new TextWidget(font, label))
+	, m_textureOff(TextureContainer::Load("graph/interface/menus/menu_checkbox_off"))
+	, m_textureOn(TextureContainer::Load("graph/interface/menus/menu_checkbox_on"))
+	, m_button(size.y, size.y)
+	, m_checked(false)
 {
-	pRef = this; // TODO remove this
-	m_id = BUTTON_INVALID; // TODO remove this
 	
-	arx_assert(label);
+	m_label->forceDisplay(TextWidget::Dynamic);
 	
-	m_textureOff = TextureContainer::Load("graph/interface/menus/menu_checkbox_off");
-	m_textureOn = TextureContainer::Load("graph/interface/menus/menu_checkbox_on");
 	arx_assert(m_textureOff);
 	arx_assert(m_textureOn);
-	arx_assert(m_textureOff->size() == m_textureOn->size());
 	
-	iState    = 0;
-	iOldState = -1;
+	m_rect = Rectf(std::max(m_button.width(), size.x), std::max(m_button.height(), m_label->m_rect.height()));
 	
-	m_label = label;
-	m_rect = label->m_rect;
+	float x = std::max(m_rect.right - 3.3f * m_button.width(), m_rect.center().x - m_button.width() / 2);
+	float y = m_rect.center().y - m_button.height() / 2;
+	m_button.moveTo(Vec2f(std::floor(x), std::floor(y)));
 	
-	m_rect.right = m_rect.left + RATIO_X(245.f);
 }
 
 CheckboxWidget::~CheckboxWidget() {
 	delete m_label;
 }
 
-void CheckboxWidget::Move(const Vec2f & offset) {
-	
-	Widget::Move(offset);
-	m_label->Move(offset);
+void CheckboxWidget::move(const Vec2f & offset) {
+	Widget::move(offset);
+	m_label->move(offset);
+	m_button.move(offset);
 }
 
-bool CheckboxWidget::OnMouseClick() {
+bool CheckboxWidget::click() {
 	
-	if(iOldState<0)
-		iOldState=iState;
+	bool result = Widget::click();
+	
+	setChecked(!m_checked);
+	
+	return result;
+}
 
-	iState ++;
-
-	//NB : It seems that iState cannot be negative (used as tabular index / used as bool) but need further approval
-	arx_assert(iState >= 0);
-
-	if((size_t)iState >= 2) {
-		iState = 0;
+void CheckboxWidget::render(bool mouseOver) {
+	
+	m_label->render(mouseOver);
+	
+	TextureContainer * texture = (m_checked ? m_textureOn : m_textureOff);
+	Color color = m_enabled ? Color::white : Color::gray(0.25f);
+	
+	UseRenderState state(render2D().blendAdditive());
+	
+	EERIEDrawBitmap(m_button, 0.f, texture, color);
+	
+	if(mouseOver) {
+		EERIEDrawBitmap(m_button, 0.f, texture, color);
 	}
+	
+}
 
-	ARX_SOUND_PlayMenu(SND_MENU_CLICK);
+void CheckboxWidget::setChecked(bool checked) {
+	
+	if(checked == m_checked) {
+		return;
+	}
+	
+	m_checked = checked;
 	
 	if(stateChanged) {
-		stateChanged(iState);
+		stateChanged(m_checked);
 	}
 	
-	return false;
-}
-
-void CheckboxWidget::Update() {
-}
-
-void CheckboxWidget::renderCommon() {
-	
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetBlendFunc(BlendOne, BlendOne);
-	
-	Rectf checkboxRect;
-	checkboxRect.top = m_rect.top;
-	checkboxRect.left = m_rect.right - m_rect.height();
-	checkboxRect.bottom = m_rect.bottom;
-	checkboxRect.right = m_rect.right;
-	
-	TextureContainer *pTex = (iState == 0) ? m_textureOff : m_textureOn;
-	Color color = (bCheck) ? Color::white : Color(63, 63, 63, 255);
-	
-	EERIEDrawBitmap2(checkboxRect, 0.f, pTex, color);
-}
-
-void CheckboxWidget::Render() {
-
-	renderCommon();
-	
-	m_label->Render();
-}
-
-extern MenuCursor * pMenuCursor;
-
-void CheckboxWidget::RenderMouseOver() {
-
-	pMenuCursor->SetMouseOver();
-
-	renderCommon();
-	
-	m_label->RenderMouseOver();
 }

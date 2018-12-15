@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,6 +20,7 @@
 #ifndef ARX_GRAPHICS_IMAGE_IMAGE_H
 #define ARX_GRAPHICS_IMAGE_IMAGE_H
 
+#include <stddef.h>
 #include <ostream>
 
 #include "graphics/Color.h"
@@ -34,75 +35,71 @@ public:
 	enum Format {
 		Format_L8,
 		Format_A8,
-		Format_L8A8, 
+		Format_L8A8,
 		Format_R8G8B8,
 		Format_B8G8R8,
 		Format_R8G8B8A8,
 		Format_B8G8R8A8,
-		Format_DXT1,
-		Format_DXT3,
-		Format_DXT5,
 		Format_Unknown,
 		Format_Num,
-		Format_MAX = 0xFF
 	};
 	
 	Image();
-	Image(const Image & pOther);
+	Image(const Image & other);
 	virtual ~Image();
 	
-	const Image& operator=(const Image & pOther);
+	Image & operator=(const Image & other);
 	
-	bool LoadFromFile(const res::path & filename);
-	bool LoadFromMemory(void * pData, unsigned int size,
-	                    const char * file = NULL);
+	bool load(const res::path & filename);
+	bool load(const char * data, size_t size, const char * file = NULL);
 	
-	void Create(unsigned int width, unsigned int height, Format format, unsigned int numMipmaps = 1, unsigned int depth = 1);
+	void create(size_t width, size_t height, Format format);
 	
-	// Convert 
-	bool ConvertTo(Format format);
+	bool convertTo(Format format);
 	
-	// reset to fresh constructor state
-	void Reset();
+	//! Reset to fresh constructor state
+	void reset();
 	
-	// zero image data with memset
-	void Clear();
+	//! Zero image data
+	void clear();
 	
-	// info accessors
-	unsigned int GetWidth() const { return mWidth;      }
-	unsigned int GetHeight() const { return mHeight;     }
-	unsigned int GetDepth() const { return mDepth;      }
-	unsigned int GetNumMipmaps() const { return mNumMipmaps; }
-	Format GetFormat() const { return mFormat;     }
-	unsigned int GetDataSize() const { return mDataSize;   }
-	unsigned int  GetNumChannels() const { return Image::GetNumChannels( mFormat ); }  
+	size_t getWidth() const { return m_width; }
+	size_t getHeight() const { return m_height; }
+	Format getFormat() const { return m_format; }
+	size_t getSize() const { return getSize(getFormat(), getWidth(), getHeight()); }
+	size_t getNumChannels() const { return getNumChannels(getFormat()); }
 	
-	// bool accessors
-	bool IsValid() const { return mData != NULL; }
-	bool IsCompressed() const { return Image::IsCompressed( mFormat ); }
-	bool IsVolume() const { return mDepth > 1;  }
-	bool HasAlpha() const {
-		return mFormat == Format_A8
-		    || mFormat == Format_L8A8
-		    || mFormat == Format_R8G8B8A8
-		    || mFormat == Format_B8G8R8A8
-		    || mFormat == Format_DXT3
-		    || mFormat == Format_DXT5;
+	bool isValid() const { return m_data != NULL; }
+	
+	bool hasAlpha() const { return hasAlpha(getFormat()); }
+	
+	static bool hasAlpha(Format format) {
+		return format == Format_A8
+		    || format == Format_L8A8
+		    || format == Format_R8G8B8A8
+		    || format == Format_B8G8R8A8;
 	}
 	
 	//! Access to internal data.
-	const unsigned char * GetData() const { return mData; }
-	unsigned char * GetData() { return mData; }
+	const unsigned char * getData() const { return m_data; }
+	unsigned char * getData() { return m_data; }
 	
 	// conversions
 	
-	void FlipY();
-	bool ToGrayscale(Format newFormat = Format_L8);
+	void flipY();
 	
-	void ResizeFrom(const Image &source, unsigned int width, unsigned int height, bool flip_vertical = false);
+	bool toGrayscale(Format newFormat = Format_L8);
+	
+	/*!
+	 * Create an image of the desired size and rescale the source into it
+	 *
+	 * Performs only nearest-neighbour interpolation of the image.
+	 * Supports only RGB format.
+	 */
+	void resizeFrom(const Image & source, size_t width, size_t height, bool flipY = false);
 	
 	//! Set the alpha of pixels matching the color key to 0. Will add an alpha channel if needed.
-	void ApplyColorKeyToAlpha(Color colorKey = Color::black, bool antialias = false);
+	void applyColorKeyToAlpha(Color colorKey = Color::black, bool antialias = false);
 	
 	/*!
 	 * Extend the image and fill ne new space by sampling at the nearest border
@@ -110,52 +107,36 @@ public:
 	 */
 	void extendClampToEdgeBorder(const Image & srcImage);
 	
-	/*!
-	 * \brief Copy an image into this image's buffer
-	 *
-	 * Works only with uncompressed formats
-	 */
-	bool Copy(const Image & srcImage, unsigned int dstX, unsigned int dstY);
-	bool Copy(const Image & srcImage, unsigned int dstX, unsigned int dstY, unsigned int srcX, unsigned int srcY, unsigned int width, unsigned int height);
+	//! Copy an image into this image's buffer
+	bool copy(const Image & srcImage, size_t dstX, size_t dstY);
+	bool copy(const Image & srcImage, size_t dstX, size_t dstY,
+	          size_t srcX, size_t srcY, size_t width, size_t height);
 	
 	bool save(const fs::path & filename) const;
 	
 	// processing functions
 	// destructively adjust image content
 	
-	//! blur using gaussian kernel
-	void Blur(int radius);
+	//! Blur using gaussian kernel
+	void blur(size_t radius);
 	
-	//! scales value and normalizes by max component value
-	void QuakeGamma(float pGamma);
-	//! Copy the alpha of img to this image.
-	void SetAlpha(const Image& img, bool bInvertAlpha);
+	//! Scale value and normalizes by max component value
+	void applyGamma(float gamma);
 	
-	void AdjustGamma(const float &v);
-	void AdjustBrightness(const float &v);
-	void AdjustContrast(const float &v);
-	
-	void ApplyThreshold(unsigned char threshold, int component_mask);
+	void applyThreshold(unsigned char threshold, int component_mask);
 	
 	// statics
-	static unsigned int	GetSize(Format pFormat, unsigned int pWidth = 1, unsigned int pHeight = 1, unsigned int pDepth = 1);
-	static unsigned int	GetSizeWithMipmaps(Format pFormat, unsigned int pWidth, unsigned int pHeight, unsigned int pDepth = 1, int pMipmapCount = -1);
-	static unsigned int	GetNumChannels(Format pFormat);
-	static bool IsCompressed(Format pFormat);
+	static size_t getSize(Format format, size_t width, size_t height);
+	static size_t getNumChannels(Format format);
 	
 private:
 	
-	void FlipY(unsigned char* pData, unsigned int pWidth, unsigned int pHeight, unsigned int pDepth);
+	size_t m_width;
+	size_t m_height;
 	
-	unsigned int mWidth; //!< Image width.
-	unsigned int mHeight; //!< Image height.
-	unsigned int mDepth; //!< Image depth. Depth == 1 for normal images, > 1 for depth images.
+	Format m_format; //!< Image format.
 	
-	unsigned int mNumMipmaps; //!< Number of mipmaps.
-	Format mFormat; //!< Image format.
-	
-	unsigned char* mData; //!< Pointer to image data buffer.
-	unsigned int mDataSize; //!< Size of image buffer.
+	unsigned char * m_data; //!< Pointer to image data buffer.
 	
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -26,9 +26,11 @@
 #include "game/Camera.h"
 #include "game/EntityManager.h"
 #include "game/Player.h"
+#include "gui/Cursor.h"
 #include "gui/Interface.h"
 #include "graphics/data/TextureContainer.h"
 #include "graphics/Renderer.h"
+#include "input/Input.h"
 #include "scene/GameSound.h"
 #include "scene/Light.h"
 #include "scene/Object.h"
@@ -39,7 +41,7 @@ ARX_NECKLACE necklace;
 
 void NecklaceInit() {
 	
-	memset(&necklace,0,sizeof(ARX_NECKLACE));
+	memset(&necklace, 0, sizeof(ARX_NECKLACE));
 	necklace.lacet = loadObject("graph/interface/book/runes/lacet.teo");
 	
 	necklace.runes[RUNE_AAM] =         loadObject("graph/interface/book/runes/runes_aam.teo");
@@ -104,80 +106,83 @@ void ReleaseNecklace() {
 
 static void PlayerBookDrawRune(Rune rune) {
 	
-	ARX_SPELLS_RequestSymbolDraw2(entities.player(), rune, ARX_SOUND_GetDuration(SND_SYMB[rune]));
-	ARX_SOUND_PlayInterface(SND_SYMB[rune]);
+	ARX_SPELLS_RequestSymbolDraw2(entities.player(), rune, ARX_SOUND_GetDuration(g_snd.SYMB[rune]));
+	ARX_SOUND_PlayInterface(g_snd.SYMB[rune]);
 }
 
 
 
-void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos)
+void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos, Rectf rect, float scale)
 {
-
+	
+	RenderState baseState = render3D().depthTest(false).fog(false);
+	
 	Vec3f pos = Vec3f(0.f, 0.f, 2100.f);
-	Anglef angle = Anglef::ZERO;
 	
 	EERIE_LIGHT * light = lightHandleGet(torchLightHandle);
 	
 	EERIE_LIGHT tl = *light;
 	
 	light->pos = Vec3f(500.f, -1960.f, 1590.f);
-	light->exist = 1;
+	light->m_exists = true;
 	light->rgb = Color3f(0.6f, 0.7f, 0.9f);
 	light->intensity = 1.8f;
 	light->fallstart = 4520.f;
 	light->fallend = light->fallstart + 600.f;
 	RecalcLight(light);
 	
-	EERIE_CAMERA * oldcam = ACTIVECAM;
+	Camera * oldcam = g_camera;
 	
-	PDL[0] = light;
-	TOTPDL=1;
+	g_culledDynamicLights[0] = light;
+	g_culledDynamicLightsCount = 1;
 	
-	Vec2i tmpPos = Vec2i_ZERO;
+	Vec2i tmpPos(0);
+	
+	GRenderer->SetAntialiasing(true);
+	
+	float wave = timeWaveSin(g_platformTime.frameStart(), PlatformDurationMsf(1256.6370614f));
+	float ptDelta = toMs(g_platformTime.lastFrameDuration());
+	
+	Camera bookcam;
+	bookcam.angle = Anglef();
+	bookcam.m_pos = Vec3f(0.f);
+	bookcam.focal = 500.f;
+	bookcam.cdepth = 2200.f;
 	
 	for(size_t i = 0; i < RUNE_COUNT; i++) {
 		if(!gui::necklace.runes[i])
 			continue;
 		
+		if(!player.hasRune((Rune)i)) {
+			continue;
+		}
+		
 		EERIE_3DOBJ * rune = gui::necklace.runes[i];
 		
-		bookcam.center.x = (382 + tmpPos.x * 45 + BOOKDEC.x) * g_sizeRatio.x;
-		bookcam.center.y = (100 + tmpPos.y * 64 + BOOKDEC.y) * g_sizeRatio.y;
+		Vec2i projectionCenter = Vec2i(rect.topLeft() + (Vec2f(285, 36) + Vec2f(tmpPos) * Vec2f(45, 64)) * scale);
 		
-		SetActiveCamera(&bookcam);
-		PrepareCamera(&bookcam, g_size);
+		PrepareCamera(&bookcam, Rect(rect), projectionCenter);
 		
-		// First draw the lace
-		angle.setPitch(0.f);
-		
-		if(player.hasRune((Rune)i)) {
-			
-			TransformInfo t1(pos, glm::toQuat(toRotationMatrix(angle)));
-			DrawEERIEInter(gui::necklace.lacet, t1, NULL, false, 0.f);
-			
-			if(rune->angle.getPitch() != 0.f) {
-				if(rune->angle.getPitch() > 300.f)
-					rune->angle.setPitch(300.f);
-				
-				arxtime.update();
-				angle.setPitch(std::sin(arxtime.now_f() * (1.0f / 200)) * rune->angle.getPitch() * (1.0f / 40));
+			Anglef angle;
+			if(rune->angle.getYaw() != 0.f) {
+				if(rune->angle.getYaw() > 300.f) {
+					rune->angle.setYaw(300.f);
+				}
+				angle.setYaw(wave * rune->angle.getYaw() * (1.0f / 40));
 			}
 			
-			rune->angle.setPitch(rune->angle.getPitch() - g_framedelay * 0.2f);
+			rune->angle.setYaw(rune->angle.getYaw() - ptDelta * 0.2f);
 			
-			if(rune->angle.getPitch() < 0.f)
-				rune->angle.setPitch(0.f);
-			
-			GRenderer->SetRenderState(Renderer::DepthWrite, true);
-			GRenderer->SetRenderState(Renderer::AlphaBlending, false);
+			if(rune->angle.getYaw() < 0.f)
+				rune->angle.setYaw(0.f);
 			
 			// Now draw the rune
-			TransformInfo t2(pos, glm::toQuat(toRotationMatrix(angle)));
+			TransformInfo t2(pos, glm::quat_cast(toRotationMatrix(angle)));
 			DrawEERIEInter(rune, t2, NULL, false, 0.f);
 			
 			Rectf runeBox = UpdateBbox2d(*rune).toRect();
 			
-			PopAllTriangleList();
+			PopAllTriangleListOpaque(baseState);
 			
 			tmpPos.x++;
 			
@@ -186,48 +191,50 @@ void ARX_INTERFACE_ManageOpenedBook_Finish(const Vec2f & mousePos)
 				tmpPos.y++;
 			}
 			
+			// TODO this is a workaround for vertexClipPositions being relative to viewport
+			Vec2f mousePosInViewport = mousePos - rect.topLeft();
+			
 			// Checks for Mouse floating over a rune...
-			if(runeBox.contains(mousePos)) {
-				long r=0;
+			if(runeBox.contains(mousePosInViewport)) {
+				bool r = false;
 				
 				for(size_t j = 0; j < rune->facelist.size(); j++) {
-					float n = PtIn2DPolyProj(rune->vertexlist, &rune->facelist[j], mousePos.x, mousePos.y);
-					
-					if(n!=0.f) {
-						r=1;
+					float n = PtIn2DPolyProj(rune->vertexClipPositions, &rune->facelist[j], mousePosInViewport.x, mousePosInViewport.y);
+					if(n != 0.f) {
+						r = true;
 						break;
 					}
 				}
 				
 				if(r) {
-					GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-					GRenderer->SetBlendFunc(BlendOne, BlendOne);
 					
-					TransformInfo t(pos, glm::toQuat(toRotationMatrix(angle)));
+					TransformInfo t(pos, glm::quat_cast(toRotationMatrix(angle)));
 					DrawEERIEInter(rune, t, NULL, false, 0.f);
 					
-					rune->angle.setPitch(rune->angle.getPitch() + g_framedelay*2.f);
+					rune->angle.setYaw(rune->angle.getYaw() + ptDelta * 2.f);
 					
-					PopAllTriangleList();
+					PopAllTriangleListOpaque(baseState.blendAdditive());
 					
-					GRenderer->SetRenderState(Renderer::AlphaBlending, false);
-					
-					SpecialCursor=CURSOR_INTERACTION_ON;
+					cursorSetInteraction();
 					
 					if(eeMouseDown1()) {
 						PlayerBookDrawRune((Rune)i);
 					}
 				}
 			}
-		}
+			
+			TransformInfo t1(pos, quat_identity());
+			DrawEERIEInter(gui::necklace.lacet, t1, NULL, false, 0.f);
+			
+			PopAllTriangleListOpaque(baseState);
 	}
-	
-	GRenderer->SetCulling(CullCCW);
 	
 	*light = tl;
 	
-	SetActiveCamera(oldcam);
 	PrepareCamera(oldcam, g_size);
+	
+	GRenderer->SetAntialiasing(false);
+	
 }
 
-}
+} // namespace gui

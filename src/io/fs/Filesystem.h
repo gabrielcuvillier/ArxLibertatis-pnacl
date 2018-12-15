@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -120,16 +120,6 @@ bool copy_file(const path & from_p, const path & to_p, bool overwrite = false);
 bool rename(const path & old_p, const path & new_p, bool overwrite = false);
 
 /*!
- * \brief Read a file into memory
- *
- * \param p The file to load.
- * \param size Will receive the size of the loaded file.
- *
- * \return a new[]-allocated buffer containing the file data or NULL on error.
- */
-char * read_file(const path & p, size_t & size);
-
-/*!
  * \brief Read a file into an \ref std::string
  *
  * \param p The file to load.
@@ -161,35 +151,90 @@ bool write(const path & p, const std::string & contents);
  */
 path current_path();
 
+/*!
+ * \brief Class for iterating over the contents of a directory
+ */
 class directory_iterator {
 	
-	directory_iterator operator++(int dummy); //!< prevent postfix ++
+	//! Prevent postfix ++
+	const directory_iterator operator++(int dummy);
 	
-	//! prevent assignment
+	//! Prevent assignment
 	directory_iterator & operator=(const directory_iterator &);
+	
+	//! Prevent copy construction
 	directory_iterator(const directory_iterator &);
 	
-	void * handle;
-	void * buf;
+	void * m_handle;
+	void * m_buffer;
 	
 public:
 	
+	/*!
+	 * \brief Start iterating over a directory
+	 *
+	 * If there was an error or the directoy contains no entries, \ref end() will return \c false.
+	 * Otherwise, \ref end() will return \c true and information about the first directory entry
+	 * can be queried using \ref name(), \ref is_directory() and \ref is_regular_file().
+	 */
 	explicit directory_iterator(const path & p);
 	
 	~directory_iterator();
 	
+	/*!
+	 * \brief Advance to the next directory entry
+	 *
+	 * If there are no more directory entries, \ref end() will now return \c false.
+	 * Otherwise, \ref end() will return \c true and information about the first directory entry
+	 * can be queried using \ref name(), \ref is_directory() and \ref is_regular_file().
+	 *
+	 * \ref end() == \c false
+	 *
+	 * \remarks
+	 * It is not safe to advace a single \ref directory_iterator may not be advanced from multiple
+	 * threads or access it while another thread is advancing it.
+	 */
 	directory_iterator & operator++();
 	
+	/*!
+	 * \brief Check if we have reached the end of the directory
+	 *
+	 * \return \c true iff the current directory entry is valid.
+	 */
 	bool end();
 	
+	/*!
+	 * \brief Get the name of the current directory entry
+	 *
+	 * \return The plain filename of the directory entry - if you want a full path you will need
+	 * to compose it using the path of the directory you are iterating over.
+	 *
+	 * \ref end() == \c false
+	 */
 	std::string name();
 	
+	/*!
+	 * \brief Check if the current directory entry is a subdirectory
+	 *
+	 * The result of this function is equivalent to calling \ref fs::is_directory with the
+	 * current file, but is potentially faster since it normally does not require additional syscalls.
+	 *
+	 * \ref end() == \c false
+	 */
 	bool is_directory();
 	
+	/*!
+	 * \brief Check if the current directory entry is a plain file
+	 *
+	 * The result of this function is equivalent to calling \ref fs::is_regular_file with the
+	 * current file, but is potentially faster since it normally does not require additional syscalls.
+	 *
+	 * \ref end() == \c false
+	 */
 	bool is_regular_file();
 	
 };
 
-}
+} // namespace fs
 
 #endif // ARX_IO_FS_FILESYSTEM_H

@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,11 +21,14 @@
 #define ARX_GAME_MAGIC_SPELLS_SPELLSLVL02_H
 
 #include "game/magic/Spell.h"
-
+#include "graphics/effects/Cabal.h"
 #include "graphics/particle/ParticleSystem.h"
+#include "platform/Platform.h"
 
-class HealSpell : public SpellBase {
+class HealSpell arx_final : public SpellBase {
+	
 public:
+	
 	HealSpell();
 	
 	bool CanLaunch();
@@ -34,30 +37,39 @@ public:
 	void Update();
 	
 private:
+	
 	Vec3f m_pos;
 	LightHandle m_light;
 	ParticleSystem m_particles;
-	long m_currentTime;
+	
 };
 
-class DetectTrapSpell : public SpellBase {
+class DetectTrapSpell arx_final : public SpellBase {
+	
 public:
+	
 	void Launch();
 	void End();
 	void Update();
+	
 };
 
-class ArmorSpell : public SpellBase {
+class ArmorSpell arx_final : public SpellBase {
+	
 public:
+	
 	void Launch();
 	void End();
 	void Update();
 	
 	Vec3f getPosition();
+	
 };
 
-class LowerArmorSpell : public SpellBase {
+class LowerArmorSpell arx_final : public SpellBase {
+	
 public:
+	
 	LowerArmorSpell();
 	
 	void Launch();
@@ -67,11 +79,15 @@ public:
 	Vec3f getPosition();
 	
 private:
+	
 	bool m_haloCreated;
+	
 };
 
-class HarmSpell : public SpellBase {
+class HarmSpell arx_final : public SpellBase {
+	
 public:
+	
 	HarmSpell();
 	
 	void Launch();
@@ -79,9 +95,10 @@ public:
 	void Update();
 	
 private:
-	LightHandle m_light;
+	
 	DamageHandle m_damage;
-	float m_pitch;
+	CabalFx m_cabal;
+	
 };
 
 #endif // ARX_GAME_MAGIC_SPELLS_SPELLSLVL02_H

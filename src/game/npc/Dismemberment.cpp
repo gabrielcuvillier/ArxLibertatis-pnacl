@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -29,8 +29,10 @@
 #include "game/NPC.h"
 #include "graphics/GraphicsTypes.h"
 #include "graphics/data/MeshManipulation.h"
-#include "physics/Box.h"
+
 #include "physics/CollisionShapes.h"
+#include "physics/Physics.h"
+
 #include "scene/GameSound.h"
 
 static bool IsNearSelection(EERIE_3DOBJ * obj, long vert, ObjSelection tw) {
@@ -52,8 +54,6 @@ static bool IsNearSelection(EERIE_3DOBJ * obj, long vert, ObjSelection tw) {
 
 /*!
  * \brief Spawns a body part from NPC
- * \param ioo
- * \param num
  */
 static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 	
@@ -95,18 +95,13 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 	}
 
 	nouvo->vertexlist.resize(nvertex);
-	nouvo->vertexlist3.resize(nvertex);
+	nouvo->vertexWorldPositions.resize(nvertex);
+	nouvo->vertexClipPositions.resize(nvertex);
+	nouvo->vertexColors.resize(nvertex);
 
 	size_t inpos = 0;
-	long * equival = (long *)malloc(sizeof(long) * from->vertexlist.size());
-	if(!equival) {
-		delete nouvo;
-		return;
-	}
-
-	for(size_t k = 0; k < from->vertexlist.size(); k++) {
-		equival[k] = -1;
-	}
+	
+	std::vector<long> equival(from->vertexlist.size(), -1);
 	
 	const EERIE_SELECTIONS & cutSelection = from->selections[num.handleData()];
 
@@ -117,14 +112,10 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 		equival[cutSelection.selected[k]] = k;
 		
 		nouvo->vertexlist[k] = from->vertexlist[cutSelection.selected[k]];
-		nouvo->vertexlist[k].v = from->vertexlist3[cutSelection.selected[k]].v;
+		nouvo->vertexlist[k].v = from->vertexWorldPositions[cutSelection.selected[k]].v;
 		nouvo->vertexlist[k].v -= ioo->pos;
-		nouvo->vertexlist[k].vert.p = nouvo->vertexlist[k].v;
 		
-		nouvo->vertexlist[k].vert.color = from->vertexlist[k].vert.color;
-		nouvo->vertexlist[k].vert.uv = from->vertexlist[k].vert.uv;
-		
-		nouvo->vertexlist3[k] = nouvo->vertexlist[k];
+		nouvo->vertexWorldPositions[k] = nouvo->vertexlist[k];
 	}
 
 	size_t count = cutSelection.selected.size();
@@ -140,11 +131,10 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 
 					if(count < nouvo->vertexlist.size()) {
 						nouvo->vertexlist[count] = from->vertexlist[from->facelist[k].vid[j]];
-						nouvo->vertexlist[count].v = from->vertexlist3[from->facelist[k].vid[j]].v;
+						nouvo->vertexlist[count].v = from->vertexWorldPositions[from->facelist[k].vid[j]].v;
 						nouvo->vertexlist[count].v -= ioo->pos;
-						nouvo->vertexlist[count].vert.p = nouvo->vertexlist[count].v;
 
-						nouvo->vertexlist3[count] = nouvo->vertexlist[count];
+						nouvo->vertexWorldPositions[count] = nouvo->vertexlist[count];
 					} else {
 						equival[from->facelist[k].vid[j]] = -1;
 					}
@@ -155,12 +145,12 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 		}
 	}
 
-	float min = nouvo->vertexlist[0].vert.p.y;
+	float min = nouvo->vertexlist[0].v.y;
 	long nummm = 0;
 
 	for(size_t k = 1; k < nouvo->vertexlist.size(); k++) {
-		if(nouvo->vertexlist[k].vert.p.y > min) {
-			min = nouvo->vertexlist[k].vert.p.y;
+		if(nouvo->vertexlist[k].v.y > min) {
+			min = nouvo->vertexlist[k].v.y;
 			nummm = k;
 		}
 	}
@@ -169,17 +159,12 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 	nouvo->point0 = nouvo->vertexlist[nouvo->origin].v;
 	
 	for(size_t k = 0; k < nouvo->vertexlist.size(); k++) {
-		nouvo->vertexlist[k].vert.p = nouvo->vertexlist[k].v -= nouvo->point0;
-		nouvo->vertexlist[k].vert.color = Color(255, 255, 255, 255).toRGBA();
+		nouvo->vertexlist[k].v -= nouvo->point0;
 	}
 	
-	nouvo->point0 = Vec3f_ZERO;
+	nouvo->point0 = Vec3f(0.f);
 	
 	nouvo->pbox = NULL;
-	nouvo->pdata = NULL;
-	nouvo->cdata = NULL;
-	nouvo->sdata = NULL;
-	nouvo->ndata = NULL;
 	
 	size_t nfaces = 0;
 	for(size_t k = 0; k < from->facelist.size(); k++) {
@@ -207,13 +192,13 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 			}
 		}
 
-		long gore = -1;
+		long goreTexture = -1;
 
 		for(size_t k = 0; k < from->texturecontainer.size(); k++) {
 			if(from->texturecontainer[k]
 			   && boost::contains(from->texturecontainer[k]->m_texName.string(), "gore")
 			) {
-				gore = k;
+				goreTexture = k;
 				break;
 			}
 		}
@@ -221,25 +206,24 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 		for(size_t k = 0; k < nouvo->facelist.size(); k++) {
 			nouvo->facelist[k].facetype &= ~POLY_HIDE;
 
-			if(nouvo->facelist[k].texid == gore) {
+			if(nouvo->facelist[k].texid == goreTexture) {
 				nouvo->facelist[k].facetype |= POLY_DOUBLESIDED;
 			}
 		}
 	}
 	
-	free(equival);
 	nouvo->texturecontainer = from->texturecontainer;
 	
 	nouvo->linked.clear();
-	nouvo->originaltextures = NULL;
+	nouvo->originaltextures.clear();
 	
 	Entity * io = new Entity("noname", EntityInstance(0));
 	
 	io->_itemdata = new IO_ITEMDATA();
 	
 	io->ioflags = IO_ITEM | IO_NOSAVE | IO_MOVABLE;
-	io->script.size = 0;
-	io->script.data = NULL;
+	io->script.valid = false;
+	io->script.data.clear();
 	io->gameFlags |= GFLAG_NO_PHYS_IO_COL;
 	
 	EERIE_COLLISION_Cylinder_Create(io);
@@ -254,32 +238,28 @@ static void ARX_NPC_SpawnMember(Entity * ioo, ObjSelection num) {
 	io->m_icon = NULL;
 	io->scriptload = 1;
 	io->obj = nouvo;
-	io->lastpos = io->initpos = io->pos = ioo->obj->vertexlist3[inpos].v;
+	io->lastpos = io->initpos = io->pos = ioo->obj->vertexWorldPositions[inpos].v;
 	io->angle = ioo->angle;
 	
 	io->gameFlags = ioo->gameFlags;
 	io->halo = ioo->halo;
 	
-	io->angle.setYaw(Random::getf(340.f, 380.f));
-	io->angle.setPitch(Random::getf(0.f, 360.f));
+	io->angle.setPitch(Random::getf(340.f, 380.f));
+	io->angle.setYaw(Random::getf(0.f, 360.f));
 	io->angle.setRoll(0);
 	io->obj->pbox->active = 1;
 	io->obj->pbox->stopcount = 0;
 	
-	io->velocity = Vec3f_ZERO;
-	io->stopped = 1;
-	
-	Vec3f vector;
-	vector.x = -std::sin(glm::radians(io->angle.getPitch()));
-	vector.y = std::sin(glm::radians(io->angle.getYaw())) * 2.f;
-	vector.z = std::cos(glm::radians(io->angle.getPitch()));
+	Vec3f vector(-std::sin(glm::radians(io->angle.getYaw())),
+	             std::sin(glm::radians(io->angle.getPitch())) * 2.f,
+	             std::cos(glm::radians(io->angle.getYaw())));
 	vector = glm::normalize(vector);
 	io->rubber = 0.6f;
 	
 	io->no_collide = ioo->index();
 	
 	io->gameFlags |= GFLAG_GOREEXPLODE;
-	io->animBlend.lastanimtime = arxtime.now_ul();
+	io->animBlend.lastanimtime = g_gameTime.now();
 	io->soundtime = 0;
 	io->soundcount = 0;
 
@@ -292,15 +272,20 @@ static DismembermentFlag GetCutFlag(const std::string & str) {
 	
 	if(str == "cut_head") {
 		return FLAG_CUT_HEAD;
-	} else if(str == "cut_torso") {
+	}
+	if(str == "cut_torso") {
 		return FLAG_CUT_TORSO;
-	} else if(str == "cut_larm") {
+	}
+	if(str == "cut_larm") {
 		return FLAG_CUT_LARM;
-	} else if(str == "cut_rarm") {
+	}
+	if(str == "cut_rarm") {
 		return FLAG_CUT_HEAD;
-	} else if(str == "cut_lleg") {
+	}
+	if(str == "cut_lleg") {
 		return FLAG_CUT_LLEG;
-	} else if(str == "cut_rleg") {
+	}
+	if(str == "cut_rleg") {
 		return FLAG_CUT_RLEG;
 	}
 	
@@ -313,28 +298,24 @@ static ObjSelection GetCutSelection(Entity * io, DismembermentFlag flag) {
 		return ObjSelection();
 
 	std::string tx;
-
-	if (flag == FLAG_CUT_HEAD)
+	if(flag == FLAG_CUT_HEAD) {
 		tx =  "cut_head";
-	else if (flag == FLAG_CUT_TORSO)
+	} else if(flag == FLAG_CUT_TORSO) {
 		tx = "cut_torso";
-	else if (flag == FLAG_CUT_LARM)
+	} else if(flag == FLAG_CUT_LARM) {
 		tx = "cut_larm";
-
-	if (flag == FLAG_CUT_RARM)
+	} else if(flag == FLAG_CUT_RARM) {
 		tx = "cut_rarm";
-
-	if (flag == FLAG_CUT_LLEG)
+	} else if(flag == FLAG_CUT_LLEG) {
 		tx = "cut_lleg";
-
-	if (flag == FLAG_CUT_RLEG)
+	} else if(flag == FLAG_CUT_RLEG) {
 		tx = "cut_rleg";
-
-	if ( !tx.empty() )
-	{
+	}
+	
+	if(!tx.empty()) {
 		typedef std::vector<EERIE_SELECTIONS>::iterator iterator; // Convenience
 		for(iterator iter = io->obj->selections.begin(); iter != io->obj->selections.end(); ++iter) {
-			if(iter->selected.size() > 0 && iter->name == tx) {
+			if(!iter->selected.empty() && iter->name == tx) {
 				return ObjSelection(iter - io->obj->selections.begin());
 			}
 		}
@@ -376,30 +357,30 @@ static bool IsAlreadyCut(Entity * io, DismembermentFlag fl) {
 
 static bool ARX_NPC_ApplyCuts(Entity * io) {
 	
-	if(!io || !(io->ioflags & IO_NPC))
+	if(!io || !(io->ioflags & IO_NPC)) {
 		return false;
-
-	if(io->_npcdata->cuts == 0)
-		return false;	// No cuts
-
+	}
+	
+	if(io->_npcdata->cuts == 0) {
+		return false; // No cuts
+	}
+	
 	ReComputeCutFlags(io);
+	
 	long goretex = -1;
-
 	for(size_t i = 0; i < io->obj->texturecontainer.size(); i++) {
-		if (io->obj->texturecontainer[i]
-		        &&	(boost::contains(io->obj->texturecontainer[i]->m_texName.string(), "gore")))
-		{
+		if(io->obj->texturecontainer[i]
+		   && boost::contains(io->obj->texturecontainer[i]->m_texName.string(), "gore")) {
 			goretex = i;
 			break;
 		}
 	}
-
-	bool hid = false;
-
+	
 	for(size_t nn = 0; nn < io->obj->facelist.size(); nn++) {
 		io->obj->facelist[nn].facetype &= ~POLY_HIDE;
 	}
-
+	
+	bool hid = false;
 	for(long jj = 0; jj < 6; jj++) {
 		DismembermentFlag flg = DismembermentFlag(1 << jj);
 		ObjSelection numsel = GetCutSelection(io, flg);
@@ -428,9 +409,8 @@ static bool ARX_NPC_ApplyCuts(Entity * io) {
 	return hid;
 }
 
-void ARX_NPC_TryToCutSomething(Entity * target, const Vec3f * pos)
-{
-	//return;
+void ARX_NPC_TryToCutSomething(Entity * target, const Vec3f * pos) {
+	
 	if(!target || !(target->ioflags & IO_NPC))
 		return;
 
@@ -453,9 +433,9 @@ void ARX_NPC_TryToCutSomething(Entity * target, const Vec3f * pos)
 	for(size_t i = 0; i < target->obj->selections.size(); i++) {
 		ObjSelection sel = ObjSelection(i);
 		
-		if(target->obj->selections[i].selected.size() > 0
-		   && boost::contains(target->obj->selections[i].name, "cut_")
-		) {
+		if(!target->obj->selections[i].selected.empty()
+		   && boost::contains(target->obj->selections[i].name, "cut_")) {
+			
 			DismembermentFlag fll = GetCutFlag(target->obj->selections[i].name);
 
 			if(IsAlreadyCut(target, fll))
@@ -479,7 +459,7 @@ void ARX_NPC_TryToCutSomething(Entity * target, const Vec3f * pos)
 			}
 
 			if(out < 3) {
-				float dist = glm::distance2(*pos, target->obj->vertexlist3[target->obj->selections[i].selected[0]].v);
+				float dist = arx::distance2(*pos, target->obj->vertexWorldPositions[target->obj->selections[i].selected[0]].v);
 
 				if(dist < mindistSqr) {
 					mindistSqr = dist;
@@ -493,20 +473,19 @@ void ARX_NPC_TryToCutSomething(Entity * target, const Vec3f * pos)
 		return; // Nothing to cut...
 
 	bool hid = false;
-
 	if(mindistSqr < square(60)) { // can only cut a close part...
-		DismembermentFlag fl = GetCutFlag( target->obj->selections[numsel.handleData()].name );
-
+		DismembermentFlag fl = GetCutFlag(target->obj->selections[numsel.handleData()].name);
 		if(fl && !(target->_npcdata->cuts & fl)) {
 			target->_npcdata->cuts |= fl;
 			hid = ARX_NPC_ApplyCuts(target);
 		}
 	}
-
+	
 	if(hid) {
-		ARX_SOUND_PlayCinematic("flesh_critical", false); // TODO why play cinmeatic sound?
+		ARX_SOUND_PlaySFX(g_snd.DISMEMBER, &target->pos, 1.0f);
 		ARX_NPC_SpawnMember(target, numsel);
 	}
+	
 }
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -60,14 +60,14 @@ struct args_adapter {
 	
 public:
 	template <typename SourceType>
-	explicit args_adapter(SourceType& source)
+	explicit args_adapter(SourceType & source)
 		: m_impl(source) {
 	}
 	
 	template <int N>
-	typename type_impl<impl_t,N>::result& get() {
-		typedef typename type_impl<impl_t,N>::result result;
-		return get_t<N>::template get<result&>(m_impl); 
+	typename type_impl<impl_t, N>::result & get() {
+		typedef typename type_impl<impl_t, N>::result result;
+		return get_t<N>::template get<result &>(m_impl);
 	}
 	
 private:

@@ -1,5 +1,5 @@
 /*
- * Copyright 2016 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2016-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,82 +20,73 @@
 #include "gui/menu/MenuFader.h"
 
 #include "core/Core.h"
+#include "core/GameTime.h"
 #include "graphics/Draw.h"
 #include "graphics/Renderer.h"
 #include "gui/MenuWidgets.h"
 
-bool g_menuFadeActive=false;
-bool bFadeInOut=false;
-int iFadeAction=-1;
+bool g_menuFadeActive = false;
+Fade bFadeInOut = Fade_Out;
+int iFadeAction = -1;
 
-float fFadeInOut=0.f;
+static PlatformDuration menuFadeElapsed = 0;
 
-static void FadeInOut(float _fVal) {
-
-	TexturedVertex d3dvertex[4];
-
-	ColorRGBA iColor = Color::gray(_fVal).toRGB();
-	d3dvertex[0].p.x=0;
-	d3dvertex[0].p.y=0;
-	d3dvertex[0].p.z=0.f;
-	d3dvertex[0].rhw=1.f;
-	d3dvertex[0].color=iColor;
-
-	d3dvertex[1].p.x=static_cast<float>(g_size.width());
-	d3dvertex[1].p.y=0;
-	d3dvertex[1].p.z=0.f;
-	d3dvertex[1].rhw=1.f;
-	d3dvertex[1].color=iColor;
-
-	d3dvertex[2].p.x=0;
-	d3dvertex[2].p.y=static_cast<float>(g_size.height());
-	d3dvertex[2].p.z=0.f;
-	d3dvertex[2].rhw=1.f;
-	d3dvertex[2].color=iColor;
-
-	d3dvertex[3].p.x=static_cast<float>(g_size.width());
-	d3dvertex[3].p.y=static_cast<float>(g_size.height());
-	d3dvertex[3].p.z=0.f;
-	d3dvertex[3].rhw=1.f;
-	d3dvertex[3].color=iColor;
-
-	GRenderer->ResetTexture(0);
-	GRenderer->SetBlendFunc(BlendZero, BlendInvSrcColor);
-
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetRenderState(Renderer::DepthWrite, false);
-	GRenderer->SetRenderState(Renderer::DepthTest, false);
-	GRenderer->SetCulling(CullNone);
-
-	EERIEDRAWPRIM(Renderer::TriangleStrip, d3dvertex, 4, true);
-
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
-	GRenderer->SetRenderState(Renderer::DepthWrite, true);
-	GRenderer->SetRenderState(Renderer::DepthTest, true);
-	GRenderer->SetCulling(CullCCW);
+void MenuFader_reset() {
+	iFadeAction = -1;
+	g_menuFadeActive = false;
+	menuFadeElapsed = 0;
 }
 
-bool ProcessFadeInOut(bool _bFadeIn) {
+static void FadeInOut(float _fVal) {
 	
-	static const float _fspeed = 0.1f;
+	TexturedVertex vertices[4];
 	
-	FadeInOut(fFadeInOut);
+	ColorRGBA iColor = Color::gray(_fVal).toRGB();
+	
+	vertices[0].p = Vec3f(0.f);
+	vertices[0].w = 1.f;
+	vertices[0].color = iColor;
+	
+	vertices[1].p = Vec3f(float(g_size.width()), 0.f, 0.f);
+	vertices[1].w = 1.f;
+	vertices[1].color = iColor;
+	
+	vertices[2].p = Vec3f(0.f, float(g_size.height()), 0.f);
+	vertices[2].w = 1.f;
+	vertices[2].color = iColor;
+	
+	vertices[3].p = Vec3f(float(g_size.width()), float(g_size.height()), 0.f);
+	vertices[3].w = 1.f;
+	vertices[3].color = iColor;
+	
+	UseRenderState state(render2D().blend(BlendZero, BlendInvSrcColor));
+	GRenderer->ResetTexture(0);
+	EERIEDRAWPRIM(Renderer::TriangleStrip, vertices, 4, true);
+	
+}
+
+bool MenuFader_process() {
+	
+	const PlatformDuration fadeDuration = PlatformDurationMs(1000);
+	
+	float alpha = menuFadeElapsed / fadeDuration;
+	FadeInOut(alpha);
 
 	if(!g_menuFadeActive)
 		return true;
 
-	if(_bFadeIn) {
-		fFadeInOut += _fspeed * ARXDiffTimeMenu * (1.f/100);
-
-		if(fFadeInOut > 1.f) {
-			fFadeInOut = 1.f;
+	if(bFadeInOut == Fade_In) {
+		menuFadeElapsed = menuFadeElapsed + g_platformTime.lastFrameDuration();
+		
+		if(menuFadeElapsed > fadeDuration) {
+			menuFadeElapsed = fadeDuration;
 			g_menuFadeActive = false;
 		}
 	} else {
-		fFadeInOut -= _fspeed * ARXDiffTimeMenu * (1.f/100);
-
-		if(fFadeInOut < 0.f) {
-			fFadeInOut = 0.f;
+		menuFadeElapsed = menuFadeElapsed - g_platformTime.lastFrameDuration();
+		
+		if(menuFadeElapsed < 0) {
+			menuFadeElapsed = 0;
 			g_menuFadeActive = false;
 		}
 	}
@@ -103,8 +94,8 @@ bool ProcessFadeInOut(bool _bFadeIn) {
 	return false;
 }
 
-void MenuFader_start(bool fade, bool fadeInOut, int fadeAction) {
-	g_menuFadeActive = fade;
+void MenuFader_start(Fade fadeInOut, int fadeAction) {
+	g_menuFadeActive = true;
 	bFadeInOut = fadeInOut;
 	iFadeAction = fadeAction;
 }

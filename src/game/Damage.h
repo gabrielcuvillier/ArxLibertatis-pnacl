@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -49,6 +49,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 
+#include "core/TimeTypes.h"
 #include "game/GameTypes.h"
 #include "graphics/BaseGraphicsTypes.h"
 #include "math/Types.h"
@@ -59,24 +60,24 @@ class Entity;
 
 enum DamageTypeFlag {
 	DAMAGE_TYPE_GENERIC    = 0,
-	DAMAGE_TYPE_FIRE       = (1<<0),
-	DAMAGE_TYPE_MAGICAL    = (1<<1),
-	DAMAGE_TYPE_LIGHTNING  = (1<<2),
-	DAMAGE_TYPE_COLD       = (1<<3),
-	DAMAGE_TYPE_POISON     = (1<<4),
-	DAMAGE_TYPE_GAS        = (1<<5),
-	DAMAGE_TYPE_METAL      = (1<<6),
-	DAMAGE_TYPE_WOOD       = (1<<7),
-	DAMAGE_TYPE_STONE      = (1<<8),
-	DAMAGE_TYPE_ACID       = (1<<9),
-	DAMAGE_TYPE_ORGANIC    = (1<<10),
-	DAMAGE_TYPE_PER_SECOND = (1<<11),
-	DAMAGE_TYPE_DRAIN_LIFE = (1<<12),
-	DAMAGE_TYPE_DRAIN_MANA = (1<<13),
-	DAMAGE_TYPE_PUSH       = (1<<14),
-	DAMAGE_TYPE_FAKEFIRE   = (1<<15),
-	DAMAGE_TYPE_FIELD      = (1<<16),
-	DAMAGE_TYPE_NO_FIX     = (1<<17)
+	DAMAGE_TYPE_FIRE       = 1 << 0,
+	DAMAGE_TYPE_MAGICAL    = 1 << 1,
+	DAMAGE_TYPE_LIGHTNING  = 1 << 2,
+	DAMAGE_TYPE_COLD       = 1 << 3,
+	DAMAGE_TYPE_POISON     = 1 << 4,
+	DAMAGE_TYPE_GAS        = 1 << 5,
+	DAMAGE_TYPE_METAL      = 1 << 6,
+	DAMAGE_TYPE_WOOD       = 1 << 7,
+	DAMAGE_TYPE_STONE      = 1 << 8,
+	DAMAGE_TYPE_ACID       = 1 << 9,
+	DAMAGE_TYPE_ORGANIC    = 1 << 10,
+	DAMAGE_TYPE_PER_SECOND = 1 << 11,
+	DAMAGE_TYPE_DRAIN_LIFE = 1 << 12,
+	DAMAGE_TYPE_DRAIN_MANA = 1 << 13,
+	DAMAGE_TYPE_PUSH       = 1 << 14,
+	DAMAGE_TYPE_FAKEFIRE   = 1 << 15,
+	DAMAGE_TYPE_FIELD      = 1 << 16,
+	DAMAGE_TYPE_NO_FIX     = 1 << 17
 };
 DECLARE_FLAGS(DamageTypeFlag, DamageType)
 DECLARE_FLAGS_OPERATORS(DamageType)
@@ -88,11 +89,11 @@ enum DamageArea {
 };
 
 enum DamageFlag {
-	DAMAGE_FLAG_DONT_HURT_SOURCE = (1<<0),
-	DAMAGE_FLAG_ADD_VISUAL_FX    = (1<<1), // depending on type
-	DAMAGE_FLAG_FOLLOW_SOURCE    = (1<<2),
-	DAMAGE_NOT_FRAME_DEPENDANT   = (1<<5),
-	DAMAGE_SPAWN_BLOOD           = (1<<6)
+	DAMAGE_FLAG_DONT_HURT_SOURCE = 1 << 0,
+	DAMAGE_FLAG_ADD_VISUAL_FX    = 1 << 1, // depending on type
+	DAMAGE_FLAG_FOLLOW_SOURCE    = 1 << 2,
+	DAMAGE_NOT_FRAME_DEPENDANT   = 1 << 5,
+	DAMAGE_SPAWN_BLOOD           = 1 << 6
 };
 DECLARE_FLAGS(DamageFlag, DamageFlags)
 DECLARE_FLAGS_OPERATORS(DamageFlags)
@@ -102,21 +103,22 @@ struct DamageParameters {
 	Vec3f pos;
 	float damages;
 	float radius;
-	long duration;	// in milliseconds -1 for apply once else damage *=framediff
+	GameDuration duration; // in milliseconds -1 for apply once else damage *=framediff
 	DamageArea area; // damage area type
 	DamageFlags flags; // damages flags
 	DamageType type; // damages type
 	EntityHandle source;
 	
-	DamageParameters() {
-		damages = 0.f;
-		radius = 100.f;
-		duration = 1000;
-		area = DAMAGE_AREA;
-		flags = 0;
-		type = 0;
-		source = EntityHandle();
-	}
+	DamageParameters()
+		: pos(0.f)
+		, damages(0.f)
+		, radius(100.f)
+		, duration(GameDurationMs(1000))
+		, area(DAMAGE_AREA)
+		, flags(0)
+		, type(0)
+	{ }
+	
 };
 
 DamageHandle DamageCreate(const DamageParameters & params);
@@ -129,7 +131,7 @@ void DamageRequestEnd(DamageHandle handle);
  */
 void CheckForIgnition(const Sphere & sphere, bool mode, long flag);
 
-void DoSphericDamage(const Sphere & sphere, float dmg, DamageArea flags, DamageType typ = 0, EntityHandle numsource = EntityHandle());
+void DoSphericDamage(const Sphere & sphere, float dmg, DamageArea flags, DamageType typ, EntityHandle numsource);
 
 void ARX_DAMAGE_Reset_Blood_Info();
 void ARX_DAMAGE_Show_Hit_Blood();
@@ -140,16 +142,16 @@ float ARX_DAMAGES_DamagePlayer(float dmg, DamageType type, EntityHandle source =
 void ARX_DAMAGES_DamageFIX(Entity * io, float dmg, EntityHandle source, bool isSpellHit);
 float ARX_DAMAGES_DamageNPC(Entity * io, float dmg, EntityHandle source, bool isSpellHit, const Vec3f * pos);
 bool ARX_DAMAGES_TryToDoDamage(const Vec3f & pos, float dmg, float radius, EntityHandle source);
-void ARX_DAMAGES_ForceDeath(Entity * io_dead, Entity * io_killer);
-float ARX_DAMAGES_DealDamages(EntityHandle target, float dmg, EntityHandle source, DamageType flags, Vec3f * pos);
+void ARX_DAMAGES_ForceDeath(Entity & io_dead, Entity * io_killer);
+void ARX_DAMAGES_DealDamages(EntityHandle target, float dmg, EntityHandle source, DamageType flags, Vec3f * pos);
 
 void ARX_DAMAGES_HealInter(Entity * io, float dmg);
 
 void ARX_DAMAGES_DurabilityCheck(Entity * io, float ratio);
 void ARX_DAMAGES_DurabilityLoss(Entity * io, float loss);
-void ARX_DAMAGES_DurabilityRestore(Entity * io, float ratio);
+void ARX_DAMAGES_DurabilityRestore(Entity * io, float percent);
 void ARX_DAMAGES_DamagePlayerEquipment(float damages);
-float ARX_DAMAGES_ComputeRepairPrice(Entity * torepair, Entity * blacksmith);
+float ARX_DAMAGES_ComputeRepairPrice(const Entity * torepair, const Entity * blacksmith);
 
 void ARX_DAMAGES_DrawDebug();
 

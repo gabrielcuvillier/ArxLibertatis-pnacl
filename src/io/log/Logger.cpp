@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -68,9 +68,11 @@ Lock LogManager::lock;
 
 logger::Source * LogManager::getSource(const char * file) {
 	
-	LogManager::Sources::iterator i = LogManager::sources.find(file);
-	if(i != sources.end()) {
-		return &i->second;
+	{
+		LogManager::Sources::iterator i = LogManager::sources.find(file);
+		if(i != sources.end()) {
+			return &i->second;
+		}
 	}
 	
 	logger::Source * source = &LogManager::sources[file];
@@ -167,12 +169,12 @@ void Logger::log(const char * file, int line, LogLevel level, const std::string 
 	LogManager::lock.unlock();
 }
 
-void Logger::set(const std::string & prefix, Logger::LogLevel level) {
+void Logger::set(const std::string & component, Logger::LogLevel level) {
 	
 	Autolock lock(LogManager::lock);
 	
 	std::pair<LogManager::Rules::iterator, bool> ret;
-	ret = LogManager::rules.insert(std::make_pair(prefix, level));
+	ret = LogManager::rules.insert(std::make_pair(component, level));
 	
 	if(!ret.second) {
 		// entry already existed
@@ -199,11 +201,11 @@ void Logger::set(const std::string & prefix, Logger::LogLevel level) {
 	LogManager::sources.clear();
 }
 
-void Logger::reset(const std::string & prefix) {
+void Logger::reset(const std::string & component) {
 	
 	Autolock lock(LogManager::lock);
 	
-	LogManager::Rules::iterator i = LogManager::rules.find(prefix);
+	LogManager::Rules::iterator i = LogManager::rules.find(component);
 	if(i == LogManager::rules.end()) {
 		return;
 	}
@@ -211,8 +213,8 @@ void Logger::reset(const std::string & prefix) {
 	if(i->second < LogManager::defaultLevel) {
 		// minimum log level may have changed
 		LogManager::minimumLevel = LogManager::defaultLevel;
-		BOOST_FOREACH(const LogManager::Rules::value_type & i, LogManager::rules) {
-			LogManager::minimumLevel = std::min(LogManager::minimumLevel, i.second);
+		BOOST_FOREACH(const LogManager::Rules::value_type & entry, LogManager::rules) {
+			LogManager::minimumLevel = std::min(LogManager::minimumLevel, entry.second);
 		}
 	}
 	
@@ -231,22 +233,22 @@ void Logger::flush() {
 	}
 }
 
-void Logger::configure(const std::string config) {
+void Logger::configure(const std::string & settings) {
 	
 	size_t start = 0;
 	
-	while(start < config.length()) {
+	while(start < settings.length()) {
 		
-		size_t pos = config.find(',', start);
+		size_t pos = settings.find(',', start);
 		if(pos == std::string::npos) {
-			pos = config.length();
+			pos = settings.length();
 		}
 		if(pos == start) {
 			start++;
 			continue;
 		}
 		
-		std::string entry = config.substr(start, pos - start);
+		std::string entry = settings.substr(start, pos - start);
 		start = pos + 1;
 		
 		size_t eq = entry.find('=');
@@ -309,4 +311,4 @@ void Logger::quickShutdown() {
 	}
 }
 
-ARX_PROGRAM_OPTION("debug", "g", "Log level settings", &Logger::configure, "LEVELS");
+ARX_PROGRAM_OPTION_ARG("debug", "g", "Log level settings", &Logger::configure, "LEVELS")

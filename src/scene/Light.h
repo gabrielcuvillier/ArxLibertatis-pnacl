@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -50,9 +50,11 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 
+#include "core/TimeTypes.h"
 #include "audio/AudioTypes.h"
 #include "graphics/BaseGraphicsTypes.h"
 #include "graphics/Color.h"
+#include "math/Angle.h"
 #include "math/Types.h"
 #include "math/Quantizer.h"
 #include "util/Flags.h"
@@ -63,16 +65,17 @@ struct EERIEPOLY;
 struct SMY_VERTEX;
 class Entity;
 
-const size_t MAX_LIGHTS = 1200;
-const size_t MAX_DYNLIGHTS = 500;
+const size_t g_staticLightsMax = 1200;
+const size_t g_dynamicLightsMax = 500;
 
-extern EERIE_LIGHT * PDL[MAX_DYNLIGHTS];
-extern EERIE_LIGHT * GLight[MAX_LIGHTS];
-extern EERIE_LIGHT DynLight[MAX_DYNLIGHTS];
-extern size_t TOTPDL;
-extern size_t TOTIOPDL;
+extern EERIE_LIGHT * g_culledDynamicLights[g_dynamicLightsMax];
+extern EERIE_LIGHT * g_staticLights[g_staticLightsMax];
+extern EERIE_LIGHT g_dynamicLights[g_dynamicLightsMax];
+extern size_t g_culledDynamicLightsCount;
 
-ARX_HANDLE_TYPEDEF(long, LightHandle, -1)
+void culledStaticLightsReset();
+
+typedef HandleType<struct LightHandleTag, long, -1> LightHandle;
 
 enum EERIE_TYPES_EXTRAS_MODE
 {
@@ -87,15 +90,16 @@ enum EERIE_TYPES_EXTRAS_MODE
 	EXTRAS_FIXFLARESIZE      = 0x00000100,
 	EXTRAS_FIREPLACE         = 0x00000200,
 	EXTRAS_NO_IGNIT          = 0x00000400,
-	EXTRAS_FLARE	         = 0x00000800
+	EXTRAS_FLARE             = 0x00000800
 };
 DECLARE_FLAGS(EERIE_TYPES_EXTRAS_MODE, ExtrasType)
 DECLARE_FLAGS_OPERATORS(ExtrasType)
 
 struct EERIE_LIGHT {
-	char exist;
+	
+	bool m_exists;
 	bool m_isIgnitionLight; // TODO refactor special case
-	char treat;
+	bool m_isVisible;
 	ExtrasType extras;
 	bool m_ignitionStatus; // on/off
 	Vec3f pos;
@@ -116,13 +120,37 @@ struct EERIE_LIGHT {
 	float ex_speed;
 	float ex_flaresize;
 	LightHandle m_ignitionLightHandle;
-	unsigned long creationTime;
+	GameInstant creationTime;
 	
 	// will start to fade before the end of duration...
-	unsigned long duration;
+	GameDuration duration;
 	
-	audio::SourceId sample;
+	audio::SourcedSample sample;
 	math::Quantizer m_storedFlameTime;
+	
+	EERIE_LIGHT()
+		: m_exists(false)
+		, m_isIgnitionLight(false)
+		, m_isVisible(false)
+		, extras(0)
+		, m_ignitionStatus(false)
+		, pos(0)
+		, fallstart(0.f)
+		, fallend(0.f)
+		, falldiffmul(0.f)
+		, rgb255(Color3f::black)
+		, intensity(0.f)
+		, rgb(Color3f::black)
+		, m_screenRect(Rectf::ZERO)
+		, m_flareFader(0.f)
+		, ex_flicker(Color3f::black)
+		, ex_radius(0.f)
+		, ex_frequency(0.f)
+		, ex_size(0.f)
+		, ex_speed(0.f)
+		, ex_flaresize(0.f)
+	{ }
+	
 };
 
 struct ColorMod {
@@ -137,10 +165,6 @@ struct ColorMod {
 void RecalcLight(EERIE_LIGHT * el);
 
 void EERIE_LIGHT_GlobalInit();
-long EERIE_LIGHT_GetFree();
-long EERIE_LIGHT_Count();
-void EERIE_LIGHT_GlobalAdd(const EERIE_LIGHT * el);
-void EERIE_LIGHT_MoveAll(const Vec3f & trans);
 long EERIE_LIGHT_Create();
 void PrecalcIOLighting(const Vec3f & pos, float radius);
 
@@ -148,17 +172,22 @@ const LightHandle torchLightHandle = LightHandle(0);
 
 EERIE_LIGHT * lightHandleGet(LightHandle lightHandle);
 
-bool lightHandleIsValid(LightHandle num);
 LightHandle GetFreeDynLight();
-void lightHandleDestroy(LightHandle & handle);
-void endLightDelayed(LightHandle & handle, unsigned long delay);
 
+EERIE_LIGHT * dynLightCreate(LightHandle & handle);
+EERIE_LIGHT * dynLightCreate();
+
+void lightHandleDestroy(LightHandle & handle);
+void endLightDelayed(LightHandle & handle, GameDuration delay);
+
+void resetDynLights();
 
 void ClearDynLights();
-void PrecalcDynamicLighting(long x0, long x1, long z0, long z1, const Vec3f & camPos, float camDepth);
+void PrecalcDynamicLighting(const Vec3f & camPos, float camDepth);
 
 
 struct ShaderLight {
+	
 	Vec3f pos;
 	float fallstart;
 	float fallend;
@@ -166,31 +195,34 @@ struct ShaderLight {
 	float intensity;
 	Color3f rgb;
 	Color3f rgb255;
+	
+	ShaderLight()
+		: pos(0.f)
+		, fallstart(0.f)
+		, fallend(0.f)
+		, falldiffmul(0.f)
+		, intensity(0.f)
+		, rgb(Color3f::black)
+		, rgb255(Color3f::black)
+	{ }
+	
 };
 
-static const int llightsSize = 16;
+static const size_t llightsSize = 16;
 
-void setMaxLLights(int count);
-void UpdateLlights(ShaderLight lights[], int & lightsCount, const Vec3f pos, bool forPlayerColor);
+void setMaxLLights(size_t count);
+void UpdateLlights(ShaderLight lights[], size_t & lightsCount, Vec3f pos, bool forPlayerColor);
 
 void InitTileLights();
-void ResetTileLights();
-void ComputeTileLights(short x,short z);
+void ComputeTileLights(short x, short z);
 void ClearTileLights();
 
-float GetColorz(const Vec3f &pos);
+float GetColorz(const Vec3f & pos);
 
-ColorRGBA ApplyLight(const ShaderLight lights[],
-                     const int lightsCount,
-                     const glm::quat & quat,
-                     const Vec3f & position,
-                     const Vec3f & normal,
-                     const ColorMod & colorMod,
-                     float materialDiffuse = 1.f);
+ColorRGBA ApplyLight(ShaderLight lights[], size_t lightsCount, const glm::quat & quat, const Vec3f & position,
+                     const Vec3f & normal, const ColorMod & colorMod, float materialDiffuse = 1.f);
 
 void ApplyTileLights(EERIEPOLY * ep, const Vec2s & pos);
-
-void EERIERemovePrecalcLights();
 
 void TreatBackgroundDynlights();
 

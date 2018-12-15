@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -32,41 +32,33 @@ public:
 	explicit MappedPld(SaveBlock & save)
 		: m_save(save)
 		, m_fileName("pld")
-		, m_data(NULL)
-		, m_size(0)
 		, m_pld(NULL)
-	{}
-	
-	~MappedPld() {
-		free(m_data);
-	}
+	{ }
 	
 	bool load() {
 		
-		m_data = m_save.load(m_fileName, m_size);
-		if(!m_data) {
+		m_buffer = m_save.load(m_fileName);
+		if(m_buffer.empty()) {
 			std::cerr << m_fileName << " not found" << std::endl;
 			return false;
 		}
 		
-		size_t pos = 0;
-		m_pld = reinterpret_cast<ARX_CHANGELEVEL_PLAYER_LEVEL_DATA *>(m_data + pos);
-		pos += sizeof(ARX_CHANGELEVEL_PLAYER_LEVEL_DATA);
+		m_pld = reinterpret_cast<ARX_CHANGELEVEL_PLAYER_LEVEL_DATA *>(&m_buffer[0]);
+		size_t pos = sizeof(ARX_CHANGELEVEL_PLAYER_LEVEL_DATA);
 		
 		if(m_pld->version != ARX_GAMESAVE_VERSION) {
 			std::cout << "bad version: " << m_pld->version << std::endl;
 			return false;
 		}
 		
-		arx_assert(m_size >= pos);
+		arx_assert(pos <= m_buffer.size());
 		ARX_UNUSED(pos);
 		
 		return true;
 	}
 	
 	void save() {
-		m_save.save(m_fileName, m_data, m_size);
-		
+		m_save.save(m_fileName, m_buffer.data(), m_buffer.size());
 		m_save.flush(m_fileName);
 	}
 	
@@ -75,24 +67,23 @@ public:
 	}
 	
 	void setName(const std::string & name) {
-		util::storeString(m_pld->name, name.c_str());
+		util::storeString(m_pld->name, name);
 	}
 	
 private:
+	
 	SaveBlock & m_save;
 	std::string m_fileName;
 	
-	char * m_data;
-	size_t m_size;
+	std::string m_buffer;
 	
 	ARX_CHANGELEVEL_PLAYER_LEVEL_DATA * m_pld;
+	
 };
 
-int main_rename(SaveBlock & save, int argc, char ** argv) {
+int main_rename(SaveBlock & save, const std::vector<std::string> & args) {
 	
-	(void)argv;
-	
-	if(argc != 1) {
+	if(args.size() != 1) {
 		return -1;
 	}
 	
@@ -109,7 +100,7 @@ int main_rename(SaveBlock & save, int argc, char ** argv) {
 	}
 	
 	std::string oldName = pld.getName();
-	std::string newName = argv[0];
+	const std::string & newName = args[0];
 	
 	std::cout << "Old Name: \"" << oldName << '"' << std::endl;
 	std::cout << "New Name: \"" << newName << '"' << std::endl;

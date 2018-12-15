@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -56,16 +56,17 @@ class PakReader : public PakDirectory {
 public:
 	
 	enum ReleaseType {
-		Demo     = (1<<0),
-		FullGame = (1<<1),
-		Unknown  = (1<<2)
+		Demo     = 1 << 0,
+		FullGame = 1 << 1,
+		Unknown  = 1 << 2,
+		External = 1 << 3
 	};
 	DECLARE_FLAGS(ReleaseType, ReleaseFlags)
 	
 	PakReader() : release(0) { }
 	~PakReader();
 	
-	void removeFile(const res::path & name);
+	void removeFile(const res::path & file);
 	
 	/*!
 	 * Remove an empty directory.
@@ -90,8 +91,7 @@ public:
 	bool addArchive(const fs::path & pakfile);
 	void clear();
 	
-	bool read(const res::path & name, void * buf);
-	char * readAlloc(const res::path & name , size_t & size);
+	std::string read(const res::path & name);
 	
 	PakFileHandle * open(const res::path & name);
 	
@@ -109,6 +109,6 @@ private:
 
 DECLARE_FLAGS_OPERATORS(PakReader::ReleaseFlags)
 
-extern PakReader * resources;
+extern PakReader * g_resources;
 
 #endif // ARX_IO_RESOURCE_PAKREADER_H

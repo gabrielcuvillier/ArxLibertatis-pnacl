@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -39,7 +39,7 @@ namespace util { namespace cmdline {
 /*!
  * This class is a kind of pointer storage.
  * It is used to indicate that option parameter isn't required.
- * \param T Type of the elements.
+ * \tparam T Type of the elements.
  */
 template <typename T>
 struct optional {
@@ -71,20 +71,18 @@ struct optional {
 	/*!
 	 * This function exchanges the content of the optional by the content
 	 * of optional, which is another optional of the same type.
-	 *
-	 * \param rh
 	 */
 	void swap(optional & rh) { // never throws
 		T * tmp(m_ptr);
 		m_ptr = rh.m_ptr;
-		rh.m_ptr = tmp ;
+		rh.m_ptr = tmp;
 	}
 	
-	const T & operator *() const { // never throws
+	const T & operator*() const { // never throws
 		return *m_ptr;
 	}
 	
-	T & operator *() { // never throws
+	T & operator*() { // never throws
 		return const_cast<T &>(static_cast<const optional *>(this)->operator*());
 	}
 	
@@ -98,7 +96,7 @@ struct optional {
 	
 private:
 	
-	struct dummy { void nonnull() {}; };
+	struct dummy { void nonnull() {} };
 	typedef void (dummy::*safe_bool)();
 	
 public:

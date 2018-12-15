@@ -45,6 +45,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_AUDIO_CODEC_WAV_H
 
 #include <stddef.h>
+#include <vector>
 
 #include "audio/AudioTypes.h"
 #include "audio/Stream.h"
@@ -68,15 +69,14 @@ public:
 	PakFileHandle * getStream();
 	aalError getFormat(PCMFormat & format);
 	size_t getLength();
-	size_t getPosition();
 	
-	aalError read(void * buffer, size_t to_read, size_t & read);
+	aalError read(void * buffer, size_t bufferSize, size_t & read);
 	
 private:
 	
-	PakFileHandle * stream;
+	PakFileHandle * m_stream;
 	Codec * codec;
-	void * header; // File data format
+	std::vector<char> m_header; // File data format
 	size_t size, outsize; // Compressed and uncompessed data size
 	size_t offset; // Offset of data in file
 	size_t cursor;

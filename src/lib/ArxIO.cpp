@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,6 +24,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
+#include <cstdlib>
 
 #include "io/Blast.h"
 #include "io/log/Logger.h"
@@ -45,12 +46,13 @@ public:
 
 		std::string levelName;
 		switch(level) {
-		case Logger::Debug:    levelName = "Debug"; break;
-		case Logger::Info:     levelName = "Info"; break;
-		case Logger::Warning:  levelName = "Warning"; break;
-		case Logger::Error:    levelName = "Error"; break;
-		case Logger::Critical: levelName = "Critical"; break;
-		case Logger::None: ARX_DEAD_CODE(); return;
+			case Logger::Debug:    levelName = "Debug"; break;
+			case Logger::Info:     levelName = "Info"; break;
+			case Logger::Console:  levelName = "Console"; break;
+			case Logger::Warning:  levelName = "Warning"; break;
+			case Logger::Error:    levelName = "Error"; break;
+			case Logger::Critical: levelName = "Critical"; break;
+			case Logger::None: arx_unreachable();
 		}
 
 		m_Lines.push_back(levelName + ": " + str);
@@ -92,9 +94,12 @@ int ArxIO_getLogLine(char * outMessage, int size) {
 }
 
 void ArxIO_unpack_alloc(const char * in, const size_t inSize, char ** out, size_t * outSize) {
-	*out = blastMemAlloc(in, inSize, *outSize);
+	std::string buffer = blast(in, inSize);
+	*outSize = buffer.size();
+	*out = new char[buffer.size()];
+	std::memcpy(*out, buffer.data(), buffer.size());
 }
 
-void ArxIO_unpack_free(char * buffer) {
-	free(buffer);
+void ArxIO_unpack_free(char * buffer) { // NOLINT const would not be appropriate here
+	delete[] buffer;
 }

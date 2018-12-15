@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,11 +23,17 @@
 #include <ios>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 
 #include "io/log/Logger.h"
 
 int IniKey::getValue(int defaultValue) const {
+	
+	if(value == "false")
+		return 0;
+	else if(value == "true")
+		return 1;
 	
 	std::istringstream iss(value);
 	
@@ -75,7 +81,25 @@ void IniSection::addKey(const std::string & key, const std::string & value) {
 	
 	IniKey k = IniKey(key, value);
 	boost::to_lower(k.name);
-	keys.push_back(k);
 	
-	LogDebug("found key " << key << "=\"" << value << "\"");
+	LogDebug("added key " << key << "=\"" << value << "\"");
+	keys.push_back(k);
 }
+
+void IniSection::setKey(const std::string & key, const std::string & value) {
+	
+	IniKey k = IniKey(key, value);
+	boost::to_lower(k.name);
+	
+	BOOST_FOREACH(IniKey & old, keys) {
+		if(old.name == k.name) {
+			LogDebug("replaced key " << k.name << "=\"" << k.value << "\"" << " old: " << "\"" << old.value << "\"");
+			old = k;
+			return;
+		}
+	}
+	
+	LogDebug("added key " << key << "=\"" << value << "\"");
+	keys.push_back(k);
+}
+

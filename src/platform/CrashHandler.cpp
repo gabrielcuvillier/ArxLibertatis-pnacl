@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
+#include <sstream>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -46,6 +47,8 @@
 static CrashHandlerImpl * gCrashHandlerImpl = 0;
 static int gCrashHandlerInitCount = 0;
 
+#ifdef ARX_DEBUG
+
 typedef void(*AssertHandler)(const char * expr, const char * file, unsigned int line,
                              const char * msg);
 extern AssertHandler g_assertHandler;
@@ -53,52 +56,46 @@ extern AssertHandler g_assertHandler;
 static void crashAssertHandler(const char * expr, const char * file, unsigned int line,
                                const char * msg) {
 	
-	gCrashHandlerImpl->addText("Assertion Failed at ");
 	const char * filename = file + std::strlen(file);
 	while(filename != file && filename[-1] != '/' && filename[-1] != '\\') {
 		filename--;
 	}
-	gCrashHandlerImpl->addText(filename);
-	gCrashHandlerImpl->addText(":");
-	char buffer[32];
-	std::sprintf(buffer, "%d", line);
-	gCrashHandlerImpl->addText(buffer);
-	gCrashHandlerImpl->addText(": ");
-	gCrashHandlerImpl->addText(expr);
-	gCrashHandlerImpl->addText("\n");
 	
+	std::ostringstream oss;
+	oss << "Assertion Failed at " << filename << ":" << line << ": " << expr << "\n";
 	if(msg) {
-		gCrashHandlerImpl->addText("Message: ");
-		gCrashHandlerImpl->addText(msg);
-		gCrashHandlerImpl->addText("\n");
+		oss << "Message: " << msg << "\n";
 	}
+	oss << "\n";
 	
-	gCrashHandlerImpl->addText("\n");
+	gCrashHandlerImpl->addText(oss.str().c_str());
 	
 }
 
-#endif
+#endif // ARX_DEBUG
+
+#endif // ARX_HAVE_CRASHHANDLER
 
 bool CrashHandler::initialize(int argc, char ** argv) {
 	
-#if ARX_HAVE_CRASHHANDLER
+	#if ARX_HAVE_CRASHHANDLER
 	
 	if(!gCrashHandlerImpl) {
 		
-#if ARX_HAVE_CRASHHANDLER_POSIX
+		#if ARX_HAVE_CRASHHANDLER_POSIX
 		
 		gCrashHandlerImpl = new CrashHandlerPOSIX();
 		
-#elif ARX_HAVE_CRASHHANDLER_WINDOWS
-
+		#elif ARX_HAVE_CRASHHANDLER_WINDOWS
+		
 		if(IsDebuggerPresent()) {
 			LogInfo << "Debugger attached, disabling crash handler.";
 			return false;
 		}
-
+		
 		gCrashHandlerImpl = new CrashHandlerWindows();
 		
-#endif
+		#endif
 		
 		const char * arg = "--crashinfo=";
 		if(argc >= 2 && boost::starts_with(argv[1], arg)) {
@@ -119,23 +116,27 @@ bool CrashHandler::initialize(int argc, char ** argv) {
 			return false;
 		}
 		
+		#ifdef ARX_DEBUG
 		g_assertHandler = crashAssertHandler;
+		#endif
 	}
 	
 	gCrashHandlerInitCount++;
 	return true;
 	
-#else
+	#else
 	ARX_UNUSED(argc), ARX_UNUSED(argv);
 	return false;
-#endif
+	#endif
 }
 
 void CrashHandler::shutdown() {
 #if ARX_HAVE_CRASHHANDLER
 	gCrashHandlerInitCount--;
 	if(gCrashHandlerInitCount == 0) {
+		#ifdef ARX_DEBUG
 		g_assertHandler = NULL;
+		#endif
 		gCrashHandlerImpl->shutdown();
 		delete gCrashHandlerImpl;
 		gCrashHandlerImpl = 0;
@@ -171,6 +172,19 @@ bool CrashHandler::setVariable(const std::string & name, const std::string & val
 	return gCrashHandlerImpl->setVariable(name, value);
 #else
 	ARX_UNUSED(name), ARX_UNUSED(value);
+	return false;
+#endif
+}
+
+bool CrashHandler::setWindow(u64 window) {
+#if ARX_HAVE_CRASHHANDLER
+	if(!isInitialized()) {
+		return false;
+	}
+	gCrashHandlerImpl->setWindow(window);
+	return true;
+#else
+	ARX_UNUSED(window);
 	return false;
 #endif
 }

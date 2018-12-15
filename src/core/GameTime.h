@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -47,93 +47,95 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #ifndef ARX_CORE_GAMETIME_H
 #define ARX_CORE_GAMETIME_H
 
-#include "graphics/Math.h"
+#include "core/TimeTypes.h"
+#include "util/Flags.h"
 
-#include "platform/Time.h"
+
+class PlatformTime {
+	
+	PlatformInstant m_frameStartTime;
+	PlatformDuration m_lastFrameDuration;
+	
+public:
+	
+	PlatformTime()
+		: m_frameStartTime(0)
+		, m_lastFrameDuration(0)
+	{ }
+	
+	void updateFrame();
+	
+	void overrideFrameDuration(PlatformDuration duration) {
+		m_lastFrameDuration = duration;
+	}
+	
+	PlatformInstant frameStart() {
+		return m_frameStartTime;
+	}
+	
+	PlatformDuration lastFrameDuration() {
+		return m_lastFrameDuration;
+	}
+	
+};
+
+extern PlatformTime g_platformTime;
+
 
 class GameTime {
 	
 public:
 	
-	GameTime();
-	~GameTime() {}
-	
-	void init();
-	
-	void pause();
-	void resume();
-	
-	void force_time_restore(const unsigned long time);
-	
-	// TODO probably the source of the need to clip frame_delay
-	void force_frame_time_restore(const unsigned long v) {
-		frame_time_us = v * 1000;
-		last_frame_time_us = v * 1000;
-	}
-	
-	float now_f() const {
-		return m_now_us / 1000.0f;
-	}
-	
-	unsigned long now_ul() const {
-		return checked_range_cast<unsigned long>(m_now_us / 1000);
-	}
-	
-	void update(const bool & use_pause = true) {
-		if (is_paused() && use_pause) {
-			m_now_us = platform::getElapsedUs(start_time, pause_time);
-		} else {
-			m_now_us = platform::getElapsedUs(start_time);
-		}
-	}
-	
-	bool is_paused() const { 
-		return paused; 
-	}
-	
-	// used only for "slow time" spell
-	void increment_start_time(const u64 & inc) {
-		start_time += inc;
-	}
-	
-	float get_frame_time() const { 
-		return frame_time_us / 1000.0f; 
-	}
-	
-	float get_last_frame_time() const {
-		return last_frame_time_us / 1000.0f;
-	}
-	
-	float get_frame_delay() const {
-		return frame_delay_ms;
-	}
-	
-	void update_frame_time() {
-		update();
-		frame_time_us = m_now_us;
-		frame_delay_ms = (frame_time_us - last_frame_time_us) / 1000.0f;
-	}
-	
-	void update_last_frame_time() {
-		last_frame_time_us = frame_time_us;
-	}
+	enum PauseFlag {
+		PauseInitial   = (1 << 0),
+		PauseMenu      = (1 << 1),
+		PauseCinematic = (1 << 2),
+		PauseUser      = (1 << 3),
+	};
+	DECLARE_FLAGS(PauseFlag, PauseFlags)
 	
 private:
 	
-	bool paused;
+	GameInstant m_now;
+	GameDuration m_lastFrameDuration;
+	float m_speed;
+	PauseFlags m_paused;
 	
-	// these values are expected to wrap
-	u64 pause_time;
-	u64 start_time;
+public:
 	
-	// TODO this sometimes respects pause and sometimes not!
-	u64 m_now_us;
+	GameTime();
 	
-	u64 last_frame_time_us;
-	u64 frame_time_us;
-	float frame_delay_ms;
+	void pause(PauseFlags flags) {
+		m_paused |= flags;
+	}
+	
+	void resume(PauseFlags flags) {
+		m_paused &= ~flags;
+	}
+	
+	void reset(GameInstant time);
+	
+	GameInstant now() const {
+		return m_now;
+	}
+	
+	void update(PlatformDuration frameDuration);
+	
+	PauseFlags isPaused() const {
+		return m_paused;
+	}
+	
+	GameDuration lastFrameDuration() const {
+		return m_lastFrameDuration;
+	}
+	
+	float speed() const { return m_speed; }
+	void setSpeed(float speed) { m_speed = speed; }
+	
 };
 
-extern GameTime arxtime;
+DECLARE_FLAGS_OPERATORS(GameTime::PauseFlags)
+
+extern GameTime g_gameTime;
 
 #endif // ARX_CORE_GAMETIME_H

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -50,11 +50,10 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 namespace audio {
 
-Sample::Sample(const res::path & _name)
-	: ResourceHandle()
-	, name(_name)
-	, length(0)
-	, format()
+Sample::Sample(const res::path & name)
+	: m_name(name)
+	, m_length(0)
+	, m_format()
 {}
 
 Sample::~Sample() {
@@ -72,17 +71,17 @@ Sample::~Sample() {
 
 aalError Sample::load() {
 	
-	if(length != 0) {
+	if(m_length != 0) {
 		return AAL_ERROR_INIT;
 	}
 	
-	Stream * stream = createStream(name);
+	Stream * stream = createStream(m_name);
 	if(!stream) {
 		return AAL_ERROR_FILEIO;
 	}
 	
-	stream->getFormat(format);
-	length = stream->getLength();
+	stream->getFormat(m_format);
+	m_length = stream->getLength();
 	deleteStream(stream);
 	
 	return AAL_OK;

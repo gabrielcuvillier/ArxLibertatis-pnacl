@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,7 +21,10 @@
 
 #include "ui_ArxProfiler.h"
 
+#include <algorithm>
 #include <limits>
+
+#include <boost/foreach.hpp>
 
 #include <QDebug>
 #include <QHash>
@@ -41,7 +44,7 @@
 #include "platform/profiler/ProfilerDataFormat.h"
 #include "util/String.h"
 
-ArxProfiler::ArxProfiler(QWidget *parent, Qt::WindowFlags flags)
+ArxProfiler::ArxProfiler(QWidget * parent, Qt::WindowFlags flags)
 	: QMainWindow(parent, flags)
 	, ui(new Ui::ArxProfilerClass)
 {
@@ -164,7 +167,7 @@ void ArxProfiler::openFile() {
 class QGraphicsProfilePoint : public QGraphicsRectItem {
 	
 public:
-	QGraphicsProfilePoint(const QRectF &rect, QGraphicsItem *parent = 0)
+	QGraphicsProfilePoint(const QRectF & rect, QGraphicsItem * parent = 0)
 		: QGraphicsRectItem(rect, parent)
 	{}
 	
@@ -177,7 +180,7 @@ public:
 		return Type;
 	}
 	
-	void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0) {
+	void paint(QPainter * painter, const QStyleOptionGraphicsItem * option, QWidget * widget = 0) {
 		QGraphicsRectItem::paint(painter, option, widget);
 		
 		if(rect().width() * painter->transform().m11() >= 5) {
@@ -199,7 +202,7 @@ public:
 		return m_Text;
 	}
 	
-	void setText(const QString& text) {
+	void setText(const QString & text) {
 		m_Text = text;
 	}
 	
@@ -213,7 +216,7 @@ private:
 const qreal ITEM_HEIGHT = 15;
 const qreal THREAD_SPACING = 50;
 
-ProfilerView::ProfilerView(QWidget* parent)
+ProfilerView::ProfilerView(QWidget * parent)
 	: QGraphicsView(parent)
 	, m_data(NULL)
 {
@@ -237,23 +240,14 @@ ProfilerView::ProfilerView(QWidget* parent)
 	setFont(font);
 }
 
-void ProfilerView::setData(ThreadsData * data) {
+void ProfilerView::setData(ThreadsData * threadsData) {
 	
-	quint64 firstTimestamp = std::numeric_limits<quint64>::max();
-	quint64 lastTimestamp = std::numeric_limits<quint64>::min();
-	
-	for(ThreadsData::const_iterator it = data->begin(); it != data->end(); ++it) {
-		
-		if(it->second.profilePoints.empty()) {
-			continue;
-		}
-		
-		if(firstTimestamp > it->second.profilePoints[0].startTime) {
-			firstTimestamp = it->second.profilePoints[0].startTime;
-		}
-		
-		if(lastTimestamp < it->second.profilePoints.back().endTime) {
-			lastTimestamp = it->second.profilePoints.back().endTime;
+	qint64 firstTimestamp = std::numeric_limits<qint64>::max();
+	qint64 lastTimestamp = std::numeric_limits<qint64>::min();
+	BOOST_FOREACH(const ThreadsData::value_type & entry, *threadsData) {
+		if(!entry.second.profilePoints.empty()) {
+			firstTimestamp = std::min(firstTimestamp, entry.second.profilePoints[0].startTime);
+			lastTimestamp = std::max(lastTimestamp, entry.second.profilePoints.back().endTime);
 		}
 	}
 	
@@ -265,13 +259,13 @@ void ProfilerView::setData(ThreadsData * data) {
 	QPen profilePointPen(Qt::black);
 	profilePointPen.setCosmetic(true);
 	
-	for(ThreadsData::iterator it = data->begin(); it != data->end(); ++it) {
-		ThreadData& threadData = it->second;
+	BOOST_FOREACH(ThreadsData::value_type & entry, *threadsData) {
+		ThreadData & threadData = entry.second;
 		
 		QGraphicsItemGroup * group = new QGraphicsItemGroup();
 		m_scene->addItem(group);
 		
-		std::vector<quint64> threadStack;
+		std::vector<qint64> threadStack;
 		
 		for(std::vector<ProfileSample>::const_reverse_iterator it = threadData.profilePoints.rbegin(); it != threadData.profilePoints.rend(); ++it) {
 			
@@ -290,14 +284,14 @@ void ProfilerView::setData(ThreadsData * data) {
 			
 			qreal duration = qreal(it->endTime - it->startTime);
 			
-			const char* unitName = humanReadableTime(duration);
+			const char * unitName = humanReadableTime(duration);
 			
 			// Round to get 2 decimals of precision
 			duration = (int)(duration * 100);
 			duration /= 100;
 			
 			QRectF rect(qreal(it->startTime - firstTimestamp), offset, qreal(it->endTime - it->startTime), ITEM_HEIGHT);
-			QGraphicsProfilePoint* profilePoint = new QGraphicsProfilePoint(rect, group);
+			QGraphicsProfilePoint * profilePoint = new QGraphicsProfilePoint(rect, group);
 			
 			QString text = QString("%3 (%1 %2)").arg(duration).arg(unitName).arg(it->tag);
 			profilePoint->setText(text);
@@ -317,14 +311,17 @@ void ProfilerView::setData(ThreadsData * data) {
 		nextPos += qreal(threadData.maxDepth) * ITEM_HEIGHT + THREAD_SPACING;
 	}
 	
-	setSceneRect(0, 0, qreal(lastTimestamp - firstTimestamp), nextPos);
-
-	scale(size().width() / (qreal)(lastTimestamp - firstTimestamp), 1.0);
+	const qreal timeDiff = qreal(lastTimestamp - firstTimestamp);
+	
+	setSceneRect(0, 0, timeDiff, nextPos);
+	
+	resetMatrix();
+	scale(size().width() / timeDiff, 1.0);
 	
 	setDragMode(ScrollHandDrag);
 	setInteractive(false);
 
-	m_data = data;
+	m_data = threadsData;
 }
 
 void ProfilerView::paintEvent(QPaintEvent * event) {
@@ -340,11 +337,9 @@ void ProfilerView::paintEvent(QPaintEvent * event) {
 	qreal nextY = 5;
 	
 	for(ThreadsData::iterator it = m_data->begin(); it != m_data->end(); ++it) {
-		ThreadData& threadData = it->second;
-		
+		ThreadData & threadData = it->second;
 		painter.drawLine(QPointF(0, nextY), QPointF(viewport()->width(), nextY));
 		painter.drawText(QPointF(0, nextY + 14), threadData.info.threadName);
-		
 		nextY += qreal(threadData.maxDepth) * ITEM_HEIGHT + THREAD_SPACING;
 	}
 	
@@ -370,11 +365,11 @@ void ProfilerView::zoomEvent(QPoint mousePos, bool zoomIn) {
 	centerOn(viewCenter() + offset);
 }
 
-void ProfilerView::wheelEvent(QWheelEvent* event) {
+void ProfilerView::wheelEvent(QWheelEvent * event) {
 	zoomEvent(event->pos(), event->delta() > 0);
 }
 
-void ProfilerView::keyPressEvent(QKeyEvent* event) {
+void ProfilerView::keyPressEvent(QKeyEvent * event) {
 	if(!underMouse())
 		return;
 	
@@ -391,18 +386,19 @@ void ProfilerView::keyPressEvent(QKeyEvent* event) {
 
 void ProfilerView::contextMenuEvent(QContextMenuEvent * event) {
 	
-	if(QGraphicsItem *item = itemAt(event->pos())) {
+	if(QGraphicsItem * item = itemAt(event->pos())) {
 		if(QGraphicsProfilePoint * sample = qgraphicsitem_cast<QGraphicsProfilePoint *>(item)) {
 			QMenu menu(this);
 			
 			QAction * copyAction = new QAction("Copy text", this);
 			copyAction->setData(sample->text());
-			connect(copyAction, SIGNAL(triggered()),this, SLOT(copyToClipboard()));
+			connect(copyAction, SIGNAL(triggered()), this, SLOT(copyToClipboard()));
 			
 			menu.addAction(copyAction);
 			menu.exec(event->globalPos());
 		}
 	}
+	
 }
 
 void ProfilerView::copyToClipboard() {
@@ -416,8 +412,8 @@ void ProfilerView::copyToClipboard() {
 const char * ProfilerView::humanReadableTime(qreal & duration) {
 	
 	static const qint32 NUM_UNITS = 5;
-	static const char*  UNIT_NAME[NUM_UNITS + 1] = {"us", "ms", "s", "m", "h", "d"};
-	static const qreal  UNIT_NEXT[NUM_UNITS] =     {1000, 1000,  60,  60,  24     };
+	static const char * UNIT_NAME[NUM_UNITS + 1] = {"us", "ms", "s", "m", "h", "d"};
+	static const qreal UNIT_NEXT[NUM_UNITS] = {1000, 1000,  60,  60,  24     };
 	
 	int i;
 	for(i = 0; i < NUM_UNITS; i++) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -47,6 +47,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <stddef.h>
 #include <vector>
 
+#include "core/TimeTypes.h"
 #include "game/Camera.h"
 #include "graphics/Color.h"
 #include "math/RandomFlicker.h"
@@ -71,7 +72,7 @@ public:
 	CinematicKeyframe * next;
 	
 	CinematicLight()
-		: pos(Vec3f_ZERO)
+		: pos(0.f)
 		, fallin(100.f)
 		, fallout(200.f)
 		, color(Color3f::white * 255.f)
@@ -93,7 +94,8 @@ struct CinematicFadeOut {
 class Cinematic {
 	
 public:
-	Vec3f pos;
+	
+	Vec3f m_pos;
 	float angz;
 	Vec3f m_nextPos; // in the case of a non-fade interpolation
 	float m_nextAngz;
@@ -103,7 +105,7 @@ public:
 	int fx;
 	int m_nextFx;
 	bool changekey;
-	CinematicKeyframe * key;
+	CinematicKeyframe * m_key;
 	bool projectload;
 	short ti;
 	short force;
@@ -123,8 +125,8 @@ public:
 	float m_nextAngzgrille;
 	CinematicFadeOut m_nextFadegrille;
 	float speedtrack;
-	float flTime;
-	std::vector<CinematicBitmap*>	m_bitmaps;
+	PlatformDuration flTime;
+	std::vector<CinematicBitmap *> m_bitmaps;
 	
 	CinematicFadeOut fadeprev;
 	CinematicFadeOut fadenext;
@@ -134,19 +136,19 @@ public:
 	explicit Cinematic(Vec2i size);
 	~Cinematic();
 	
-	void InitDeviceObjects();
 	void OneTimeSceneReInit();
-	void Render(float framediff);
-	void New();
-	void DeleteDeviceObjects();
+	void Render(PlatformDuration frameDuration);
 	
 	void DeleteAllBitmap();
 	
 private:
-	EERIE_CAMERA	m_camera;
+	
+	Camera m_camera;
+	
 public:
 	
 	ARX_USE_ALIGNED_NEW(Cinematic) // for m_camera
+	
 };
 
 void DrawGrille(CinematicBitmap * bitmap, Color col, int fx, CinematicLight * light,

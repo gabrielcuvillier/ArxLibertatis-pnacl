@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,46 +21,57 @@
 #define ARX_GUI_WIDGET_CYCLETEXTWIDGET_H
 
 #include <vector>
+#include <string>
+
 #include <boost/function.hpp>
 
-#include "gui/widget/ButtonWidget.h"
 #include "gui/widget/Widget.h"
+#include "platform/Platform.h"
 
-class CycleTextWidget: public Widget {
+class Font;
+class ButtonWidget;
+class TextWidget;
+
+class CycleTextWidget arx_final : public Widget {
 	
 public:
-	explicit CycleTextWidget();
+	
+	explicit CycleTextWidget(const Vec2f & size, Font * font, const std::string & label,
+	                         Font * entryFont = NULL);
 	virtual ~CycleTextWidget();
 	
-	void setValue(int value) { iPos = value; }
-	int getValue() const { return iPos; }
-	void setOldValue(int value) { iOldPos = value; }
-	int getOldValue() const { return iOldPos; }
+	void setValue(int value) { m_value = value; }
+	int getValue() const { return m_value; }
 	
 	void selectLast();
 	
-	void AddText(TextWidget * text);
+	void addEntry(const std::string & label);
 	
-	void Move(const Vec2f & offset);
-	bool OnMouseClick();
-	void Update();
-	void Render();
-	void RenderMouseOver();
-	void EmptyFunction();
+	void move(const Vec2f & offset);
+	bool click();
+	void render(bool mouseOver = false);
+	void hover();
 	virtual void setEnabled(bool enable);
 	
 	boost::function<void(int, const std::string &)> valueChanged;
 	
 	virtual WidgetType type() const {
 		return WidgetType_CycleText;
-	};
+	}
 	
 private:
-	ButtonWidget		*	pLeftButton;
-	ButtonWidget		*	pRightButton;
-	std::vector<TextWidget*>	vText;
-	int					iPos;
-	int					iOldPos;
+	
+	void newValue(int value);
+	
+	TextWidget * m_label;
+	ButtonWidget * m_left;
+	ButtonWidget * m_right;
+	Font * m_font;
+	std::vector<TextWidget *> m_entries;
+	Rectf m_content;
+	
+	int m_value;
+	
 };
 
 #endif // ARX_GUI_WIDGET_CYCLETEXTWIDGET_H

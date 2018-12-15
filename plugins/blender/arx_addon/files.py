@@ -1,4 +1,4 @@
-# Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+# Copyright 2015-2017 Arx Libertatis Team (see the AUTHORS file)
 #
 # This file is part of Arx Libertatis.
 #
@@ -16,7 +16,9 @@
 # along with Arx Libertatis. If not, see <http://www.gnu.org/licenses/>.
 
 import os
-from collections import namedtuple
+import io
+import re
+from collections import namedtuple, OrderedDict
 
 
 def splitPath(path):
@@ -35,8 +37,6 @@ def splitPath(path):
 
 EntityInstance = namedtuple("ArxInstance", ["id", "script"])
 EntityData = namedtuple("EntityData", ["path", "script", "icon", "instances"])
-
-import io
 
 
 class Entities:
@@ -103,6 +103,7 @@ class Entities:
                 e = EntityData(root, mainScript, icon, instances)
                 self.data[key] = e
 
+
     def parseResourceReferences(self):
         for key in self.data:
             value = self.data[key]
@@ -117,7 +118,6 @@ class Entities:
 
 
 ModelData = namedtuple("ModelData", ["path", "model", "tweaks"])
-
 
 class Models:
     def __init__(self):
@@ -213,10 +213,21 @@ class Levels:
     def __init__(self):
         self.paths = ["graph/levels", "game/graph/levels"]
         self.danglingPaths = []
-        self.levels = {}
+        self.levels = OrderedDict()
 
     def update(self, absroot):
         dirs = os.listdir(absroot)
+
+        def sortFunc(x):
+            l = []
+            for p in re.split('([0-9]+)',  x):
+                if p.isdigit():
+                    l.append(int(p))
+                elif len(p) > 0:
+                    l.append(p)
+            return tuple(l)
+
+        dirs = sorted(dirs, key=sortFunc)
         for lvlName in dirs:
             l = os.path.join(absroot, lvlName)
             if os.path.isdir(l):
@@ -253,19 +264,20 @@ class Levels:
 
 class Cinematics:
     def __init__(self):
-        self.paths = ["graph/interface/illustrations"]
+        self.paths = ["graph/interface"] # TODO why not "graph/interface/illustrations"
         self.danglingPaths = []
         self.cins = []
-        self.textures = []
+        self.textures = {}
 
     def update(self, root):
+        root = os.path.join(root, 'illustrations') # TODO hack
         sub = os.listdir(root)
         for s in sub:
             foo = os.path.join(root, s)
             if not os.path.isdir(foo):
                 name, ext = os.path.splitext(s)
                 if ext == ".cin":
-                    self.cins.append(s)
+                    self.cins.append(foo)
                 else:
                     self.danglingPaths.append(foo)
             else:
@@ -274,7 +286,7 @@ class Cinematics:
                     for b in bar:
                         name, ext = os.path.splitext(b)
                         if ext == ".tga":
-                            self.textures.append(b)
+                            self.textures[name] = b
                         else:
                             self.danglingPaths.append(b)
                 else:
@@ -296,6 +308,7 @@ class Animations:
         self.paths = ["graph/obj3d/anims"]
         self.danglingPaths = []
         self.amins = []
+        self.data = {}
 
     def update(self, root):
         for root, dirs, files in os.walk(root):
@@ -305,6 +318,7 @@ class Animations:
                 name, ext = os.path.splitext(f)
                 if ext == ".tea":
                     self.amins.append(foo)
+                    self.data[name] = foo
                 else:
                     self.danglingPaths.append(foo)
 
@@ -314,6 +328,8 @@ class AudioEffects:
         self.paths = ["sfx"]
         self.danglingPaths = []
         self.effects = []
+        self.ambiances = []
+        self.environments = []
 
     def update(self, root):
         for root, dirs, files in os.walk(root):
@@ -321,15 +337,37 @@ class AudioEffects:
             for f in files:
                 foo = os.path.join(root, f)
                 name, ext = os.path.splitext(f)
-                if ext == ".wav" or ext == ".amb" or ext == ".aef":
-                    self.effects.append(foo)
+                if ext == ".wav":
+                    self.effects.append(name)
+                elif ext == ".amb":
+                    self.ambiances.append(name)
+                elif ext == ".aef":
+                    self.environments.append(name)
                 else:
                     self.danglingPaths.append(foo)
+
+class AudioSpeech:
+    def __init__(self):
+        self.paths = ["speech"]
+        self.danglingPaths = []
+        self.speeches = {}
+
+    def update(self, root):
+        langDirNames = os.listdir(root)
+        for langDirName in langDirNames:
+            langDir = os.path.join(root, langDirName)
+            fileNames = os.listdir(langDir)
+            files = []
+            for fileName in fileNames:
+                files.append(fileName)
+
+            self.speeches[langDirName] = files
 
 
 class ArxFiles(object):
     def __init__(self, rootPath):
         self.rootPath = str(rootPath)
+        self.allFiles = set()
 
         self.entities = Entities()
         self.models = Models()
@@ -339,13 +377,21 @@ class ArxFiles(object):
         self.animations = Animations()
         self.textures = Textures()
         self.audioEffects = AudioEffects()
+        self.audioSpeech = AudioSpeech()
 
         self.handlers = [self.entities, self.models, self.speeches, self.levels, self.cinematics, self.animations,
-                         self.textures, self.audioEffects]
+                         self.textures, self.audioEffects, self.audioSpeech]
 
         self.danglingPaths = []
 
     def updateAll(self):
+        for root, dirs, files in os.walk(self.rootPath):
+            relRoot = os.path.relpath(root, self.rootPath)
+
+            for f in files:
+                relFile = os.path.join(relRoot, f)
+                self.allFiles.add(relFile)
+
         for root, dirs, files in os.walk(self.rootPath):
             relRoot = os.path.relpath(root, self.rootPath)
 

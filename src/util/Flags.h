@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -32,124 +32,117 @@ template <typename Enum_>
 class Flags {
 	
 	typedef void ** Zero;
-	u32 flags;
+	u32 m_flags;
 	
-	Flags(u32 flag, bool dummy) : flags(flag) { ARX_UNUSED(dummy); }
+	Flags(u32 flags, bool dummy) : m_flags(flags) { ARX_UNUSED(dummy); }
 	
 public:
 	
 	typedef Enum_ Enum;
 	
-	/* implicit */ Flags(Enum flag) : flags(flag) { }
+	/* implicit */ Flags(Enum flag) : m_flags(flag) { }
 	
-	/* implicit */ Flags(Zero = 0) : flags(0) { }
-	
-	Flags(const Flags & o) : flags(o.flags) { }
+	/* implicit */ Flags(Zero /* zero */ = 0) : m_flags(0) { }
 	
 	static Flags load(u32 flags) {
 		return Flags(flags, true);
 	}
 	
 	bool has(Enum flag) const {
-		return !!(flags & (u32)flag);
+		return !!(m_flags & u32(flag));
 	}
 	
 	bool hasAll(Flags o) const {
-		return (flags & o.flags) == o.flags;
+		return (m_flags & o.m_flags) == o.m_flags;
 	}
 	
 	Flags except(Enum flag) const {
 		Flags r;
-		r.flags = flags & ~(u32)flag;
+		r.m_flags = m_flags & ~u32(flag);
 		return r;
 	}
 	
 	void remove(Enum flag) {
-		flags &= ~(u32)flag;
+		m_flags &= ~u32(flag);
 	}
 	
 	operator u32() const {
-		return flags;
+		return m_flags;
 	}
 	
 	Flags operator~() const {
 		Flags r;
-		r.flags = ~flags;
+		r.m_flags = ~m_flags;
 		return r;
 	}
 	
 	bool operator!() const {
-		return (flags == 0);
+		return (m_flags == 0);
 	}
 	
 	Flags operator&(Flags o) const {
 		Flags r;
-		r.flags = flags & o.flags;
+		r.m_flags = m_flags & o.m_flags;
 		return r;
 	}
 	
 	Flags operator|(Flags o) const {
 		Flags r;
-		r.flags = flags | o.flags;
+		r.m_flags = m_flags | o.m_flags;
 		return r;
 	}
 	
 	Flags operator^(Flags o) const {
 		Flags r;
-		r.flags = flags ^ o.flags;
+		r.m_flags = m_flags ^ o.m_flags;
 		return r;
 	}
 	
-	Flags & operator&=(const Flags & o) {
-		flags &= o.flags;
+	Flags & operator&=(Flags o) {
+		m_flags &= o.m_flags;
 		return *this;
 	}
 	
 	Flags & operator|=(Flags o) {
-		flags |= o.flags;
+		m_flags |= o.m_flags;
 		return *this;
 	}
 	
 	Flags & operator^=(Flags o) {
-		flags ^= o.flags;
+		m_flags ^= o.m_flags;
 		return *this;
 	}
 	
 	Flags operator&(Enum flag) const {
 		Flags r;
-		r.flags = flags & (u32)flag;
+		r.m_flags = m_flags & u32(flag);
 		return r;
 	}
 	
 	Flags operator|(Enum flag) const {
 		Flags r;
-		r.flags = flags | (u32)flag;
+		r.m_flags = m_flags | u32(flag);
 		return r;
 	}
 	
 	Flags operator^(Enum flag) const {
 		Flags r;
-		r.flags = flags ^ (u32)flag;
+		r.m_flags = m_flags ^ u32(flag);
 		return r;
 	}
 	
 	Flags & operator&=(Enum flag) {
-		flags &= (u32)flag;
+		m_flags &= u32(flag);
 		return *this;
 	}
 	
 	Flags & operator|=(Enum flag) {
-		flags |= (u32)flag;
+		m_flags |= u32(flag);
 		return *this;
 	}
 	
 	Flags & operator^=(Enum flag) {
-		flags ^= (u32)flag;
-		return *this;
-	}
-	
-	Flags & operator=(Flags o) {
-		flags = o.flags;
+		m_flags ^= u32(flag);
 		return *this;
 	}
 	
@@ -164,11 +157,9 @@ public:
  */
 class IncompatibleFlag {
 	
-	u32 value;
-	
 public:
 	
-	explicit IncompatibleFlag(u32 flag) : value(flag) { }
+	explicit IncompatibleFlag(u32 flag) { ARX_UNUSED(flag); }
 	
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,11 +20,13 @@
 #ifndef ARX_GAME_EFFECT_QUAKE_H
 #define ARX_GAME_EFFECT_QUAKE_H
 
-#include "game/Camera.h"
+#include "core/TimeTypes.h"
 
-void AddQuakeFX(float intensity, float duration, float period, bool flags);
+struct Camera;
+
+void AddQuakeFX(float intensity, GameDuration duration, float period, bool sound);
 void RemoveQuakeFX();
 
-void ManageQuakeFX(EERIE_CAMERA *cam);
+void ManageQuakeFX(Camera * cam);
 
 #endif // ARX_GAME_EFFECT_QUAKE_H

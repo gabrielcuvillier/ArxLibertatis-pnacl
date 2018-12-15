@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -30,11 +30,12 @@ PakFile::~PakFile() {
 	delete _alternative;
 }
 
-char * PakFile::readAlloc() const {
+std::string PakFile::read() const {
 	
-	char * buffer = (char*)malloc(size());
+	std::string buffer;
+	buffer.resize(size());
 	
-	read(buffer);
+	read(&buffer[0]);
 	
 	return buffer;
 }
@@ -76,8 +77,8 @@ static const char BADPATHCHAR[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ\\";
 
 PakDirectory * PakDirectory::getDirectory(const res::path & path) {
 	
-	arx_assert(path.string().find_first_of(BADPATHCHAR) == std::string::npos,
-	           "bad pak path: \"%s\"", path.string().c_str());
+	arx_assert_msg(path.string().find_first_of(BADPATHCHAR) == std::string::npos,
+	               "bad pak path: \"%s\"", path.string().c_str());
 	
 	if(path.empty()) {
 		return this;
@@ -114,8 +115,8 @@ PakDirectory * PakDirectory::getDirectory(const res::path & path) {
 
 PakFile * PakDirectory::getFile(const res::path & path) {
 	
-	arx_assert(path.string().find_first_of(BADPATHCHAR) == std::string::npos,
-	           "bad pak path: \"%s\"", path.string().c_str());
+	arx_assert_msg(path.string().find_first_of(BADPATHCHAR) == std::string::npos,
+	               "bad pak path: \"%s\"", path.string().c_str());
 	
 	if(path.empty()) {
 		return NULL;

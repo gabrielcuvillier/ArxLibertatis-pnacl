@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -22,11 +22,12 @@
 
 #include <SDL.h>
 
+#include "platform/Platform.h"
 #include "window/RenderWindow.h"
 
 class SDL2InputBackend;
 
-class SDL2Window : public RenderWindow {
+class SDL2Window arx_final : public RenderWindow {
 	
 public:
 	
@@ -38,6 +39,7 @@ public:
 	bool setVSync(int vsync);
 	void setFullscreenMode(const DisplayMode & mode);
 	void setWindowSize(const Vec2i & size);
+	bool setGamma(float gamma = 1.f);
 	bool initialize();
 	void tick();
 	
@@ -48,12 +50,21 @@ public:
 	void setMinimizeOnFocusLost(bool enabled);
 	MinimizeSetting willMinimizeOnFocusLost();
 	
+	std::string getClipboardText();
+	void setClipboardText(const std::string & text);
+	
+	void allowScreensaver(bool allowed);
+	
 	InputBackend * getInputBackend();
 	
 private:
 	
+	int createWindowAndGLContext(const char * profile);
+	
 	void changeMode(DisplayMode mode, bool fullscreen);
 	void updateSize(bool force = false);
+	
+	void restoreGamma();
 	
 	static int SDLCALL eventFilter(void * userdata, SDL_Event * event);
 	
@@ -63,6 +74,13 @@ private:
 	SDL2InputBackend * m_input;
 	
 	MinimizeSetting m_minimizeOnFocusLost;
+	MinimizeSetting m_allowScreensaver;
+	
+	float m_gamma;
+	bool m_gammaOverridden;
+	u16 m_gammaRed[256];
+	u16 m_gammaGreen[256];
+	u16 m_gammaBlue[256];
 	
 	static SDL2Window * s_mainWindow;
 	

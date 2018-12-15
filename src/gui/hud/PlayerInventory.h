@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -28,10 +28,9 @@ class TextureContainer;
 
 extern bool bInventorySwitch;
 extern float fDecPulse;
-extern short g_currentInventoryBag;
 
 class PlayerInventoryHud : public HudItem {
-private:
+	
 	TextureContainer * m_heroInventory;
 	TextureContainer * m_heroInventoryLink;
 	TextureContainer * m_heroInventoryUp;
@@ -42,28 +41,55 @@ private:
 	Vec2f m_slotSize;
 	Vec2f m_slotSpacing;
 	
-	Vec2f m_bagBackgroundSize;
+	Vec2f m_bagSize;
+	
+	bool m_isClosing;
+	long m_inventoryY;
+	short m_currentBag;
 	
 public:
+	
+	PlayerInventoryHud()
+		: m_heroInventory(NULL)
+		, m_heroInventoryLink(NULL)
+		, m_heroInventoryUp(NULL)
+		, m_heroInventoryDown(NULL)
+		, m_arrowsAnchor(0.f)
+		, m_slotSize(0.f)
+		, m_slotSpacing(0.f)
+		, m_bagSize(0.f)
+		, m_isClosing(false)
+		, m_inventoryY(0)
+		, m_currentBag(0)
+	{ }
+	
 	void init();
 	Vec2f anchorPosition();
 	void update();
+	void updateRect();
 	bool updateInput();
 	void draw();
 	
 	void nextBag();
 	void previousBag();
+	void setCurrentBag(short bag);
 	
 	bool containsPos(const Vec2s & pos);
 	Entity * getObj(const Vec2s & pos);
 	
 	void dropEntity();
-	void dragEntity(Entity * io, const Vec2s &pos);
+	void dragEntity(Entity * io, const Vec2s & pos);
+	
+	void close();
+	bool isClosing();
+	void resetPos();
 	
 private:
+	
 	void CalculateInventoryCoordinates();
-	void ARX_INTERFACE_DrawInventory(size_t bag, Vec2i i);
+	void drawBag(size_t bag, Vec2i i);
 	bool InPlayerInventoryBag(const Vec2s & pos);
+	
 };
 
 extern PlayerInventoryHud g_playerInventoryHud;

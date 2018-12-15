@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -38,7 +38,7 @@ inline bool is_path_up(const std::string & str, size_t pos) {
 	           && str[pos + 2] == path::dir_sep);
 }
 
-}
+} // anonymous namespace
 
 path path::create(const std::string & src) {
 	path result;
@@ -46,44 +46,44 @@ path path::create(const std::string & src) {
 	return result;
 }
 
-path path::resolve(const path & a, const path & b) {
+path path::resolve(const path & base, const path & branch) {
 	
 	size_t bpos = 0;
-	size_t apos = a.pathstr.length();
+	size_t apos = base.pathstr.length();
 	while(true) {
 		
-		size_t dirpos = a.pathstr.find_last_of(dir_sep, apos - 1);
+		size_t dirpos = base.pathstr.find_last_of(dir_sep, apos - 1);
+		
+		if(is_path_up(base.pathstr, (dirpos == std::string::npos) ? 0 : dirpos + 1)) {
+			return create(base.pathstr.substr(0, apos) + dir_sep + branch.pathstr.substr(bpos));
+		}
 		
 		if(dirpos == std::string::npos) {
-			if(bpos + 3 >= b.pathstr.length()) {
+			if(bpos + 3 >= branch.pathstr.length()) {
 				return create(".");
 			} else {
-				return b.pathstr.substr(bpos + 3);
+				return branch.pathstr.substr(bpos + 3);
 			}
 		}
 		
-		if(is_path_up(a.pathstr, dirpos + 1)) {
-			return create(a.pathstr.substr(0, apos) + dir_sep + b.pathstr.substr(bpos));
-		}
-		
-		if(dirpos == 0 || (dirpos == 1 && a.pathstr[0] == dir_sep)) {
+		if(dirpos == 0 || (dirpos == 1 && base.pathstr[0] == dir_sep)) {
 			if(dirpos != apos - 1) {
 				bpos += 3;
 			}
-			if(bpos >= b.pathstr.length()) {
-				return create(a.pathstr.substr(0, dirpos) + dir_sep);
+			if(bpos >= branch.pathstr.length()) {
+				return create(base.pathstr.substr(0, dirpos) + dir_sep);
 			} else {
-				return create(a.pathstr.substr(0, dirpos) + dir_sep + b.pathstr.substr(bpos));
+				return create(base.pathstr.substr(0, dirpos) + dir_sep + branch.pathstr.substr(bpos));
 			}
 		}
 		
 		apos = dirpos, bpos += 3;
 		
-		if(!is_path_up(b.pathstr, bpos)) {
-			if(bpos >= b.pathstr.length()) {
-				return create(a.pathstr.substr(0, apos));
+		if(!is_path_up(branch.pathstr, bpos)) {
+			if(bpos >= branch.pathstr.length()) {
+				return create(base.pathstr.substr(0, apos));
 			} else {
-				return create(a.pathstr.substr(0, apos) + dir_sep + b.pathstr.substr(bpos));
+				return create(base.pathstr.substr(0, apos) + dir_sep + branch.pathstr.substr(bpos));
 			}
 		}
 	}
@@ -156,10 +156,10 @@ std::string path::ext() const {
 }
 
 path & path::set_ext(const std::string & ext) {
-	arx_assert(ext.empty()
-	           || (ext[0] != dir_sep
-	               && ext.find_first_of(dir_or_ext_sep, 1) == std::string::npos),
-	           "bad file ext: \"%s\"", ext.c_str());
+	arx_assert_msg(ext.empty()
+	               || (ext[0] != dir_sep
+	                   && ext.find_first_of(dir_or_ext_sep, 1) == std::string::npos),
+	               "bad file ext: \"%s\"", ext.c_str());
 	if(!has_info() && !empty()) {
 		return *this;
 	}
@@ -191,9 +191,9 @@ path & path::remove_ext() {
 }
 
 path & path::set_filename(const std::string & filename) {
-	arx_assert(!filename.empty() && filename != "." && filename != ".."
-	           && filename.find_first_of(any_dir_sep) == std::string::npos,
-	           "bad filename: \"%s\"", filename.c_str());
+	arx_assert_msg(!filename.empty() && filename != "." && filename != ".."
+	               && filename.find_first_of(any_dir_sep) == std::string::npos,
+	               "bad filename: \"%s\"", filename.c_str());
 	if(!has_info()) {
 		return ((empty() ? pathstr = filename : (pathstr += dir_sep).append(filename)), *this);
 	}
@@ -209,9 +209,9 @@ path & path::set_filename(const std::string & filename) {
 
 path & path::set_basename(const std::string & basename) {
 	
-	arx_assert(!basename.empty() && basename != "." && basename != ".."
-	           && basename.find_first_of(any_dir_sep) == std::string::npos,
-	           "bad basename: \"%s\"", basename.c_str());
+	arx_assert_msg(!basename.empty() && basename != "." && basename != ".."
+	               && basename.find_first_of(any_dir_sep) == std::string::npos,
+	               "bad basename: \"%s\"", basename.c_str());
 	
 	if(!has_info()) {
 		return ((empty() ? pathstr = basename : (pathstr += dir_sep).append(basename)), *this);
@@ -241,9 +241,9 @@ path & path::set_basename(const std::string & basename) {
 
 path & path::append_basename(const std::string & basename_part) {
 	
-	arx_assert(basename_part != "." && basename_part != ".." &&
-	           basename_part.find_first_of(any_dir_sep) == std::string::npos,
-	           "bad basename: \"%s\"", basename_part.c_str());
+	arx_assert_msg(basename_part != "." && basename_part != ".." &&
+	               basename_part.find_first_of(any_dir_sep) == std::string::npos,
+	               "bad basename: \"%s\"", basename_part.c_str());
 	
 	if(!has_info()) {
 		return ((empty() ? pathstr = basename_part : (pathstr += dir_sep).append(basename_part)), *this);
@@ -262,9 +262,9 @@ path & path::append_basename(const std::string & basename_part) {
 
 path & path::append(const std::string & str) {
 	
-	arx_assert(str != "." && str != ".."
-	           && str.find_first_of(any_dir_sep) == std::string::npos,
-	           "cannot append: \"%s\"", str.c_str());
+	arx_assert_msg(str != "." && str != ".."
+	               && str.find_first_of(any_dir_sep) == std::string::npos,
+	               "cannot append: \"%s\"", str.c_str());
 	
 	pathstr += str;
 	return *this;
@@ -272,10 +272,10 @@ path & path::append(const std::string & str) {
 
 bool path::has_ext(const std::string & str) const {
 	
-	arx_assert(str.empty()
-	           || (str[0] != dir_sep
-	               && str.find_first_of(dir_or_ext_sep, 1) == std::string::npos),
-	           "bad file ext: \"%s\"", str.c_str());
+	arx_assert_msg(str.empty()
+	               || (str[0] != dir_sep
+	                   && str.find_first_of(dir_or_ext_sep, 1) == std::string::npos),
+	               "bad file ext: \"%s\"", str.c_str());
 	
 	if(!has_info()) {
 		return false;
@@ -317,12 +317,12 @@ std::string path::load(const std::string & str) {
 				// Aboslute path.
 				copy[ostart++] = dir_sep;
 			}
-#if ARX_PLATFORM == ARX_PLATFORM_WIN32
+			#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 			if(pos == 1) {
 				// Network path
 				copy[ostart++] = dir_sep;
 			}
-#endif
+			#endif
 			// double slash
 			continue;
 		}
@@ -388,204 +388,5 @@ std::string path::load(const std::string & str) {
 	
 	return copy;
 }
-
-#if 0
-
-static void test_resolve(const fs::path & left, const fs::path & right, const std::string & out) {
-	
-	fs::path result = left / right;
-	arx_assert(result.string() == out, "\"%s\" / \"%s\" -> \"%s\" != \"%s\"", 
-	           left.string().c_str(), right.string().c_str(), result.string().c_str(),
-	           out.c_str());
-	
-	fs::path temp = left;
-	temp /= right;
-	
-	arx_assert(temp.string() == out, "\"%s\" /= \"%s\" -> \"%s\" != \"%s\"",
-	           left.string().c_str(), right.string().c_str(), temp.string().c_str(),
-	           out.c_str());
-}
-
-static void test_path(const std::string & in, const std::string & out) {
-	fs::path p(in);
-	arx_assert(p.string() == out, "\"%s\" -> \"%s\" != \"%s\"", in.c_str(),
-	           p.string().c_str(), out.c_str());
-}
-
-static void test_parent(const fs::path & in, const std::string & out) {
-	
-	fs::path p = in.parent();
-	arx_assert(p.string() == out, "\"%s\".parent() -> \"%s\" != \"%s\"",
-	           in.string().c_str(), p.string().c_str(), out.c_str());
-	
-	fs::path temp = in;
-	temp.up();
-	arx_assert(temp.string() == out, "\"%s\".up() ->\"%s\" != \"%s\"",
-	           in.string().c_str(), temp.string().c_str(), out.c_str());
-	
-}
-
-static void path_test() {
-	
-	test_path(".", ".");
-	test_path("./", ".");
-	test_path(".////./././//././/", ".");
-	test_path("./a", "a");
-	test_path(".////./././//././/a", "a");
-	test_path("./..", "..");
-	test_path(".////./././//././/..", "..");
-	test_path("./a/..", ".");
-	
-	test_path("/a", "/a");
-	test_path("/a/b", "/a/b");
-	test_path("/a/b/c", "/a/b/c");
-	test_path("/a/", "/a");
-	test_path("/a/b", "/a/b");
-	test_path("/a/b/c/./", "/a/b/c");
-	
-	test_path("/", "/");
-	test_path("/..", "/..");
-	test_path("/../", "/..");
-	test_path("/..//", "/..");
-	test_path("/../..", "/../..");
-	test_path("/..//..", "/../..");
-	test_path("/../../", "/../..");
-	test_path("/..//../", "/../..");
-	test_path("/../..//", "/../..");
-	test_path("/..//..//", "/../..");
-	
-	test_path("/a", "/a");
-	test_path("/a/..", "/");
-	test_path("/a/../", "/");
-	test_path("/a/..//", "/");
-	test_path("/a/../..", "/..");
-	test_path("/a/..//..", "/..");
-	test_path("/a/../../", "/..");
-	test_path("/a/..//../", "/..");
-	test_path("/a/../..//", "/..");
-	test_path("/a/..//..//", "/..");
-	
-	test_path("/abcd", "/abcd");
-	test_path("/abcd/..", "/");
-	test_path("/abcd/../", "/");
-	test_path("/abcd/..//", "/");
-	test_path("/abcd/../..", "/..");
-	test_path("/abcd/..//..", "/..");
-	test_path("/abcd/../../", "/..");
-	test_path("/abcd/..//../", "/..");
-	test_path("/abcd/../..//", "/..");
-	test_path("/abcd/..//..//", "/..");
-	
-	test_path("/../a", "/../a");
-	test_path("/../a/", "/../a");
-	test_path("/../a//", "/../a");
-	test_path("/../a/..", "/..");
-	test_path("/../a//..", "/..");
-	test_path("/../a/../", "/..");
-	test_path("/../a//../", "/..");
-	test_path("/../a/..//", "/..");
-	test_path("/../a//..//", "/..");
-	
-	// -------
-	
-	test_path("a", "a");
-	test_path("a/b", "a/b");
-	test_path("a/", "a");
-	test_path("a/b/", "a/b");
-	
-	test_path("", "");
-	test_path("..", "..");
-	test_path("../", "..");
-	test_path("..//", "..");
-	test_path("../..", "../..");
-	test_path("..//..", "../..");
-	test_path("../../", "../..");
-	test_path("..//../", "../..");
-	test_path("../..//", "../..");
-	test_path("..//..//", "../..");
-	
-	test_path("a", "a");
-	test_path("a/..", ".");
-	test_path("a/../", ".");
-	test_path("a/..//", ".");
-	test_path("a/../..", "..");
-	test_path("a/..//..", "..");
-	test_path("a/../../", "..");
-	test_path("a/..//../", "..");
-	test_path("a/../..//", "..");
-	test_path("a/..//..//", "..");
-	
-	test_path("abcd", "abcd");
-	test_path("abcd/..", ".");
-	test_path("abcd/../", ".");
-	test_path("abcd/..//", ".");
-	test_path("abcd/../..", "..");
-	test_path("abcd/..//..", "..");
-	test_path("abcd/../../", "..");
-	test_path("abcd/..//../", "..");
-	test_path("abcd/../..//", "..");
-	test_path("abcd/..//..//", "..");
-	
-	test_path("../a", "../a");
-	test_path("../a/", "../a");
-	test_path("../a//", "../a");
-	test_path("../a/..", "..");
-	test_path("../a//..", "..");
-	test_path("../a/../", "..");
-	test_path("../a//../", "..");
-	test_path("../a/..//", "..");
-	test_path("../a//..//", "..");
-	
-	test_path("/.", "/");
-	
-	// --- 
-	
-	test_resolve(".", "a", "a");
-	test_resolve(".", "a/b", "a/b");
-	test_resolve(".", "..", "..");
-	test_resolve(".", "a", "a");
-	test_resolve("a", "..", ".");
-	test_resolve("a/b", "..", "a");
-	test_resolve("a/b", "../..", ".");
-	test_resolve("a", "..", ".");
-	
-	test_resolve(".", "", ".");
-	test_resolve(".", "a/..", ".");
-	
-	test_resolve("/a", "b", "/a/b");
-	test_resolve("/a", "b/c", "/a/b/c");
-	test_resolve("/a/b", "c", "/a/b/c");
-	
-	test_resolve("/..", "..", "/../..");
-	
-	test_resolve("/a", "..", "/");
-	test_resolve("/a", "../..", "/..");
-	test_resolve("/a/..", "..", "/..");
-	
-	test_resolve("/abcd", "..", "/");
-	test_resolve("/abcd", "../..", "/..");
-	test_resolve("/abcd/..", "..", "/..");
-	
-	test_resolve("/" , "../a", "/../a");
-	test_resolve("/..", "a", "/../a");
-	test_resolve("/", "../a/..", "/..");
-	test_resolve("/..", "a/..", "/..");
-	test_resolve("/../a", "..", "/..");
-	
-	// ---
-	
-	test_parent("", "..");
-	test_parent(".", "..");
-	test_parent("a", ".");
-	test_parent("a/b", "a");
-	test_parent("/", "/..");
-	test_parent("/a", "/");
-	test_parent("/a/b", "/a");
-	test_parent("..", "../..");
-	test_parent("../..", "../../..");
-	
-}
-
-#endif
 
 } // namespace fs

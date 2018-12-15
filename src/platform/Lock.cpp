@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -55,9 +55,9 @@ void Lock::unlock() {
 
 #elif ARX_PLATFORM == ARX_PLATFORM_WIN32
 
-Lock::Lock() {
-	mutex = CreateMutex(NULL, false, NULL);
-}
+Lock::Lock()
+	: mutex(CreateMutex(NULL, false, NULL))
+{ }
 
 Lock::~Lock() {
 	unlock();

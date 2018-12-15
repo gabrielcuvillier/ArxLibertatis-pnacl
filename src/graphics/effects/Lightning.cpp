@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -59,7 +59,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/particle/ParticleEffects.h"
 #include "graphics/particle/ParticleParams.h"
 #include "graphics/spells/Spells05.h"
-
+#include "math/RandomVector.h"
 #include "physics/Collisions.h"
 
 #include "scene/Interactive.h"
@@ -68,6 +68,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/Scene.h"
 
 struct CLightning::LIGHTNING {
+	
 	Vec3f eStart;
 	Vec3f eVect;
 	int anb;
@@ -78,25 +79,27 @@ struct CLightning::LIGHTNING {
 	Vec3f fAngleMax;
 	
 	LIGHTNING()
-		: eStart(Vec3f_ZERO)
-		, eVect(Vec3f_ZERO)
+		: eStart(0.f)
+		, eVect(0.f)
 		, anb(0)
 		, anbrec(0)
 		, abFollow(false)
 		, aParent(0)
-		, fAngleMin(Vec3f_ZERO)
-		, fAngleMax(Vec3f_ZERO)
+		, fAngleMin(0.f)
+		, fAngleMax(0.f)
 	{ }
+	
 };
 
 CLightning::CLightning()
-	: m_pos(Vec3f_ZERO)
+	: m_pos(0.f)
 	, m_beta(0.f)
 	, m_alpha(0.f)
-	, m_caster()
 	, m_level(1.f)
 	, m_fDamage(1)
 	, m_isMassLightning(false)
+	, fTotoro(0.f)
+	, fMySize(2.f)
 	, m_nbtotal(0)
 	, m_lNbSegments(40)
 	, m_invNbSegments(1.0f / 40.0f)
@@ -104,129 +107,130 @@ CLightning::CLightning()
 	, m_fLengthMax(40.0f)
 	, m_fAngleMin(5.0f, 5.0f, 5.0f)
 	, m_fAngleMax(32.0f, 32.0f, 32.0f)
+	, m_eSrc(0.f)
+	, m_eDest(0.f)
 	, m_iTTL(0)
 {
-	SetDuration(2000);
-	ulCurrentTime = ulDuration + 1;
-	
-	m_tex_light = NULL;
-	fTotoro = 0;
-	fMySize = 2;
+	SetDuration(GameDurationMs(2000));
+	m_elapsed = m_duration + GameDurationMs(1);
 }
 
-//------------------------------------------------------------------------------
-// Params une méchante struct
-//------------------------------------------------------------------------------
-
-void CLightning::BuildS(LIGHTNING * pLInfo)
-{
-	Vec3f astart = pLInfo->eStart;
-	Vec3f avect = pLInfo->eVect;
-
-	if(pLInfo->anb > 0 && m_nbtotal < (MAX_NODES - 1)) {
-		m_nbtotal++;
-		int moi = m_nbtotal;
-
-		if(pLInfo->abFollow) {
-			avect = glm::normalize(m_eDest - pLInfo->eStart);
+void CLightning::BuildS(LIGHTNING * lightingInfo) {
+	
+	Vec3f astart = lightingInfo->eStart;
+	Vec3f avect = lightingInfo->eVect;
+	
+	if(lightingInfo->anb > 0 && m_nbtotal < (MAX_NODES - 1)) {
+		
+		int moi = ++m_nbtotal;
+		
+		if(lightingInfo->abFollow) {
+			avect = glm::normalize(m_eDest - lightingInfo->eStart);
 		}
-
-		Vec3f fAngle;
-		fAngle.x = Random::getf(-1.f, 1.f) * (pLInfo->fAngleMax.x - pLInfo->fAngleMin.x) + pLInfo->fAngleMin.x;
-		fAngle.y = Random::getf(-1.f, 1.f) * (pLInfo->fAngleMax.y - pLInfo->fAngleMin.y) + pLInfo->fAngleMin.y;
-		fAngle.z = Random::getf(-1.f, 1.f) * (pLInfo->fAngleMax.z - pLInfo->fAngleMin.z) + pLInfo->fAngleMin.z;
-
-		Vec3f av;
-		av.x = glm::cos(glm::acos(avect.x) - glm::radians(fAngle.x));
-		av.y = glm::sin(glm::asin(avect.y) - glm::radians(fAngle.y));
-		av.z = glm::tan(glm::atan(avect.z) - glm::radians(fAngle.z));
+		
+		Vec3f fAngle(Random::getf(-1.f, 1.f) * (lightingInfo->fAngleMax.x - lightingInfo->fAngleMin.x)
+		             + lightingInfo->fAngleMin.x,
+		             Random::getf(-1.f, 1.f) * (lightingInfo->fAngleMax.y - lightingInfo->fAngleMin.y)
+		             + lightingInfo->fAngleMin.y,
+		             Random::getf(-1.f, 1.f) * (lightingInfo->fAngleMax.z - lightingInfo->fAngleMin.z)
+		             + lightingInfo->fAngleMin.z);
+		
+		Vec3f av(glm::cos(glm::acos(avect.x) - glm::radians(fAngle.x)),
+		         glm::sin(glm::asin(avect.y) - glm::radians(fAngle.y)),
+		         glm::tan(glm::atan(avect.z) - glm::radians(fAngle.z)));
 		av = glm::normalize(av);
 		avect = av;
-
+		
 		float ts = Random::getf();
-		av *= ts * (m_fLengthMax - m_fLengthMin) * pLInfo->anb * m_invNbSegments + m_fLengthMin;
-
+		av *= ts * (m_fLengthMax - m_fLengthMin) * lightingInfo->anb * m_invNbSegments + m_fLengthMin;
+		
 		astart += av;
-		pLInfo->eStart = astart;
+		lightingInfo->eStart = astart;
 		
-		m_cnodetab[m_nbtotal].pos = pLInfo->eStart;
-		m_cnodetab[m_nbtotal].size = m_cnodetab[0].size * pLInfo->anb * m_invNbSegments;
-		m_cnodetab[m_nbtotal].parent = pLInfo->aParent;
+		m_cnodetab[m_nbtotal].pos = lightingInfo->eStart;
+		m_cnodetab[m_nbtotal].size = m_cnodetab[0].size * lightingInfo->anb * m_invNbSegments;
+		m_cnodetab[m_nbtotal].parent = lightingInfo->aParent;
 		
-		int anb = pLInfo->anb;
-		int anbrec = pLInfo->anbrec;
+		int anb = lightingInfo->anb;
+		int anbrec = lightingInfo->anbrec;
 
 		float p = Random::getf();
 
-		if(p <= 0.15f && pLInfo->anbrec < 7) {
+		if(p <= 0.15f && lightingInfo->anbrec < 7) {
 			float m = Random::getf();
-
-			if(pLInfo->abFollow) {
-				pLInfo->eStart = astart;
-				pLInfo->eVect = avect;
-				pLInfo->abFollow = false;
-				pLInfo->anb =  anb - (int)(10 * (1 - m));
-				pLInfo->anbrec = anbrec + (int)(2 * m);
-				pLInfo->aParent = moi;
-				pLInfo->fAngleMin = m_fAngleMin;
-				pLInfo->fAngleMax = m_fAngleMax;
+			
+			if(lightingInfo->abFollow) {
 				
-				BuildS(pLInfo);
-
-				pLInfo->eStart = astart;
-				pLInfo->eVect = avect;
-				pLInfo->abFollow = true;
-				pLInfo->anb = anb - (int)(10 * m);
-				pLInfo->anbrec = anbrec + (int)(2 * m);
-				pLInfo->aParent = moi;
-				pLInfo->fAngleMin = m_fAngleMin;
-				pLInfo->fAngleMax = m_fAngleMax;
+				lightingInfo->eStart = astart;
+				lightingInfo->eVect = avect;
+				lightingInfo->abFollow = false;
+				lightingInfo->anb =  anb - (int)(10 * (1 - m));
+				lightingInfo->anbrec = anbrec + (int)(2 * m);
+				lightingInfo->aParent = moi;
+				lightingInfo->fAngleMin = m_fAngleMin;
+				lightingInfo->fAngleMax = m_fAngleMax;
 				
-				BuildS(pLInfo);
+				BuildS(lightingInfo);
+
+				lightingInfo->eStart = astart;
+				lightingInfo->eVect = avect;
+				lightingInfo->abFollow = true;
+				lightingInfo->anb = anb - (int)(10 * m);
+				lightingInfo->anbrec = anbrec + (int)(2 * m);
+				lightingInfo->aParent = moi;
+				lightingInfo->fAngleMin = m_fAngleMin;
+				lightingInfo->fAngleMax = m_fAngleMax;
+				
+				BuildS(lightingInfo);
+				
 			} else {
-				pLInfo->abFollow = false;
-				pLInfo->eStart = astart;
-				pLInfo->eVect = avect;
-				pLInfo->anb = anb - (int)(10 * (1 - m));
-				pLInfo->anbrec = anbrec + (int)(2 * m);
-				pLInfo->aParent = moi;
-				pLInfo->fAngleMin = m_fAngleMin;
-				pLInfo->fAngleMax = m_fAngleMax;
 				
-				BuildS(pLInfo);
+				lightingInfo->abFollow = false;
+				lightingInfo->eStart = astart;
+				lightingInfo->eVect = avect;
+				lightingInfo->anb = anb - (int)(10 * (1 - m));
+				lightingInfo->anbrec = anbrec + (int)(2 * m);
+				lightingInfo->aParent = moi;
+				lightingInfo->fAngleMin = m_fAngleMin;
+				lightingInfo->fAngleMax = m_fAngleMax;
+				
+				BuildS(lightingInfo);
 
-				pLInfo->abFollow = false;
-				pLInfo->eStart = astart;
-				pLInfo->eVect = avect;
-				pLInfo->anb = anb - (int)(10 * m);
-				pLInfo->anbrec = anbrec + (int)(2 * m);
-				pLInfo->aParent = moi;
-				pLInfo->fAngleMin = m_fAngleMin;
-				pLInfo->fAngleMax = m_fAngleMax;
+				lightingInfo->abFollow = false;
+				lightingInfo->eStart = astart;
+				lightingInfo->eVect = avect;
+				lightingInfo->anb = anb - (int)(10 * m);
+				lightingInfo->anbrec = anbrec + (int)(2 * m);
+				lightingInfo->aParent = moi;
+				lightingInfo->fAngleMin = m_fAngleMin;
+				lightingInfo->fAngleMax = m_fAngleMax;
 				
-				BuildS(pLInfo);
+				BuildS(lightingInfo);
+				
 			}
 		} else {
-			if(Random::getf() <= 0.10f) {
-				pLInfo->abFollow = true;
-			}
-
-			pLInfo->eStart = astart;
-			pLInfo->eVect = avect;
-			pLInfo->anb = anb - 1;
-			pLInfo->anbrec = anbrec;
-			pLInfo->aParent = moi;
-			pLInfo->fAngleMin = m_fAngleMin;
-			pLInfo->fAngleMax = m_fAngleMax;
 			
-			BuildS(pLInfo);
+			if(Random::getf() <= 0.10f) {
+				lightingInfo->abFollow = true;
+			}
+			lightingInfo->eStart = astart;
+			lightingInfo->eVect = avect;
+			lightingInfo->anb = anb - 1;
+			lightingInfo->anbrec = anbrec;
+			lightingInfo->aParent = moi;
+			lightingInfo->fAngleMin = m_fAngleMin;
+			lightingInfo->fAngleMax = m_fAngleMax;
+			
+			BuildS(lightingInfo);
+			
 		}
 	}
+	
 }
 
 void CLightning::Create(Vec3f aeFrom, Vec3f aeTo) {
 	
-	SetDuration(ulDuration);
+	SetDuration(m_duration);
 	
 	m_eSrc = aeFrom;
 	m_eDest = aeTo;
@@ -257,12 +261,12 @@ void CLightning::ReCreate(float rootSize)
 		BuildS(&LInfo);
 	}
 	
-	m_iTTL = Random::get(500, 1500);
+	m_iTTL = GameDurationMs(Random::get(500, 1500));
 }
 
-void CLightning::Update(float timeDelta)
+void CLightning::Update(GameDuration timeDelta)
 {
-	ulCurrentTime += timeDelta;
+	m_elapsed += timeDelta;
 	m_iTTL -= timeDelta;
 	fTotoro += 8;
 
@@ -272,7 +276,7 @@ void CLightning::Update(float timeDelta)
 
 void CLightning::Render()
 {
-	if(ulCurrentTime >= ulDuration)
+	if(m_elapsed >= m_duration)
 		return;
 	
 	if(m_iTTL <= 0) {
@@ -281,21 +285,17 @@ void CLightning::Render()
 		ReCreate(8);
 	}
 	
-	Vec3f ePos;
-	
+	Vec3f ePos(0.f);
 	float fBeta = 0.f;
 	float falpha = 0.f;
-	
-	if(m_isMassLightning) {
-		ePos = Vec3f_ZERO;
-	} else {
+	if(!m_isMassLightning) {
 		ePos = m_pos;
 		fBeta = m_beta;
 		falpha = m_alpha;
 	}
 	
 	float f = 1.5f * fMySize;
-	m_cnodetab[0].f = randomVec(-f, f);
+	m_cnodetab[0].f = arx::randomVec(-f, f);
 	
 	RenderMaterial mat;
 	mat.setCulling(CullNone);
@@ -309,22 +309,17 @@ void CLightning::Render()
 		
 		Vec3f astart = m_cnodetab[node.parent].pos + m_cnodetab[node.parent].f;
 		float temp = 1.5f * fMySize;
-		Vec3f z_z = m_cnodetab[node.parent].f + randomVec(-temp, temp);
+		Vec3f z_z = m_cnodetab[node.parent].f + arx::randomVec(-temp, temp);
 		float zz = node.size + node.size * Random::getf(0.f, 0.3f);
 		float xx = node.size * glm::cos(glm::radians(-fbeta));
 		node.f = z_z;
 		
 		Vec3f a = node.pos + z_z;
 		if(!m_isMassLightning) {
-			Vec3f vv2;
-			Vec3f vv1 = astart;
-			vv1 = VRotateX(vv1, (falpha));  
-			vv2 = VRotateY(vv1, 180 - MAKEANGLE(fBeta));
-			astart = vv2;
-			vv1 = a;
-			vv1 = VRotateX(vv1, (falpha)); 
-			vv2 = VRotateY(vv1, 180 - MAKEANGLE(fBeta));
-			a = vv2;
+			Vec3f vv1 = VRotateX(astart, (falpha));
+			astart = VRotateY(vv1, 180.f - MAKEANGLE(fBeta));
+			Vec3f vv2 = VRotateX(a, (falpha));
+			a = VRotateY(vv2, 180.f - MAKEANGLE(fBeta));
 			astart += ePos;
 			a += ePos;
 		}
@@ -333,15 +328,13 @@ void CLightning::Render()
 			Sphere sphere;
 			sphere.origin = a;
 			sphere.radius = std::min(node.size, 50.f);
-
 			if(CheckAnythingInSphere(sphere, m_caster, CAS_NO_SAME_GROUP)) {
-
 				DamageParameters damage;
 				damage.pos = sphere.origin;
 				damage.radius = sphere.radius;
-				damage.damages = m_fDamage * m_level * ( 1.0f / 3 );
+				damage.damages = m_fDamage * m_level * (1.f / 3);
 				damage.area = DAMAGE_FULL;
-				damage.duration = 1;
+				damage.duration = GameDurationMs(1);
 				damage.source = m_caster;
 				damage.flags = DAMAGE_FLAG_DONT_HURT_SOURCE | DAMAGE_FLAG_ADD_VISUAL_FX;
 				damage.type = DAMAGE_TYPE_FAKEFIRE | DAMAGE_TYPE_MAGICAL | DAMAGE_TYPE_LIGHTNING;
@@ -352,13 +345,13 @@ void CLightning::Render()
 		{
 		TexturedQuad q;
 		
-		q.v[0].color = Color(255, 255, 255, 255).toRGBA();
-		q.v[1].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[2].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[3].color = Color(255, 255, 255, 255).toRGBA();
+		q.v[0].color = Color::white.toRGBA();
+		q.v[1].color = (Color::blue * 0.353f).toRGBA();
+		q.v[2].color = (Color::blue * 0.353f).toRGBA();
+		q.v[3].color = Color::white.toRGBA();
 		q.v[0].uv = Vec2f(0.5f, 0.f);
-		q.v[1].uv = Vec2f_ZERO;
-		q.v[2].uv = Vec2f_Y_AXIS;
+		q.v[1].uv = Vec2f(0.f);
+		q.v[2].uv = Vec2f(0.f, 1.f);
 		q.v[3].uv = Vec2f(0.5f, 1.f);
 		q.v[0].p = astart;
 		q.v[1].p = astart + Vec3f(0.f, zz, 0.f);
@@ -371,13 +364,13 @@ void CLightning::Render()
 		{
 		TexturedQuad q;
 
-		q.v[0].color = Color(255, 255, 255, 255).toRGBA();
-		q.v[1].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[2].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[3].color = Color(255, 255, 255, 255).toRGBA();
+		q.v[0].color = Color::white.toRGBA();
+		q.v[1].color = (Color::blue * 0.353f).toRGBA();
+		q.v[2].color = (Color::blue * 0.353f).toRGBA();
+		q.v[3].color = Color::white.toRGBA();
 		q.v[0].uv = Vec2f(0.5f, 0.f);
-		q.v[1].uv = Vec2f_X_AXIS;
-		q.v[2].uv = Vec2f_ONE;
+		q.v[1].uv = Vec2f(1.f, 0.f);
+		q.v[2].uv = Vec2f(1.f);
 		q.v[3].uv = Vec2f(0.5f, 1.f);
 		q.v[0].p = astart;
 		q.v[1].p = astart - Vec3f(0.f, zz, 0.f);
@@ -392,13 +385,13 @@ void CLightning::Render()
 		{
 		TexturedQuad q;
 		
-		q.v[0].color = Color(255, 255, 255, 255).toRGBA();
-		q.v[1].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[2].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[3].color = Color(255, 255, 255, 255).toRGBA();
+		q.v[0].color = Color::white.toRGBA();
+		q.v[1].color = (Color::blue * 0.353f).toRGBA();
+		q.v[2].color = (Color::blue * 0.353f).toRGBA();
+		q.v[3].color = Color::white.toRGBA();
 		q.v[0].uv = Vec2f(0.5f, 0.f);
-		q.v[1].uv = Vec2f_X_AXIS;
-		q.v[2].uv = Vec2f_ONE;
+		q.v[1].uv = Vec2f(1.f, 0.f);
+		q.v[2].uv = Vec2f(1.f);
 		q.v[3].uv = Vec2f(0.5f, 1.f);
 		q.v[0].p = astart;
 		q.v[1].p = astart + Vec3f(xx, 0.f, zz);
@@ -411,13 +404,13 @@ void CLightning::Render()
 		{
 		TexturedQuad q;
 		
-		q.v[0].color = Color(255, 255, 255, 255).toRGBA();
-		q.v[1].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[2].color = Color(0, 0, 90, 255).toRGBA();
-		q.v[3].color = Color(255, 255, 255, 255).toRGBA();
+		q.v[0].color = Color::white.toRGBA();
+		q.v[1].color = (Color::blue * 0.353f).toRGBA();
+		q.v[2].color = (Color::blue * 0.353f).toRGBA();
+		q.v[3].color = Color::white.toRGBA();
 		q.v[0].uv = Vec2f(0.5f, 0.f);
-		q.v[1].uv = Vec2f_ZERO;
-		q.v[2].uv = Vec2f_Y_AXIS;
+		q.v[1].uv = Vec2f(0.f);
+		q.v[2].uv = Vec2f(0.f, 1.f);
 		q.v[3].uv = Vec2f(0.5f, 1.f);
 		q.v[0].p = astart;
 		q.v[1].p = astart - Vec3f(xx, 0.f, zz);

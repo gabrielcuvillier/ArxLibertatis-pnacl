@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,86 +21,69 @@
 
 #include <boost/foreach.hpp>
 
-PanelWidget::PanelWidget()
-	: Widget()
-{
-	m_children.clear();
-	pRef = this;
-}
+#include "input/Input.h"
 
-PanelWidget::~PanelWidget()
-{
-	{Widget * w; BOOST_FOREACH(w, m_children) {
+PanelWidget::PanelWidget() { }
+
+PanelWidget::~PanelWidget() {
+	BOOST_FOREACH(Widget * w, m_children) {
 		delete w;
-	}}
+	}
 }
 
-void PanelWidget::Move(const Vec2f & offset)
-{
+void PanelWidget::move(const Vec2f & offset) {
+	
 	m_rect.move(offset.x, offset.y);
 	
-	{Widget * w; BOOST_FOREACH(w, m_children) {
-		w->Move(offset);
-	}}
+	BOOST_FOREACH(Widget * w, m_children) {
+		w->move(offset);
+	}
+	
 }
 
-// patch on ajoute à droite en ligne
-void PanelWidget::AddElement(Widget* widget)
-{
+void PanelWidget::add(Widget * widget) {
+	
 	m_children.push_back(widget);
-
+	
 	if(m_children.size() == 1) {
 		m_rect = widget->m_rect;
 	} else {
-		m_rect.left = std::min(m_rect.left, widget->m_rect.left);
-		m_rect.top = std::min(m_rect.top, widget->m_rect.top);
+		m_rect = m_rect | widget->m_rect;
 	}
-
-	// + taille elem
-	m_rect.right = std::max(m_rect.right, widget->m_rect.right);
-	m_rect.bottom = std::max(m_rect.bottom, widget->m_rect.bottom);
-
-	widget->Move(Vec2f(0, ((m_rect.height() - widget->m_rect.bottom) / 2)));
+	
+	widget->move(Vec2f(0, ((m_rect.height() - widget->m_rect.bottom) / 2)));
+	
 }
 
-void PanelWidget::Update()
-{
+void PanelWidget::update() {
+	
 	m_rect.right = m_rect.left;
 	m_rect.bottom = m_rect.top;
 	
-	{Widget * w; BOOST_FOREACH(w, m_children) {
-		w->Update();
+	BOOST_FOREACH(Widget * w, m_children) {
+		w->update();
 		m_rect.right = std::max(m_rect.right, w->m_rect.right);
 		m_rect.bottom = std::max(m_rect.bottom, w->m_rect.bottom);
-	}}
-}
-
-void PanelWidget::Render() {
-	
-	{Widget * w; BOOST_FOREACH(w, m_children) {
-		w->Render();
-	}}
-}
-
-Widget * PanelWidget::GetZoneWithID(MenuButton _iID)
-{
-	{Widget * w; BOOST_FOREACH(w, m_children) {
-		if(Widget * pZone = w->GetZoneWithID(_iID))
-			return pZone;
-	}}
-	
-	return NULL;
-}
-
-Widget * PanelWidget::IsMouseOver(const Vec2f & mousePos) const {
-
-	if(m_rect.contains(mousePos)) {
-		{Widget * w; BOOST_FOREACH(w, m_children) {
-			if(w->getCheck() && w->m_rect.contains(mousePos)) {
-				return w->pRef;
-			}
-		}}
 	}
+	
+}
 
+void PanelWidget::render(bool /* mouseOver */) {
+	const Vec2f cursor = Vec2f(GInput->getMousePosition());
+	BOOST_FOREACH(Widget * w, m_children) {
+		w->render(w->m_rect.contains(cursor));
+	}
+}
+
+Widget * PanelWidget::getWidgetAt(const Vec2f & mousePos) {
+	
+	if(m_rect.contains(mousePos)) {
+		BOOST_FOREACH(Widget * w, m_children) {
+			if(w->isEnabled() && w->m_rect.contains(mousePos)) {
+				return w;
+			}
+		}
+	}
+	
 	return NULL;
 }

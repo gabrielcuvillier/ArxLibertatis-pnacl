@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -45,10 +45,11 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include "graphics/Math.h"
 #include "graphics/effects/SpellEffects.h"
+#include "math/RandomVector.h"
 
 Particle::Particle()
-	: p3Pos(Random::getf(-5.f, 5.f), Random::getf(-5.f, 5.f), Random::getf(-5.f, 5.f))
-	, p3Velocity(Random::getf(-10.f, 10.f), Random::getf(-10.f, 10.f), Random::getf(-10.f, 10.f))
+	: p3Pos(arx::randomVec(-5.f, 5.f))
+	, p3Velocity(arx::randomVec(-10.f, 10.f))
 	, m_age(0)
 	, fSize(1.f)
 	, fSizeStart(1.f)
@@ -59,8 +60,7 @@ Particle::Particle()
 	, iTexNum(0)
 {
 	
-	m_timeToLive = Random::get(2000, 5000);
-	fOneOnTTL = 1.0f / float(m_timeToLive);
+	m_timeToLive = GameDurationMs(Random::get(2000, 5000));
 	
 	fColorStart = Color4f(1, 1, 1, 0.5f);
 	fColorEnd = Color4f(1, 1, 1, 0.1f);
@@ -69,7 +69,7 @@ Particle::Particle()
 Particle::~Particle() { }
 
 void Particle::Regen() {
-	p3Pos = Vec3f_ZERO;
+	p3Pos = Vec3f(0.f);
 	m_age = 0;
 	fSize = 1;
 	iTexTime = 0;
@@ -92,28 +92,26 @@ void Particle::Validate() {
 	fColorEnd.b = glm::clamp(fColorEnd.b, 0.f, 1.f);
 	fColorEnd.a = glm::clamp(fColorEnd.a, 0.f, 1.f);
 	
-	if(m_timeToLive < 100) {
-		m_timeToLive = 100;
-		fOneOnTTL = 1.0f / float(m_timeToLive);
+	if(m_timeToLive < GameDurationMs(100)) {
+		m_timeToLive = GameDurationMs(100);
 	}
 }
 
-void Particle::Update(long _lTime) {
+void Particle::Update(GameDuration delta) {
 	
-	m_age += _lTime;
-	iTexTime += _lTime;
-	float fTimeSec = _lTime * (1.f / 1000);
+	m_age += delta;
+	iTexTime += toMsi(delta); // FIXME time, this will break with sub ms deltas
+	float fTimeSec = delta / GameDurationMs(1000);
 	
 	if(m_age < m_timeToLive) {
 		
-		float ft = fOneOnTTL * m_age;
+		float ft = m_age / m_timeToLive;
 		
 		// update new pos
 		p3Pos += p3Velocity * fTimeSec;
 		
 		fSize = fSizeStart + (fSizeEnd - fSizeStart) * ft;
 		
-		Color4f fColor = fColorStart + (fColorEnd - fColorStart) * ft;
-		ulColor = fColor.to<u8>();
+		ulColor = Color(fColorStart + (fColorEnd - fColorStart) * ft);
 	}
 }

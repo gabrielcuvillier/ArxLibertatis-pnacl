@@ -1,5 +1,5 @@
 /*
- * Copyright 2012-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2012-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -39,13 +39,78 @@
 
 namespace fs {
 
-SystemPaths paths;
+namespace {
 
-static path canonical(const fs::path & path) {
+//! Locations where files are stored on the system
+struct SystemPaths {
+	
+	struct InitParams {
+		
+		/*!
+		 * \brief An overwrite value to use for the user dir
+		 * If this is non-empty, standard search is skipped.
+		 * If this does not exists, the user dir is left empty.
+		 */
+		path forceUser;
+		
+		/*!
+		 * \brief An overwrite value to use for the config dir
+		 * If this is non-empty, standard search is skipped.
+		 * If this does not exists, the config dir is left empty.
+		 */
+		path forceConfig;
+		
+		/*!
+		 * \brief Additional values for the data search path
+		 * Will have higher priority than other system paths, but
+		 * higher lower priority than the user dir. 
+		 */
+		std::vector<path> dataDirs;
+		
+		bool findData;
+		bool displaySearchDirs;
+		
+		InitParams() : findData(true), displaySearchDirs(false) {}
+		
+	};
+	
+	path m_userDir; //!< Directory for saves and user-specific data files
+	path m_configDir; //!< Directory for config files
+	std::vector<path> m_dataDirs; //!< Directories for data files
+	
+	/*!
+	 * \brief Initialize the system resource paths using the specified parameters
+	 *
+	 * \note This version of \ref init() will ignore arguments provided on the
+	 *       command line.
+	 */
+	ExitStatus init(const InitParams & initParams);
+	
+	/*!
+	 * \brief Get a list of all data search paths
+	 *
+	 * \param filterMissing exclude non-existant search directories.
+	 */
+	std::vector<path> getSearchPaths(bool filterMissing) const;
+	
+	SystemPaths();
+	
+private:
+	
+	void list(std::ostream & os, const std::string & forceUser = std::string(),
+	          const std::string & forceConfig = std::string(),
+	          const std::string & forceData = std::string());
+	
+	std::vector<path> m_additionalDataDirs;
+	bool m_findDataDirs;
+	
+};
+
+path canonical(const path & path) {
 	return path.is_absolute() ? path : current_path() / path;
 }
 
-static std::vector<path> getSearchPaths(const char * input) {
+std::vector<path> parsePathList(const char * input) {
 	
 	std::vector<path> result;
 	
@@ -58,12 +123,12 @@ static std::vector<path> getSearchPaths(const char * input) {
 	}
 	
 	return result;
-};
+}
 
-static path findUserPath(const char * name, const path & force,
-                         const char * registry, platform::SystemPathId systemPathId,
-                         const char * prefix, const char * suffix,
-                         const path & fallback, bool create) {
+path findUserPath(const char * name, const path & force,
+                  const char * registry, platform::SystemPathId systemPathId,
+                  const char * prefixVar, const char * suffixVar,
+                  const path & fallback, bool create) {
 	
 	// Prefer command-line options
 	if(!force.empty()) {
@@ -95,8 +160,8 @@ static path findUserPath(const char * name, const path & force,
 	
 	// Search standard locations
 	path to_create;
-	std::vector<path> prefixes = getSearchPaths(prefix);
-	std::vector<path> suffixes = getSearchPaths(suffix);
+	std::vector<path> prefixes = parsePathList(prefixVar);
+	std::vector<path> suffixes = parsePathList(suffixVar);
 	if(!suffixes.empty()) {
 		std::vector<path> paths = platform::getSystemPaths(systemPathId);
 		prefixes.insert(prefixes.end(), paths.begin(), paths.end());
@@ -139,7 +204,7 @@ static path findUserPath(const char * name, const path & force,
 	return fallback;
 }
 
-static bool addSearchPath(std::vector<path> & result, const path & dir, bool filter) {
+bool addSearchPath(std::vector<path> & result, const path & dir, bool filter) {
 	
 	if(filter && !is_directory(dir)) {
 		return false;
@@ -153,29 +218,33 @@ static bool addSearchPath(std::vector<path> & result, const path & dir, bool fil
 	return true;
 }
 
-static bool addSearchRoot(std::vector<path> & result, const path & dir, bool filter) {
+bool addSearchRoot(std::vector<path> & result, const path & dir, bool filter) {
 	
-	// Add "data" subdirectory or dirs referenced in "data" file
-	fs::path subdir = dir / "data";
-	if(fs::is_regular_file(subdir)) {
-		fs::ifstream ifs(subdir);
+	// Add dirs referenced in "data.dirs" file
+	path config = dir / "data.dirs";
+	if(is_regular_file(config)) {
+		ifstream ifs(config);
 		std::string line;
 		while(std::getline(ifs, line)) {
-			fs::path datadir = dir / line;
+			path datadir = dir / line;
 			if(addSearchPath(result, datadir, filter)) {
-				LogDebug("got data dir from data file in dir: " << datadir);
+				LogDebug("got data dir from data.dirs file in dir: " << datadir);
 			} else {
 				LogDebug("ignoring data dir from data file in dir: " << datadir);
 			}
 		}
-	} else if(addSearchPath(result, subdir, filter)) {
+	}
+	
+	// Add "data" subdirectory or dirs referenced in "data" file
+	path subdir = dir / "data";
+	if(addSearchPath(result, subdir, filter)) {
 		LogDebug("got data dir from data subdir: " << subdir);
 	}
 	
 	return addSearchPath(result, dir, filter);
 }
 
-static std::string getSearchPathVar(const path & exepath) {
+std::string getSearchPathVar(const path & exepath) {
 	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 	return "%" + boost::to_upper_copy(exepath.basename()) + "_PATH%";
 	#else
@@ -188,12 +257,12 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 	std::vector<path> result;
 	
 	// Use the user diretcory as the highest-priority data directory
-	if(!user.empty() && addSearchRoot(result, user, filter)) {
-		LogDebug("got data dir from user dir: " << user);
+	if(!m_userDir.empty() && addSearchRoot(result, m_userDir, filter)) {
+		LogDebug("got data dir from user dir: " << m_userDir);
 	}
 	
 	// Use paths specifed on the command-line
-	BOOST_FOREACH(const path & dir, addData_) {
+	BOOST_FOREACH(const path & dir, m_additionalDataDirs) {
 		path tmp = canonical(dir);
 		if(addSearchPath(result, tmp, filter)) {
 			LogDebug("got data dir from command-line: " << dir << " = " << tmp);
@@ -201,7 +270,7 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 	}
 	
 	// Skip search for system paths if requested
-	if(!findData_) {
+	if(!m_findDataDirs) {
 		return result;
 	}
 	
@@ -220,7 +289,7 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 	path exepath = platform::getExecutablePath();
 	if(!exepath.empty()) {
 		std::string var = getSearchPathVar(exepath);
-		std::vector<path> paths = fs::getSearchPaths(var.c_str());
+		std::vector<path> paths = parsePathList(var.c_str());
 		BOOST_FOREACH(const path & p, paths) {
 			#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 			if(p.string() == var) {
@@ -240,11 +309,11 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 		path exedir = canonical(exepath.parent());
 		bool ignored = false;
 		if(ignore_exe_dir) {
-			std::vector<path> ignored_dirs = fs::getSearchPaths(ignore_exe_dir);
+			std::vector<path> ignored_dirs = parsePathList(ignore_exe_dir);
 			ignored = (std::find(ignored_dirs.begin(), ignored_dirs.end(), exedir)
 			           != ignored_dirs.end());
 		}
-		std::vector<path> relative_data_dirs = fs::getSearchPaths(relative_data_dir);
+		std::vector<path> relative_data_dirs = parsePathList(relative_data_dir);
 		BOOST_FOREACH(const path & p, relative_data_dirs) {
 			path dir = exedir / p;
 			if(!ignored && addSearchRoot(result, dir, filter)) {
@@ -256,8 +325,8 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 	}
 	
 	// Search standard locations
-	std::vector<path> prefixes = fs::getSearchPaths(data_dir_prefixes);
-	std::vector<path> suffixes = fs::getSearchPaths(data_dir);
+	std::vector<path> prefixes = parsePathList(data_dir_prefixes);
+	std::vector<path> suffixes = parsePathList(data_dir);
 	BOOST_FOREACH(const path & prefix, prefixes) {
 		BOOST_FOREACH(const path & suffix, suffixes) {
 			path dir = canonical(prefix / suffix);
@@ -274,63 +343,42 @@ std::vector<path> SystemPaths::getSearchPaths(bool filter) const {
 	return result;
 }
 
-static SystemPaths::InitParams cmdLineInitParams;
-
-ExitStatus SystemPaths::init() {
-	return init(cmdLineInitParams);
-}
+SystemPaths::InitParams cmdLineInitParams;
 
 ExitStatus SystemPaths::init(const InitParams & initParams) {
 	
-	user = findUserPath("user", initParams.forceUser, "UserDir", platform::UserDirPrefixes,
-	                    user_dir_prefixes, user_dir, current_path(), !initParams.displaySearchDirs);
+	m_userDir = findUserPath("user", initParams.forceUser, "UserDir", platform::UserDirPrefixes,
+	                         user_dir_prefixes, user_dir, current_path(), !initParams.displaySearchDirs);
 	
-	config = findUserPath("config", initParams.forceConfig, "ConfigDir", platform::NoPath,
-	                      config_dir_prefixes, config_dir, user, !initParams.displaySearchDirs);
+	m_configDir = findUserPath("config", initParams.forceConfig, "ConfigDir", platform::NoPath,
+	                           config_dir_prefixes, config_dir, m_userDir, !initParams.displaySearchDirs);
 	
-	addData_ = initParams.dataDirs;
+	m_additionalDataDirs = initParams.dataDirs;
 	
-	findData_ = initParams.findData;
+	m_findDataDirs = initParams.findData;
 	
-	data = getSearchPaths(true);
+	m_dataDirs = getSearchPaths(true);
 	
 	if(initParams.displaySearchDirs) {
-		fs::paths.list(std::cout, 
-		               " - --user-dir (-u) command-line parameter\n",
-		               " - --config-dir (-c) command-line parameter\n",
-		               " - --data-dir (-d) command-line parameters\n"
-		               " only without --no-data-dir (-n): \n");
+		list(std::cout, " - --user-dir (-u) command-line parameter\n",
+		                " - --config-dir (-c) command-line parameter\n",
+		                " - --data-dir (-d) command-line parameters\n"
+		                " only without --no-data-dir (-n): \n");
 		std::cout << std::endl;
 		return ExitSuccess;
-	} else if(fs::paths.user.empty() || fs::paths.config.empty()) {
+	} else if(m_userDir.empty() || m_configDir.empty()) {
 		LogCritical << "Could not select user or config directory.";
 		return ExitFailure;
 	}
-
+	
 	return RunProgram;
 }
 
-path SystemPaths::find(const path & resource) const {
-	
-	if(resource.is_absolute()) {
-		return exists(resource) ? resource : path();
-	}
-	
-	BOOST_FOREACH(const path & prefix, data) {
-		path full_path = prefix / resource;
-		if(fs::exists(full_path)) {
-			return full_path;
-		}
-	}
-	
-	return path();
-}
-
 SystemPaths::SystemPaths()
-	: findData_(true)
-{}
+	: m_findDataDirs(true)
+{ }
 
-static void listDirectoriesFor(std::ostream & os, const std::string & regKey,
+void listDirectoriesFor(std::ostream & os, const std::string & regKey,
                                platform::SystemPathId systemPathId,
                                const char * prefixVar = NULL,
                                const char * suffixVar = NULL) {
@@ -348,8 +396,8 @@ static void listDirectoriesFor(std::ostream & os, const std::string & regKey,
 	ARX_UNUSED(regKey);
 #endif
 	
-	std::vector<path> prefixes = getSearchPaths(prefixVar);
-	std::vector<path> suffixes = getSearchPaths(suffixVar);
+	std::vector<path> prefixes = parsePathList(prefixVar);
+	std::vector<path> suffixes = parsePathList(suffixVar);
 	std::vector<path> paths;
 	if(suffixVar) {
 		paths = platform::getSystemPaths(systemPathId);
@@ -399,10 +447,10 @@ void SystemPaths::list(std::ostream & os, const std::string & forceUser,
 	listDirectoriesFor(os, "UserDir", platform::UserDirPrefixes, user_dir_prefixes, user_dir);
 	os << " - Current working directory\n";
 	os << "selected: ";
-	if(user.empty()) {
+	if(m_userDir.empty()) {
 		os << "(none)\n";
 	} else {
-		os << user << '\n';
+		os << m_userDir << '\n';
 	}
 	
 	os << "\nConfig directories (select first existing):\n";
@@ -412,10 +460,10 @@ void SystemPaths::list(std::ostream & os, const std::string & forceUser,
 	listDirectoriesFor(os, "ConfigDir", platform::NoPath, config_dir_prefixes, config_dir);
 	os << " - The selected user directory\n";
 	os << "selected: ";
-	if(config.empty()) {
+	if(m_configDir.empty()) {
 		os << "(none)\n";
 	} else {
-		os << config << '\n';
+		os << m_configDir << '\n';
 	}
 	
 	os << "\nData directories (decreasing priority):\n";
@@ -430,14 +478,54 @@ void SystemPaths::list(std::ostream & os, const std::string & forceUser,
 	os << "For all of these (except those specified via --data-dir),\n";
 	os << "the \"data\" subdirectory or file will also be searched.\n";
 	os << "selected:";
-	if(data.empty()) {
+	if(m_dataDirs.empty()) {
 		os << " (none)\n";
 	} else {
 		os << '\n';
-		BOOST_FOREACH(const path & dir, data) {
+		BOOST_FOREACH(const path & dir, m_dataDirs) {
 			os << " - " << dir << '\n';
 		}
 	}
+}
+
+SystemPaths g_systemPaths;
+
+} // anonymous namespace
+
+ExitStatus initSystemPaths() {
+	return g_systemPaths.init(cmdLineInitParams);
+}
+
+const path & getUserDir() {
+	return g_systemPaths.m_userDir;
+}
+
+const path & getConfigDir() {
+	return g_systemPaths.m_configDir;
+}
+
+const std::vector<path> & getDataDirs() {
+	return g_systemPaths.m_dataDirs;
+}
+
+std::vector<path> getDataSearchPaths() {
+	return g_systemPaths.getSearchPaths(false);
+}
+
+path findDataFile(const path & resource) {
+	
+	if(resource.is_absolute()) {
+		return exists(resource) ? resource : path();
+	}
+	
+	BOOST_FOREACH(const path & prefix, getDataDirs()) {
+		path fullPath = prefix / resource;
+		if(exists(fullPath)) {
+			return fullPath;
+		}
+	}
+	
+	return path();
 }
 
 } // namespace fs
@@ -463,12 +551,12 @@ static void listSearchDirs() {
 }
 
 ARX_PROGRAM_OPTION("no-data-dir", "n",
-                   "Don't automatically detect data directories", &disableDataDir);
-ARX_PROGRAM_OPTION("data-dir",    "d",
-                   "Where to find the data files (can be repeated)", &addDataDir, "DIR");
-ARX_PROGRAM_OPTION("user-dir",    "u",
-                   "Where to store user-specific files", &setUserDir, "DIR");
-ARX_PROGRAM_OPTION("config-dir",  "c",
-                   "Where to store config files", &setConfigDir, "DIR");
+                   "Don't automatically detect data directories", &disableDataDir)
+ARX_PROGRAM_OPTION_ARG("data-dir",    "d",
+                       "Where to find the data files (can be repeated)", &addDataDir, "DIR")
+ARX_PROGRAM_OPTION_ARG("user-dir",    "u",
+                       "Where to store user-specific files", &setUserDir, "DIR")
+ARX_PROGRAM_OPTION_ARG("config-dir",  "c",
+                       "Where to store config files", &setConfigDir, "DIR")
 ARX_PROGRAM_OPTION("list-dirs",   "l",
-                   "List the searched user and data directories", &listSearchDirs);
+                   "List the searched user and data directories", &listSearchDirs)

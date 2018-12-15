@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -54,13 +54,13 @@ struct RenderMaterial {
 	RenderMaterial();
 
 	bool operator<(const RenderMaterial & other) const;
-	void apply() const;
+	RenderState apply() const;
 
 	Texture * getTexture() const { return m_texture; }
 	void resetTexture() { m_texture = NULL; }
 	void setTexture(Texture * tex) { m_texture = tex; }
 	void setTexture(TextureContainer * texContainer) {
-		m_texture = texContainer ? (Texture *)texContainer->m_pTexture : NULL;
+		m_texture = texContainer ? texContainer->m_pTexture : NULL;
 	}
 
 	bool getDepthTest() const { return m_depthTest; }
@@ -97,8 +97,8 @@ public:
 	
 	~RenderBatcher();
 
-	void add(const RenderMaterial& mat, const TexturedVertex(&vertices)[3]);
-	void add(const RenderMaterial& mat, const TexturedQuad& sprite);
+	void add(const RenderMaterial & mat, const TexturedVertex (&vertices)[3]);
+	void add(const RenderMaterial & mat, const TexturedQuad & sprite);
 
 	//! Render all batches
 	void render();
@@ -108,10 +108,6 @@ public:
 
 	//! Free all memory pools
 	void reset();
-
-	u32 getMemoryUsed() const;
-
-	static RenderBatcher& getInstance();
 	
 private:
 	
@@ -121,5 +117,7 @@ private:
 	Batches m_BatchedSprites;
 	
 };
+
+extern RenderBatcher g_renderBatcher;
 
 #endif // ARX_GRAPHICS_RENDERBATCHER_H

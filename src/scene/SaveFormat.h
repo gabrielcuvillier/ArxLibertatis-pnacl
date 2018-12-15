@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -50,8 +50,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "gui/MiniMap.h"
 #include "game/Item.h"
 #include "game/NPC.h"
+#include "graphics/GlobalFog.h"
 #include "graphics/GraphicsFormat.h"
-#include "graphics/GraphicsModes.h"
 #include "graphics/GraphicsTypes.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/data/MeshManipulation.h"
@@ -70,28 +70,39 @@ enum SavedIOType {
 };
 
 enum SystemFlag {
-	SYSTEM_FLAG_TWEAKER_INFO  = (1<<0),
-	SYSTEM_FLAG_INVENTORY     = (1<<1),
-	SYSTEM_FLAG_EQUIPITEMDATA = (1<<2),
-	SYSTEM_FLAG_USEPATH       = (1<<3)
+	SYSTEM_FLAG_TWEAKER_INFO  = 1 << 0,
+	SYSTEM_FLAG_INVENTORY     = 1 << 1,
+	SYSTEM_FLAG_EQUIPITEMDATA = 1 << 2,
+	SYSTEM_FLAG_USEPATH       = 1 << 3
 };
 
 enum SavePlayerFlag {
-	SP_MAX  = (1<<0),
-	SP_RF   = (1<<2),
-	SP_WEP  = (1<<3),
-	SP_MR   = (1<<4),
-	SP_ARM1 = (1<<5),
-	SP_ARM2 = (1<<6),
-	SP_ARM3 = (1<<7),
-	SP_SP   = (1<<8),
-	SP_SP2  = (1<<9)
+	SP_MAX  = 1 << 0,
+	SP_RF   = 1 << 2,
+	SP_WEP  = 1 << 3,
+	SP_MR   = 1 << 4,
+	SP_ARM1 = 1 << 5,
+	SP_ARM2 = 1 << 6,
+	SP_ARM3 = 1 << 7,
+	SP_SP   = 1 << 8,
+	SP_SP2  = 1 << 9
+};
+
+enum VariableType {
+	TYPE_UNKNOWN = 0, // does not exist !
+	TYPE_G_TEXT = 1,
+	TYPE_L_TEXT = 2,
+	TYPE_G_LONG = 4,
+	TYPE_L_LONG = 8,
+	TYPE_G_FLOAT = 16,
+	TYPE_L_FLOAT = 32
 };
 
 
-#pragma pack(push,1)
+#pragma pack(push, 1)
 
 
+const size_t SAVED_QUEST_SLOT_SIZE = 80;
 const size_t SAVED_KEYRING_SLOT_SIZE = 64;
 const size_t MAX_LINKED_SAVE = 16;
 const size_t SIZE_ID = 64;
@@ -170,12 +181,12 @@ struct SavedMapMarkerData {
 	s32 lvl;
 	char name[STRING_SIZE];
 	
-	/* implicit */ SavedMapMarkerData(const MiniMap::MapMarkerData &b) {
+	/* implicit */ SavedMapMarkerData(const MiniMap::MapMarkerData & b) {
 		x = b.m_pos.x;
 		y = b.m_pos.y;
 		lvl = b.m_lvl;
 		arx_assert(STRING_SIZE > b.m_name.length());
-		util::storeString(name, b.m_name.c_str());
+		util::storeString(name, b.m_name);
 	}
 	
 };
@@ -290,18 +301,26 @@ struct SavedPrecast {
 		PRECAST_STRUCT a;
 		a.typ = (typ < 0) ? SPELL_NONE : (SpellType)typ; // TODO save/load enum
 		a.level = level;
-		a.launch_time = launch_time;
+		a.launch_time = GameInstantMs(launch_time); // TODO save/load time
 		a.flags = SpellcastFlags::load(flags); // TODO save/load flags
-		a.duration = duration;
+		if(duration >= 0) {
+			a.duration = GameDurationMs(duration); // TODO save/load time
+		} else {
+			a.duration = GameDuration::ofRaw(-1);
+		}
 		return a;
 	}
 	
 	SavedPrecast & operator=(const PRECAST_STRUCT & b) {
 		typ = (b.typ == SPELL_NONE) ? -1 : b.typ;
 		level = b.level;
-		launch_time = b.launch_time;
+		launch_time = toMsi(b.launch_time); // TODO save/load time
 		flags = b.flags;
-		duration = b.duration;
+		if(b.duration >= 0) {
+			duration = toMsi(b.duration); // TODO save/load time
+		} else {
+			duration = -1;
+		}
 		return *this;
 	}
 	
@@ -338,8 +357,8 @@ struct ARX_CHANGELEVEL_PLAYER {
 	f32 Skill_Close_Combat;
 	f32 Skill_Defense;
 	
-	f32 Critical_Hit;
-	s32 AimTime;
+	f32 Critical_Hit; // TODO remove
+	s32 AimTime; // TODO remove
 	f32 life;
 	f32 maxlife;
 	f32 mana;
@@ -348,13 +367,13 @@ struct ARX_CHANGELEVEL_PLAYER {
 	s16 Attribute_Redistribute;
 	s16 Skill_Redistribute;
 	
-	f32 armor_class;
-	f32 resist_magic;
-	f32 resist_poison;
+	f32 armor_class; // TODO remove
+	f32 resist_magic; // TODO remove
+	f32 resist_poison; // TODO remove
 	s32 xp;
 	s32 skin;
 	u32 rune_flags;
-	f32 damages;
+	f32 damages; // TODO remove
 	f32 poison;
 	f32 hunger;
 	SavedVec3 pos;
@@ -370,14 +389,14 @@ struct ARX_CHANGELEVEL_PLAYER {
 	s32 gold;
 	s32 falling;
 	
-	s16	doingmagic;
-	s16	Interface;
+	s16 doingmagic;
+	s16 Interface;
 	f32 invisibility;
 	s8 useanim[36]; // padding
 	SavedIOPhysics physics;
 	// Jump Sub-data
 	u32 jumpstarttime;
-	s32 jumpphase;	// 0 no jump, 1 doing anticipation anim
+	s32 jumpphase; // 0 no jump, 1 doing anticipation anim
 	
 	char id_inventory[SAVED_INVENTORY_BAGS][SAVED_INVENTORY_X][SAVED_INVENTORY_Y][SIZE_ID];
 	s32 inventory_show[SAVED_INVENTORY_BAGS][SAVED_INVENTORY_X][SAVED_INVENTORY_Y];
@@ -419,12 +438,12 @@ struct ARX_CHANGELEVEL_INVENTORY_DATA_SAVE {
 struct ARX_CHANGELEVEL_TIMERS_SAVE {
 	
 	char name[SIZE_ID];
-	s32 times;
-	s32 msecs;
+	s32 count;
+	s32 interval;
 	s32 pos;
-	s32 tim;
+	s32 remaining;
 	s32 script; // 0 = global ** 1 = local
-	s32 longinfo;
+	s32 longinfo; // TODO Remove
 	s32 flags;
 	
 };
@@ -481,13 +500,10 @@ struct SavedAnimUse {
 	
 	operator AnimLayer() const {
 		AnimLayer a;
-		a.next_anim = NULL;
 		a.cur_anim = NULL;
-		a.altidx_next = altidx_next;
 		a.altidx_cur = altidx_cur;
-		a.ctime = ctime;
+		a.ctime = AnimationDurationMs(ctime);
 		a.flags = AnimUseType::load(flags);
-		a.nextflags = AnimUseType::load(nextflags);
 		a.lastframe = lastframe;
 		a.currentInterpolation = pour;
 		a.currentFrame = fr;
@@ -495,13 +511,13 @@ struct SavedAnimUse {
 	}
 	
 	SavedAnimUse & operator=(const AnimLayer & b) {
-		next_anim = 0;
+		next_anim = -1;
 		cur_anim = 0;
-		altidx_next = b.altidx_next;
+		altidx_next = 0;
 		altidx_cur = b.altidx_cur;
-		ctime = b.ctime;
+		ctime = toMsi(b.ctime);
 		flags = b.flags;
-		nextflags = b.nextflags;
+		nextflags = 0;
 		lastframe = b.lastframe;
 		pour = b.currentInterpolation;
 		fr = b.currentFrame;
@@ -530,7 +546,7 @@ struct SavedSpellcastData {
 		a.spell_flags = SpellcastFlags::load(spell_flags); // TODO save/load flags
 		a.spell_level = spell_level;
 		a.target = EntityHandle(target); // TODO saved internum not valid after loading
-		a.duration = duration;
+		a.duration = GameDurationMs(duration); // TODO save/load time
 		return a;
 	}
 	
@@ -541,7 +557,7 @@ struct SavedSpellcastData {
 		spell_flags = b.spell_flags;
 		spell_level = b.spell_level;
 		target = b.target.handleData();
-		duration = b.duration;
+		duration = toMsi(b.duration); // TODO save/load time
 		return *this;
 	}
 	
@@ -581,7 +597,7 @@ struct ARX_CHANGELEVEL_IO_SAVE {
 	f32 version;
 	char filename[256];
 	s32 ident;
-	s32 ioflags;//type;
+	s32 ioflags;
 	SavedVec3 pos;
 	SavedVec3 initpos;
 	SavedVec3 lastpos;
@@ -606,7 +622,7 @@ struct ARX_CHANGELEVEL_IO_SAVE {
 	s16 collision;
 	char mainevent[64];
 	// Physics data
-	SavedVec3 velocity;
+	SavedVec3 velocity; // unused
 	s32 stopped;
 	SavedIOPhysics physics;
 	f32 original_radius;
@@ -670,7 +686,7 @@ struct SavedBehaviour {
 	s32 exist;
 	u32 behavior;
 	f32 behavior_param;
-	s32 tactics; // 0=none ; 1=side ; 2=side+back
+	s32 tactics; // TODO remove
 	s32 target;
 	s32 movemode;
 	SavedAnimUse animlayer[SAVED_MAX_ANIM_LAYERS];
@@ -680,7 +696,6 @@ struct SavedBehaviour {
 		a.exist = exist;
 		a.behavior = Behaviour::load(behavior); // TODO save/load flags
 		a.behavior_param = behavior_param;
-		a.tactics = tactics;
 		a.target = EntityHandle(target);
 		a.movemode = (MoveMode)movemode; // TODO save/load enum
 		ARX_STATIC_ASSERT(SAVED_MAX_ANIM_LAYERS == MAX_ANIM_LAYERS, "array size mismatch");
@@ -692,7 +707,7 @@ struct SavedBehaviour {
 		exist = b.exist;
 		behavior = b.behavior;
 		behavior_param = b.behavior_param;
-		tactics = b.tactics;
+		tactics = 0;
 		target = b.target.handleData();
 		movemode = b.movemode;
 		ARX_STATIC_ASSERT(SAVED_MAX_ANIM_LAYERS == MAX_ANIM_LAYERS, "array size mismatch");
@@ -775,7 +790,7 @@ struct ARX_CHANGELEVEL_NPC_IO_SAVE {
 	f32 aimtime;
 	u32 behavior;
 	f32 behavior_param;
-	s32 tactics;
+	s32 tactics; // TODO remove
 	s32 xpvalue;
 	s32 cut;
 	f32 moveproblem;
@@ -784,8 +799,8 @@ struct ARX_CHANGELEVEL_NPC_IO_SAVE {
 	s32 fightdecision;
 	char padding[256];
 	f32 look_around_inc;
-	u32 collid_time;
-	s32 collid_state;
+	u32 collid_time; // TODO remove
+	s32 collid_state; // TODO remove
 	f32 speakpitch;
 	f32 lastmouth;
 	SavedBehaviour stacked[SAVED_MAX_STACKED_BEHAVIOR];
@@ -800,7 +815,7 @@ struct ARX_CHANGELEVEL_NPC_IO_SAVE {
 	u8 resist_fire;
 	u8 padd;
 	
-	s16 strike_time;
+	s16 strike_time; // TODO Remove
 	s16 walk_start_time;
 	s32 aiming_start;
 	s32 npcflags;
@@ -831,8 +846,8 @@ struct SavedEquipItemElement {
 	
 	SavedEquipItemElement & operator=(const IO_EQUIPITEM_ELEMENT & b) {
 		value = b.value;
-		flags = b.flags;
-		special = b.special;
+		flags = s16(b.flags); // TODO save/load flags
+		special = s16(b.special); // TODO save/load enum
 		return *this;
 	}
 	
@@ -919,11 +934,11 @@ struct SavedTweakerInfo {
 	
 	/* implicit */ SavedTweakerInfo(const IO_TWEAKER_INFO & b) {
 		arx_assert(b.filename.string().length() <= sizeof(filename));
-		util::storeString(filename, b.filename.string().c_str());
+		util::storeString(filename, b.filename.string());
 		arx_assert(b.skintochange.length() <= sizeof(skintochange));
-		util::storeString(skintochange, b.skintochange.c_str());
+		util::storeString(skintochange, b.skintochange);
 		arx_assert(b.skinchangeto.filename().length() <= sizeof(skinchangeto));
-		util::storeString(skinchangeto, b.skinchangeto.string().c_str());
+		util::storeString(skinchangeto, b.skinchangeto.string());
 	}
 	
 };
@@ -947,9 +962,9 @@ struct SavedTweakInfo {
 	/* implicit */ SavedTweakInfo(const TWEAK_INFO & b) {
 		type = b.type;
 		arx_assert(b.param1.string().length() <= PARAM_SIZE);
-		util::storeString(param1, b.param1.string().c_str());
-		arx_assert(b.param2.string().length() <=PARAM_SIZE);
-		util::storeString(param2, b.param2.string().c_str());
+		util::storeString(param1, b.param1.string());
+		arx_assert(b.param2.string().length() <= PARAM_SIZE);
+		util::storeString(param2, b.param2.string());
 	}
 	
 };
@@ -980,159 +995,138 @@ struct SavedMatrix {
 	
 };
 
-struct SavedTransform {
-	
-	SavedVec3 pos;
-	f32 ycos;
-	f32 ysin;
-	f32 xsin;
-	f32 xcos;
-	f32 use_focal; //TODO Remove
-	f32 xmod;
-	f32 ymod;
-	f32 zmod;
-	
-	operator EERIE_TRANSFORM() const {
-		EERIE_TRANSFORM a;
-		a.pos = pos.toVec3();
-		a.ycos = ycos, a.ysin = ysin, a.xsin = xsin, a.xcos = xcos;
-		a.zcos = .1f;
-		a.zsin = 0.f;
-		a.mod.x = xmod, a.mod.y = ymod;
-		return a;
-	}
-	
-	SavedTransform & operator=(const EERIE_TRANSFORM & b) {
-		pos = b.pos;
-		ycos = b.ycos, ysin = b.ysin, xsin = b.xsin, xcos = b.xcos;
-		use_focal = 0.f;
-		xmod = b.mod.x, ymod = b.mod.y, zmod = 0.f;
-		return *this;
-	}
-	
-};
+#define CAM_SUBJVIEW 0
+#define CAM_TOPVIEW  1
 
 struct SavedCamera {
 	
-	SavedTransform transform;
 	SavedVec3 pos;
-	f32 Ycos;
-	f32 Ysin;
-	f32 Xcos;
-	f32 Xsin;
-	f32 Zcos;
-	f32 Zsin;
-	f32 focal;
-	f32 use_focal; //TODO Remove
-	f32 Zmul; //TODO Remove
-	f32 posleft; //TODO Remove
-	f32 postop; //TODO Remove
+	f32 ycos; // TODO Remove
+	f32 ysin; // TODO Remove
+	f32 xsin; // TODO Remove
+	f32 xcos; // TODO Remove
+	f32 use_focal1; // TODO Remove
+	f32 xmod; // TODO Remove
+	f32 ymod; // TODO Remove
+	f32 zmod; // TODO Remove
 	
-	f32 xmod;
-	f32 ymod;
-	SavedMatrix matrix; //TODO Remove
+	SavedVec3 pos2; // TODO Remove
+	f32 Ycos; // TODO Remove
+	f32 Ysin; // TODO Remove
+	f32 Xcos; // TODO Remove
+	f32 Xsin; // TODO Remove
+	f32 Zcos; // TODO Remove
+	f32 Zsin; // TODO Remove
+	f32 focal;
+	f32 use_focal; // TODO Remove
+	f32 Zmul; // TODO Remove
+	f32 posleft; // TODO Remove
+	f32 postop; // TODO Remove
+	
+	f32 xmod2; // TODO Remove
+	f32 ymod2; // TODO Remove
+	SavedMatrix matrix; // TODO Remove
 	SavedAnglef angle;
 	
-	SavedVec3 d_pos;
-	SavedAnglef d_angle;
+	SavedVec3 d_pos; // TODO Remove
+	SavedAnglef d_angle; // TODO Remove
 	SavedVec3 lasttarget;
-	SavedVec3 lastpos;
+	SavedVec3 lastpos; // TODO Remove
 	SavedVec3 translatetarget;
 	s32 lastinfovalid;
-	SavedVec3 norm; //TODO Remove
-	SavedColor fadecolor;
-	SavedRect clip;
-	f32 clipz0; //TODO Remove
-	f32 clipz1; //TODO Remove
-	s32 centerx;
-	s32 centery;
+	SavedVec3 norm; // TODO Remove
+	SavedColor fadecolor; // TODO Remove
+	SavedRect clip; // TODO Remove
+	f32 clipz0; // TODO Remove
+	f32 clipz1; // TODO Remove
+	s32 centerx; // TODO Remove
+	s32 centery; // TODO Remove
 	
 	f32 smoothing;
-	f32 AddX;
-	f32 AddY;
-	s32 Xsnap; //TODO Remove
-	s32 Zsnap; //TODO Remove
-	f32 Zdiv; //TODO Remove
+	f32 AddX; // TODO Remove
+	f32 AddY; // TODO Remove
+	s32 Xsnap; // TODO Remove
+	s32 Zsnap; // TODO Remove
+	f32 Zdiv; // TODO Remove
 	
-	s32 clip3D;
-	s32 type; //TODO Remove
-	s32 bkgcolor;
-	s32 nbdrawn; //TODO Remove
+	s32 clip3D; // TODO Remove
+	s32 type; // TODO Remove
+	u32 bkgcolor; // TODO Remove
+	s32 nbdrawn; // TODO Remove
 	f32 cdepth;
 	
-	SavedAnglef size; //TODO Remove
+	SavedAnglef size; // TODO Remove
 	
-	operator EERIE_CAMERA() const {
+	operator Camera() const {
 		
-		EERIE_CAMERA a;
+		Camera a;
 		
-		a.orgTrans = transform;
-		a.orgTrans.zcos = Zcos;
-		a.orgTrans.zsin = Zsin;
+		a.m_pos = pos.toVec3();
 		a.focal = focal;
-		
 		a.angle = angle;
-		
-		a.d_pos = d_pos.toVec3(), a.d_angle = d_angle;
-		a.lasttarget = lasttarget.toVec3(), a.lastpos = lastpos.toVec3();
-		a.translatetarget = translatetarget.toVec3();
-		a.lastinfovalid = lastinfovalid != 0;
-		a.fadecolor = fadecolor, a.clip = clip;
-		a.center = Vec2i(centerx, centery);
-		
-		a.smoothing = smoothing;
-		
-		a.bkgcolor = Color::fromBGRA(ColorBGRA(bkgcolor));
 		a.cdepth = cdepth;
 		
 		return a;
 	}
 	
-	SavedCamera & operator=(const EERIE_CAMERA & b) {
+	SavedCamera & operator=(const Camera & b) {
 		
-		transform = b.orgTrans;
-
-		//TODO Remove
-		pos = b.orgTrans.pos;
-		Ycos = b.orgTrans.ycos, Ysin = b.orgTrans.ysin;
-		Xcos = b.orgTrans.xcos, Xsin = b.orgTrans.xsin;
-		Zcos = b.orgTrans.zcos, Zsin = b.orgTrans.zsin;
-
-		use_focal = 0.f;
-
-		posleft = b.orgTrans.mod.x;
-		postop  = b.orgTrans.mod.y;
-
+		pos = b.m_pos;
+		pos2 = b.m_pos;
+		lastpos = b.m_pos;
 		focal = b.focal;
-		Zmul = 0.f;
-
-
-		xmod = 0.f, ymod = 0.f;
-		matrix = glm::mat4x4();
 		angle = b.angle;
+		cdepth = b.cdepth;
 		
-		d_pos = b.d_pos, d_angle = b.d_angle;
-		lasttarget = b.lasttarget, lastpos = b.lastpos;
-		translatetarget = b.translatetarget;
-		lastinfovalid = b.lastinfovalid;
-		norm = Vec3f(0,0,0); //TODO Remove
-		fadecolor = b.fadecolor, clip = b.clip;
-		clipz0 = 0.0f, clipz1 = 0.0f;
-		centerx = b.center.x, centery = b.center.y;
+		ycos = 0.f;
+		ysin = 0.f;
+		xsin = 0.f;
+		xcos = 0.f;
+		use_focal1 = 0.f;
+		xmod = 0.f;
+		ymod = 0.f;
+		zmod = 0.f;
 		
-		smoothing = b.smoothing;
-		AddX = 0.f, AddY = 0.f;
+		Ycos = 0.f;
+		Ysin = 0.f;
+		Xcos = 0.f;
+		Xsin = 0.f;
+		Zcos = 0.f;
+		Zsin = 0.f;
+		
+		use_focal = 0.f;
+		
+		posleft = 0.f;
+		postop = 0.f;
+		
+		Zmul = 0.f;
+		
+		xmod2 = 0.f;
+		ymod2 = 0.f;
+		matrix = glm::mat4x4(1.f);
+		
+		d_pos = Vec3f(0.f);
+		d_angle = Anglef();
+		norm = Vec3f(0.f);
+		fadecolor = Color3f::black;
+		clip = Rect::ZERO;
+		clipz0 = 0.0f;
+		clipz1 = 0.0f;
+		centerx = 0;
+		centery = 0;
+		
+		AddX = 0.f;
+		AddY = 0.f;
 		Xsnap = 0;
 		Zsnap = 0;
 		Zdiv = 0.f;
 		
 		clip3D = 0;
 		type = CAM_SUBJVIEW;
-		bkgcolor = b.bkgcolor.toBGRA();
+		bkgcolor = Color::none.toBGRA().t;
 		nbdrawn = 0;
-		cdepth = b.cdepth;
 		
-		size = Anglef(0, 0, 0);
+		size = Anglef();
 		
 		return *this;
 	}
@@ -1140,15 +1134,49 @@ struct SavedCamera {
 };
 
 struct ARX_CHANGELEVEL_CAMERA_IO_SAVE {
+	
 	SavedCamera cam;
+	
+	operator IO_CAMDATA() const {
+		
+		IO_CAMDATA a;
+		
+		a.cam = cam;
+		
+		a.lasttarget = cam.lasttarget.toVec3();
+		a.translatetarget = cam.translatetarget.toVec3();
+		a.lastinfovalid = cam.lastinfovalid != 0;
+		a.smoothing = cam.smoothing;
+		
+		return a;
+	}
+	
+	ARX_CHANGELEVEL_CAMERA_IO_SAVE & operator=(const IO_CAMDATA & b) {
+		
+		cam = b.cam;
+		
+		cam.lasttarget = b.lasttarget;
+		cam.translatetarget = b.translatetarget;
+		cam.lastinfovalid = b.lastinfovalid;
+		cam.smoothing = b.smoothing;
+		
+		return *this;
+	}
+	
 };
 
 struct ARX_CHANGELEVEL_PLAYER_LEVEL_DATA {
 	f32 version;
 	char name[256];
 	s32 level;
-	u32 time;
-	s32 padd[32];
+	s64 time; // 32-bit before Arx Libertatis 1.2
+	s64 playthroughStart; // new in Arx Libertatis 1.2
+	u64 playthroughId; // new in Arx Libertatis 1.2
+	u64 oldestALVersion; // new in Arx Libertatis 1.2
+	u64 newestALVersion; // new in Arx Libertatis 1.2
+	u64 lastALVersion; // new in Arx Libertatis 1.2
+	char lastEngineVersion[64]; // new in Arx Libertatis 1.2
+	s32 padd[5];
 };
 
 

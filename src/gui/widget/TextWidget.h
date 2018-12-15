@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,48 +20,49 @@
 #ifndef ARX_GUI_WIDGET_TEXTWIDGET_H
 #define ARX_GUI_WIDGET_TEXTWIDGET_H
 
-#include <boost/function.hpp>
+#include <string>
 
-#include "core/Config.h"
-#include "graphics/Color.h"
 #include "gui/widget/Widget.h"
+#include "math/Vector.h"
+#include "platform/Platform.h"
 
 class Font;
 
-class TextWidget: public Widget {
+class TextWidget arx_final : public Widget {
 	
 public:
+	
+	enum ForceDisplay {
+		Automatic,
+		Dynamic,
+		Disabled,
+		Enabled,
+		MouseOver,
+	};
+	
+private:
+	
 	std::string m_text;
 	Font * m_font;
-	Color lColor;
-	Color lOldColor;
-	Color lColorHighlight;
-	bool	bSelected;
-	
-	boost::function<void(TextWidget *)> clicked;	// NOLINT
-	
-	// TODO followind fields only used for keybinds
-	bool m_isKeybind;
-	ControlAction m_keybindAction;
-	int m_keybindIndex;
+	ForceDisplay m_display;
 	
 public:
-	TextWidget(MenuButton id, Font * font, const std::string & text, Vec2f pos = Vec2f_ZERO);
-	virtual ~TextWidget();
 	
-	void setColor(Color color) { lColor = color; }
+	TextWidget(Font * font, const std::string & text);
 	
-	bool OnMouseClick();
-	void Update();
-	void Render();
-	void SetText(const std::string & _pText);
-	void RenderMouseOver();
+	void render(bool mouseOver = false);
 	
-	bool OnMouseDoubleClick();
+	void setText(const std::string & text);
+	const std::string & text() const { return m_text; }
+	
+	Font * font() const { return m_font; }
+	
+	void forceDisplay(ForceDisplay display) { m_display = display; }
 	
 	virtual WidgetType type() const {
 		return WidgetType_Text;
-	};
+	}
+	
 };
 
 #endif // ARX_GUI_WIDGET_TEXTWIDGET_H

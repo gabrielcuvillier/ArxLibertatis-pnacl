@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,55 +20,67 @@
 #ifndef ARX_GUI_MENU_MENUCURSOR_H
 #define ARX_GUI_MENU_MENUCURSOR_H
 
+#include "core/TimeTypes.h"
 #include "graphics/Color.h"
 #include "math/Vector.h"
 
 struct TexturedVertex;
 
 class CursorTrail {
+	
 public:
+	
 	CursorTrail();
 	
 	void reset();
-	void add(float time, const Vec2s & pos);
+	void add(PlatformDuration time, const Vec2s & pos);
 	void draw();
 	
 private:
-	float m_storedTime;
-	int   iNbOldCoord;
-	int   iMaxOldCoord;
+	
+	PlatformDuration m_storedTime;
+	int iNbOldCoord;
+	int iMaxOldCoord;
 	Vec2s iOldCoord[256];
 	
 	bool ComputePer(const Vec2s & p1, const Vec2s & p2, TexturedVertex * v1, TexturedVertex * v2, float size);
 	void DrawLine2D(float _fSize, Color3f color);
+	
 };
 
 class MenuCursor {
-
+	
 public:
+	
 	MenuCursor();
 	virtual ~MenuCursor();
 	
 	void reset();
-	void update(float time);
+	void update();
 	void SetMouseOver();
 	void DrawCursor();
 	
 private:
+	
 	void DrawOneCursor(const Vec2s & mousePos);
 	
 	Vec2s m_size;
 	bool exited; //! Has the mouse exited the window
-	float				lFrameDiff;
-	int					m_currentFrame;
-	bool				bMouseOver;
+	PlatformDuration lFrameDiff;
+	int m_currentFrame;
+	bool bMouseOver;
 	CursorTrail trail;
+	
 };
+
+extern MenuCursor * pMenuCursor;
 
 class TextureContainer;
 
 class ThumbnailCursor {
+	
 public:
+	
 	ThumbnailCursor()
 		: m_renderTexture(NULL)
 		, m_loadTexture(NULL)
@@ -80,6 +92,7 @@ public:
 	
 	TextureContainer * m_renderTexture;
 	TextureContainer * m_loadTexture;
+	
 };
 
 extern ThumbnailCursor g_thumbnailCursor;

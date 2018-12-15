@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,6 +20,7 @@
 #ifndef ARX_GRAPHICS_DRAWDEBUG_H
 #define ARX_GRAPHICS_DRAWDEBUG_H
 
+#include "core/TimeTypes.h"
 #include "graphics/Color.h"
 #include "math/Types.h"
 
@@ -31,7 +32,9 @@ void drawDebugCycleViews();
 void drawDebugRender();
 
 namespace debug {
-	void drawRay(Vec3f start, Vec3f dir, Color color = Color::white, float duration = 0.0f);
-}
+
+void drawRay(Vec3f start, Vec3f dir, Color color = Color::white, PlatformDuration duration = 0);
+
+} // namespace debug
 
 #endif // ARX_GRAPHICS_DRAWDEBUG_H

@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -34,14 +34,14 @@
 #ifdef BOOST_PP_IS_ITERATING
 
 template <typename A>
-struct arg_impl<A,N> {
+struct arg_impl<A, N> {
 	
-	typedef A BOOST_PP_CAT(BOOST_PP_CAT(arg,N), _t);
+	typedef A BOOST_PP_CAT(BOOST_PP_CAT(arg, N), _t);
 	BOOST_PP_CAT(BOOST_PP_CAT(arg, N), _t) BOOST_PP_CAT(arg, N);
 	
-	typedef arg_impl<A,N> self_t;
+	typedef arg_impl<A, N> self_t;
 	
-	arg_impl() : BOOST_PP_CAT(arg,N) () { }
+	arg_impl() : BOOST_PP_CAT(arg, N) () { }
 	
 	template <typename T>
 	explicit arg_impl(const T & t) : BOOST_PP_CAT(arg, N)(t) { }

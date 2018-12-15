@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -43,7 +43,7 @@ public:
 	
 	void handleCrash(int crashType, void * crashExtraInfo = 0, int fpeCode = 0);
 	
-	static CrashHandlerWindows& getInstance();
+	static CrashHandlerWindows & getInstance();
 	
 private:
 	

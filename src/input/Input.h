@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -47,13 +47,50 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #ifndef ARX_INPUT_INPUT_H
 #define ARX_INPUT_INPUT_H
 
+#include <stddef.h>
+
 #include "core/Config.h"
+#include "core/TimeTypes.h"
+#include "input/InputKey.h"
 #include "input/Keyboard.h"
 #include "input/Mouse.h"
-#include "input/InputKey.h"
 #include "math/Vector.h"
+#include "math/Types.h"
 
 class Window;
+class TextInputHandler;
+
+extern long EERIEMouseButton;
+extern long LastMouseClick;
+
+inline bool eeMouseDown1() {
+	return (EERIEMouseButton & 1) && !(LastMouseClick & 1);
+}
+
+inline bool eeMouseUp1() {
+	return !(EERIEMouseButton & 1) && (LastMouseClick & 1);
+}
+
+inline bool eeMousePressed1() {
+	return (EERIEMouseButton & 1) != 0;
+}
+
+inline bool eeMouseDoubleClick1() {
+	return (EERIEMouseButton & 4) && !(LastMouseClick & 4);
+}
+
+inline bool eeMouseDown2() {
+	return (EERIEMouseButton & 2) && !(LastMouseClick & 2);
+}
+
+inline bool eeMouseUp2() {
+	return !(EERIEMouseButton & 2) && (LastMouseClick & 2);
+}
+
+inline bool eeMousePressed2() {
+	return (EERIEMouseButton & 2) != 0;
+}
+
 
 class Input {
 	
@@ -66,10 +103,12 @@ public:
 	bool init(Window * window);
 	void reset();
 	
-	void update();
+	void update(float time);
 	
-	static std::string getKeyName(InputKeyId key, bool localizedName = false);
+	static std::string getKeyName(InputKeyId key);
 	static InputKeyId getKeyId(const std::string & keyName);
+	
+	std::string getKeyDisplayName(InputKeyId key);
 	
 	// Action
 	
@@ -81,23 +120,23 @@ public:
 	
 	void setMouseMode(Mouse::Mode mode);
 	
-	const Vec2s & getMousePosAbs() const { return iMouseA; }
-	const Vec2s & getMousePosRel() const { return iMouseR; }
+	const Vec2s & getMousePosition() const { return iMouseA; }
+	const Vec2f & getRelativeMouseMovement() const { return m_mouseMovement; }
 	bool isMouseInWindow() const { return mouseInWindow; }
 	void setMousePosAbs(const Vec2s & mousePos);
 	
 	void setRawMouseInput(bool enabled);
 	
 	void setMouseSensitivity(int sensitivity);
-	int getMouseSensitivity() const { return iSensibility; }
+	void setMouseAcceleration(int acceleration);
+	void setInvertMouseY(bool invert);
 	
-	bool hasMouseMoved() const { return iMouseR != Vec2s_ZERO; }
 	bool getMouseButton(int buttonId) const;
 	int getMouseButtonClicked() const;
 	bool getMouseButtonRepeat(int buttonId) const;
 	bool getMouseButtonNowPressed(int buttonId) const;
 	bool getMouseButtonNowUnPressed(int buttonId) const;
-	bool getMouseButtonDoubleClick(int buttonId, int timeMs) const;
+	bool getMouseButtonDoubleClick(int buttonId) const;
 	
 	int getMouseWheelDir() const { return iWheelDir; }
 	
@@ -108,7 +147,28 @@ public:
 	bool isKeyPressed(int keyId) const;
 	bool isKeyPressedNowPressed(int keyId) const;
 	bool isKeyPressedNowUnPressed(int keyId) const;
-	bool getKeyAsText(int keyId, char & result) const;
+	
+	/*!
+	 * Enter text input mode and send all text to the given handler
+	 *
+	 * While text input mode is enabled, all key presses will first be sent to the input handler's
+	 * \ref TextInputHandler::keyPressed method. If that method returns \c true, the key press is not
+	 * hidden from the rest of the input system.
+	 *
+	 * Use \ref stopTextInput() to end text input mode.
+	 *
+	 * This function can be called multiple times in which the box and handler from the last
+	 * call will be used. A single \ref stopTextInput() call will end text input mode and will
+	 * not restore previous boxes or handlers.
+	 *
+	 * \param box Rectangle of the text input field (used to position helper windows by input methods)
+	 */
+	void startTextInput(const Rect & box, TextInputHandler * handler);
+	
+	/*!
+	 * End text input mode
+	 */
+	void stopTextInput();
 	
 private:
 	
@@ -120,18 +180,20 @@ private:
 	
 	bool m_useRawMouseInput;
 	Mouse::Mode m_mouseMode;
-	Vec2s iMouseR;
+	Vec2f m_mouseMovement;
 	Vec2s iMouseA;
 	Vec2s m_lastMousePosition;
 	bool  mouseInWindow;
 	
-	int   iSensibility;
+	float m_mouseSensitivity;
+	int   m_mouseAcceleration;
+	bool  m_invertMouseY;
 	int   iWheelDir;
 	
 	bool  bMouseButton[Mouse::ButtonCount];
 	bool  bOldMouseButton[Mouse::ButtonCount];
 	
-	int   iMouseTime[Mouse::ButtonCount];
+	PlatformInstant iMouseTime[Mouse::ButtonCount][2];
 	int   iMouseTimeSet[Mouse::ButtonCount];
 	int   iOldNumClick[Mouse::ButtonCount];
 	

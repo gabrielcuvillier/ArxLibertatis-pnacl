@@ -10,7 +10,6 @@
  */
 
 // C++11 features
-
 // alignas(n)
 #cmakedefine01 ARX_HAVE_CXX11_ALIGNAS
 // alignof(T)
@@ -19,6 +18,8 @@
 #cmakedefine01 ARX_HAVE_CXX11_AUTO
 // std::atomic
 #cmakedefine01 ARX_HAVE_CXX11_ATOMIC
+// decltype(…)
+#cmakedefine01 ARX_HAVE_CXX11_DECLTYPE
 // std::forward in <utility>
 #cmakedefine01 ARX_HAVE_CXX11_FORWARD
 // std::itegral_constant in <type_traits>
@@ -33,24 +34,60 @@
 #cmakedefine01 ARX_HAVE_CXX11_STATIC_ASSERT
 // variadic templates
 #cmakedefine01 ARX_HAVE_CXX11_VARIADIC_TEMPLATES
+// thread_local
+#cmakedefine01 ARX_HAVE_CXX11_THREADLOCAL
+// = default
+#cmakedefine01 ARX_HAVE_CXX11_DEFAULT
+// final
+#cmakedefine01 ARX_HAVE_CXX11_FINAL
+
+// C++17 features
+// [[nodiscard]]
+#cmakedefine01 ARX_HAVE_CXX17_NODISCARD
+// wide character support for filenames in fstream
+#cmakedefine01 ARX_HAVE_CXX17_FSTREAM_WCHAR
 
 // GCC extensions
 // __attribute__((aligned(n)))
 #cmakedefine01 ARX_HAVE_ATTRIBUTE_ALIGNED
+// __attribute__((alloc_align(i)))
+#cmakedefine01 ARX_HAVE_ATTRIBUTE_ALLOC_ALIGN
+// __attribute__((alloc_size(i)))
+#cmakedefine01 ARX_HAVE_ATTRIBUTE_ALLOC_SIZE
+// __attribute__((always_inline))
+#cmakedefine01 ARX_HAVE_ATTRIBUTE_ALWAYS_INLINE
+// __attribute__((assume_aligned(n)))
+#cmakedefine01 ARX_HAVE_ATTRIBUTE_ASSUME_ALIGNED
 // __attribute__((format(printf, i, j)))
 #cmakedefine01 ARX_HAVE_ATTRIBUTE_FORMAT_PRINTF
+// __attribute__((malloc))
+#cmakedefine01 ARX_HAVE_ATTRIBUTE_MALLOC
+// __attribute__((warn_unused_result))
+#cmakedefine01 ARX_HAVE_ATTRIBUTE_WARN_UNUSED_RESULT
+// __builtin_assume(e)
+#cmakedefine01 ARX_HAVE_BUILTIN_ASSUME
+// __builtin_assume_aligned(e, n)
+#cmakedefine01 ARX_HAVE_BUILTIN_ASSUME_ALIGNED
 // __builtin_trap()
 #cmakedefine01 ARX_HAVE_BUILTIN_TRAP
 // __builtin_unreachable()
 #cmakedefine01 ARX_HAVE_BUILTIN_UNREACHABLE
 // __alignof__(T)
 #cmakedefine01 ARX_HAVE_GCC_ALIGNOF
+// __thread
+#cmakedefine01 ARX_HAVE_GCC_THREADLOCAL
+// __typeof__(e)
+#cmakedefine01 ARX_HAVE_GCC_TYPEOF
 
 // MSVC extensions
+// __assume(e)
+#cmakedefine01 ARX_HAVE_ASSUME
 // __declspec(align(n))
 #cmakedefine01 ARX_HAVE_DECLSPEC_ALIGN
 // __alignof(T)
 #cmakedefine01 ARX_HAVE_MSVC_ALIGNOF
+// __declspec(thread)
+#cmakedefine01 ARX_HAVE_DECLSPEC_THREADLOCAL
 
 // Code generation options
 #cmakedefine01 BUILD_PROFILER_INSTRUMENT

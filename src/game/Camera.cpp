@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,163 +19,85 @@
 
 #include "game/Camera.h"
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "graphics/Math.h"
 #include "graphics/Renderer.h"
 
-#include <glm/gtx/euler_angles.hpp>
-#include <glm/gtx/transform.hpp>
 
-void EERIE_TRANSFORM::updateFromAngle(const Anglef &angle) {
-	float yaw, pitch, roll;
-	yaw = glm::radians(angle.getYaw());
-	xcos = std::cos(yaw);
-	xsin = std::sin(yaw);
-	pitch = glm::radians(angle.getPitch());
-	ycos = std::cos(pitch);
-	ysin = std::sin(pitch);
-	roll = glm::radians(angle.getRoll());
-	zcos = std::cos(roll);
-	zsin = std::sin(roll);
+Entity * g_cameraEntity;
+PreparedCamera g_preparedCamera;
+Camera * g_camera = NULL;
+Camera g_playerCamera;
+
+Anglef Camera::getLookAtAngle(const Vec3f & origin, const Vec3f & target) {
 	
-	glm::mat4 translation = glm::translate(-pos);
-	worldToView = toRotationMatrix(angle) * translation;
-}
-
-MASTER_CAMERA_STRUCT MasterCamera;
-
-
-static void rotPoint(Vec3f *in, Vec3f *out, EERIE_TRANSFORM &transform) {
-
-	Vec3f tmp;
-
-	ZRotatePoint(in, out, transform.zcos, transform.zsin);
-	XRotatePoint(out, &tmp, transform.xcos, transform.xsin);
-	YRotatePoint(&tmp, out, transform.ycos, -transform.ysin);
-}
-
-static glm::mat4 Util_LookAt(Vec3f vFrom, Vec3f vView, Vec3f vWorldUp) {
+	Anglef angle;
 	
-	glm::mat4x4 mat;
-	
-	// Normalize the z basis vector
-	float fLength = glm::length(vView);
-	if (fLength < 1e-6f)
-		return glm::mat4(1);
-
-	// Get the dot product, and calculate the projection of the z basis
-	// vector onto the up vector. The projection is the y basis vector.
-	float fDotProduct = glm::dot(vWorldUp, vView);
-
-	Vec3f vUp = vWorldUp - vView * fDotProduct;
-
-	// If this vector has near-zero length because the input specified a
-	// bogus up vector, let's try a default up vector
-	if(1e-6f > (fLength = glm::length(vUp)))
-	{
-		vUp = Vec3f_Y_AXIS - vView * vView.y;
-
-		// If we still have near-zero length, resort to a different axis.
-		if(1e-6f > (fLength = glm::length(vUp)))
-		{
-			vUp = Vec3f_Z_AXIS - vView * vView.z;
-
-			if(1e-6f > (fLength = glm::length(vUp)))
-				return glm::mat4(1);
-		}
+	if(origin != target) {
+		float targetz = origin.z + glm::distance(Vec2f(origin.x, origin.z), Vec2f(target.x, target.z));
+		angle.setPitch(MAKEANGLE(-glm::degrees(getAngle(origin.y, origin.z, target.y, targetz))));
+		angle.setYaw(MAKEANGLE(glm::degrees(getAngle(origin.x, origin.z, target.x, target.z))));
+		angle.setRoll(0.f);
 	}
-
-	// Normalize the y basis vector
-	vUp /= fLength;
-
-	// The x basis vector is found simply with the cross product of the y
-	// and z basis vectors
-	Vec3f vRight = glm::cross(vUp, vView);
-
-	// Start building the matrix. The first three rows contains the basis
-	// vectors used to rotate the view to point at the lookat point
-	mat[0][0] = vRight.x;
-	mat[0][1] = vUp.x;
-	mat[0][2] = vView.x;
-	mat[1][0] = vRight.y;
-	mat[1][1] = vUp.y;
-	mat[1][2] = vView.y;
-	mat[2][0] = vRight.z;
-	mat[2][1] = vUp.z;
-	mat[2][2] = vView.z;
-
-	// Do the translation values (rotations are still about the eyepoint)
-	mat[3][0] = -glm::dot(vFrom, vRight);
-	mat[3][1] = -glm::dot(vFrom, vUp);
-	mat[3][2] = -glm::dot(vFrom, vView);
-	mat[3][3] = 1.0f;
 	
-	return mat;
+	return angle;
 }
 
-static glm::mat4 Util_SetViewMatrix(EERIE_TRANSFORM &transform) {
-
-	Vec3f vFrom(transform.pos.x, -transform.pos.y, transform.pos.z);
-	Vec3f vTout(0.0f, 0.0f, 1.0f);
-
-	Vec3f vView;
-	rotPoint(&vTout, &vView, transform);
+static glm::mat4x4 createProjectionMatrix(const Vec2f & size, const Vec2f & center, Camera * cam) {
 	
-	Vec3f up(0.f, 1.f, 0.f);
-	Vec3f vWorldUp;
-	rotPoint(&up, &vWorldUp, transform);
-
-	return Util_LookAt(vFrom, vView, vWorldUp);
-}
-
-static void EERIE_CreateMatriceProj(float width, float height, EERIE_CAMERA * cam) {
-
-	float fov = focalToFov(cam->focal);
+	float fov = cam->fov();
 	
 	const float nearDist = 1.f;
 	const float farDist = cam->cdepth;
 	const float frustumDepth = farDist - nearDist;
 	
-	float aspect = height / width;
-	float w = aspect * (glm::cos(fov / 2) / glm::sin(fov / 2));
-	float h =   1.0f  * (glm::cos(fov / 2) / glm::sin(fov / 2));
+	float aspectw = (size.y < size.x) ? size.y / size.x : 1.f;
+	float aspecth = (size.y < size.x) ? 1.f : size.x / size.y;
+	float w = aspectw * (glm::cos(fov / 2) / glm::sin(fov / 2));
+	float h = aspecth * (glm::cos(fov / 2) / glm::sin(fov / 2));
 	float Q = farDist / frustumDepth;
-
-	cam->ProjectionMatrix = glm::mat4x4();
-	cam->ProjectionMatrix[0][0] = w;
-	cam->ProjectionMatrix[1][1] = h;
-	cam->ProjectionMatrix[2][2] = Q;
-	cam->ProjectionMatrix[3][2] = (-Q * nearDist);
-	cam->ProjectionMatrix[2][3] = 1.f;
-	cam->ProjectionMatrix[3][3] = 0.f;
-	GRenderer->SetProjectionMatrix(cam->ProjectionMatrix);
 	
-	glm::mat4 tempViewMatrix = Util_SetViewMatrix(cam->orgTrans);
-	GRenderer->SetViewMatrix(tempViewMatrix);
-
-	cam->ProjectionMatrix[0][0] *= width * .5f;
-	cam->ProjectionMatrix[1][1] *= height * .5f;
-	cam->ProjectionMatrix[2][2] = -(farDist * nearDist) / frustumDepth;	//HYPERBOLIC
-	cam->ProjectionMatrix[3][2] = Q;
-
-	GRenderer->SetViewport(Rect(static_cast<s32>(width), static_cast<s32>(height)));
-}
-
-void SP_PrepareCamera(EERIE_CAMERA * cam) {
-	cam->orgTrans.updateFromAngle(cam->angle);
-	cam->orgTrans.mod = Vec2f(cam->center + cam->clip.origin.toVec2());
-}
-
-void PrepareCamera(EERIE_CAMERA * cam, const Rect & size) {
+	glm::mat4x4 projectionMatrix(1.f);
+	projectionMatrix[0][0] = w;
+	projectionMatrix[1][1] = -h;
+	projectionMatrix[2][2] = Q;
+	projectionMatrix[3][2] = -Q * nearDist;
+	projectionMatrix[2][3] = 1.f;
+	projectionMatrix[3][3] = 0.f;
 	
-	SP_PrepareCamera(cam);
-	EERIE_CreateMatriceProj(static_cast<float>(size.width()),
-	                        static_cast<float>(size.height()),
-	                        cam);
+	glm::mat4x4 centerShift(1.f);
+	centerShift = glm::translate(centerShift, Vec3f(2.f * center.x / size.x - 1.f,
+	                                                1.f - 2.f * center.y / size.y,
+	                                                0.f));
+	
+	return centerShift * projectionMatrix;
 }
 
-EERIE_CAMERA * ACTIVECAM = NULL;
+void PrepareCamera(Camera * cam, const Rect & viewport, const Vec2i & projectionCenter) {
+	
+	SetActiveCamera(cam);
+	
+	g_preparedCamera.m_worldToView = glm::translate(toRotationMatrix(cam->angle), -cam->m_pos);
+	GRenderer->SetViewMatrix(g_preparedCamera.m_worldToView);
+	
+	const Vec2f center = Vec2f(projectionCenter - viewport.topLeft());
+	g_preparedCamera.m_viewToClip = createProjectionMatrix(Vec2f(viewport.size()), center, cam);
+	GRenderer->SetProjectionMatrix(g_preparedCamera.m_viewToClip);
+	
+	// Change coordinate system from [-1, 1] x [-1, 1] to [0, width] x [0, height] and flip the y axis
+	glm::mat4x4 ndcToScreen(1);
+	ndcToScreen = glm::scale(ndcToScreen, Vec3f(Vec2f(viewport.size()) / 2.f, 1.f));
+	ndcToScreen = glm::translate(ndcToScreen, Vec3f(1.f, 1.f, 0.f));
+	ndcToScreen = glm::scale(ndcToScreen, Vec3f(1.f, -1.f, 1.f));
+	g_preparedCamera.m_viewToScreen = ndcToScreen * g_preparedCamera.m_viewToClip;
+	
+	g_preparedCamera.m_worldToScreen = g_preparedCamera.m_viewToScreen * g_preparedCamera.m_worldToView;
+	
+	GRenderer->SetViewport(viewport);
+	
+}
 
-void SetActiveCamera(EERIE_CAMERA * cam)
-{
-	if (ACTIVECAM != cam) ACTIVECAM = cam;
+void SetActiveCamera(Camera * cam) {
+	g_camera = cam;
 }

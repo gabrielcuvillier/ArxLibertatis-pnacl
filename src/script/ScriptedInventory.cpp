@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -359,7 +359,7 @@ class InventoryCommand : public Command {
 			}
 			
 			if(!CanBePutInSecondaryInventory(context.getEntity()->inventory, ioo)) {
-					PutInFrontOfPlayer(ioo);
+				PutInFrontOfPlayer(ioo);
 			}
 			
 			return Success;
@@ -379,7 +379,7 @@ class InventoryCommand : public Command {
 			
 			if(SecondaryInventory != context.getEntity()->inventory) {
 				SecondaryInventory = context.getEntity()->inventory;
-				ARX_SOUND_PlayInterface(SND_BACKPACK);
+				ARX_SOUND_PlayInterface(g_snd.BACKPACK);
 			}
 			
 			return Success;
@@ -399,7 +399,7 @@ class InventoryCommand : public Command {
 			
 			if(context.getEntity()->inventory != NULL) {
 				SecondaryInventory = NULL;
-				ARX_SOUND_PlayInterface(SND_BACKPACK);
+				ARX_SOUND_PlayInterface(g_snd.BACKPACK);
 			}
 			
 			return Success;
@@ -472,16 +472,10 @@ public:
 		}
 		
 		if(unequip) {
-			Entity * oes = EVENT_SENDER;
-			EVENT_SENDER = entities[t];
-			Stack_SendIOScriptEvent(context.getEntity(), SM_EQUIPOUT);
-			EVENT_SENDER = oes;
+			Stack_SendIOScriptEvent(entities[t], context.getEntity(), SM_EQUIPOUT);
 			ARX_EQUIPMENT_UnEquip(entities[t], context.getEntity());
 		} else {
-			Entity * oes = EVENT_SENDER;
-			EVENT_SENDER = entities[t];
-			Stack_SendIOScriptEvent(context.getEntity(), SM_EQUIPIN);
-			EVENT_SENDER = oes;
+			Stack_SendIOScriptEvent(entities[t], context.getEntity(), SM_EQUIPIN);
 			ARX_EQUIPMENT_Equip(entities[t], context.getEntity());
 		}
 		
@@ -553,7 +547,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedInventory() {
 	

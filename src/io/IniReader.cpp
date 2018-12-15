@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,15 +24,16 @@
 #include "io/log/Logger.h"
 #include "platform/Platform.h"
 
-const IniSection * IniReader::getSection( const std::string& section ) const {
+const IniSection * IniReader::getSection(const std::string & sectionName) const {
 	
-	iterator iter = sections.find(section);
+	iterator iter = sections.find(sectionName);
 	
 	if(iter != sections.end()) {
 		return &(iter->second);
 	} else {
 		return NULL;
 	}
+	
 }
 
 size_t IniReader::getKeyCount(const std::string & sectionName) const {
@@ -40,24 +41,26 @@ size_t IniReader::getKeyCount(const std::string & sectionName) const {
 	const IniSection * section = getSection(sectionName);
 	if(section) {
 		return section->size();
-	} else {
-		return 0;
 	}
+	
+	return 0;
 }
 
-const std::string & IniReader::getKey(const std::string & section, const std::string & keyName, const std::string & default_value) const {
+const std::string & IniReader::getKey(const std::string & sectionName, const std::string & keyName,
+                                      const std::string & defaultValue) const {
 	
-	const IniKey * key = getKey(section, keyName);
+	const IniKey * key = getKey(sectionName, keyName);
 	if(!key) {
-		return default_value;
+		return defaultValue;
 	}
 	
 	return key->getValue();
 }
 
-int IniReader::getKey(const std::string & section, const std::string & keyName, int defaultValue) const {
+int IniReader::getKey(const std::string & sectionName, const std::string & keyName,
+                      int defaultValue) const {
 	
-	const IniKey * key = getKey(section, keyName);
+	const IniKey * key = getKey(sectionName, keyName);
 	if(!key) {
 		return defaultValue;
 	}
@@ -65,9 +68,10 @@ int IniReader::getKey(const std::string & section, const std::string & keyName, 
 	return key->getValue(defaultValue);
 }
 
-float IniReader::getKey(const std::string & section, const std::string & keyName, float defaultValue) const {
+float IniReader::getKey(const std::string & sectionName, const std::string & keyName,
+                        float defaultValue) const {
 	
-	const IniKey * key = getKey(section, keyName);
+	const IniKey * key = getKey(sectionName, keyName);
 	if(!key) {
 		return defaultValue;
 	}
@@ -76,9 +80,10 @@ float IniReader::getKey(const std::string & section, const std::string & keyName
 }
 
 
-bool IniReader::getKey(const std::string & section, const std::string & keyName, bool defaultValue) const {
+bool IniReader::getKey(const std::string & sectionName, const std::string & keyName,
+                       bool defaultValue) const {
 	
-	const IniKey * key = getKey(section, keyName);
+	const IniKey * key = getKey(sectionName, keyName);
 	if(!key) {
 		return defaultValue;
 	}
@@ -86,7 +91,7 @@ bool IniReader::getKey(const std::string & section, const std::string & keyName,
 	return key->getValue(defaultValue);
 }
 
-const IniKey * IniReader::getKey(const std::string & sectionName, const std::string & key) const {
+const IniKey * IniReader::getKey(const std::string & sectionName, const std::string & keyName) const {
 	
 	// Look for a section
 	const IniSection * section = getSection(sectionName);
@@ -102,17 +107,17 @@ const IniKey * IniReader::getKey(const std::string & sectionName, const std::str
 	}
 	
 	// If the key is not specified, return the first ones value( to avoid breakage with legacy assets )
-	if(key.empty()) {
+	if(keyName.empty()) {
 		return &*section->begin();
 	}
 	
-	return section->getKey(key);
+	return section->getKey(keyName);
 }
 
 static const std::string WHITESPACE = " \t\r\n";
 static const std::string ALPHANUM = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789";
 
-bool IniReader::read(std::istream & is) {
+bool IniReader::read(std::istream & is, bool overrideValues) {
 	
 	// The current section
 	IniSection * section = NULL;
@@ -141,7 +146,7 @@ bool IniReader::read(std::istream & is) {
 		}
 		
 		if(str[start] == '#'
-		   || (start + 1 < str.length() && str[start] == '/' && str[start+1] == '/')) {
+		   || (start + 1 < str.length() && str[start] == '/' && str[start + 1] == '/')) {
 			// Whole line was commented, no need to do anything with it. Continue getting the next line
 			continue;
 		}
@@ -204,7 +209,11 @@ bool IniReader::read(std::istream & is) {
 		size_t valueStart = str.find_first_not_of(WHITESPACE, separator + 1);
 		if(valueStart == std::string::npos) {
 			// Empty value.
-			section->addKey(str.substr(start, nameEnd - start), std::string());
+			if(overrideValues) {
+				section->setKey(str.substr(start, nameEnd - start), std::string());
+			} else {
+				section->addKey(str.substr(start, nameEnd - start), std::string());
+			}
 			continue;
 		}
 		
@@ -233,28 +242,28 @@ bool IniReader::read(std::istream & is) {
 					str.clear();
 					getline(is, str);
 					
-					size_t start = str.find_first_not_of(WHITESPACE);
-					if(start == std::string::npos) {
+					size_t newValueStart = str.find_first_not_of(WHITESPACE);
+					if(newValueStart == std::string::npos) {
 						// Empty line (only whitespace)
 						break;
 					}
 					
-					if(str[start] == '#'
-					   || (start + 1 < str.length() && str[start] == '/' && str[start+1] == '/')) {
+					if(str[newValueStart] == '#'
+					   || (newValueStart + 1 < str.length() && str[newValueStart] == '/' && str[newValueStart + 1] == '/')) {
 						// Whole line was commented
 						break;
 					}
 					
-					if(str[start] == '[') {
+					if(str[newValueStart] == '[') {
 						// New section
 						line--, readline = false;
 						break;
 					}
 					
-					size_t nameEnd = str.find_first_not_of(ALPHANUM, start);
-					if(nameEnd != std::string::npos && nameEnd != start) {
-						size_t separator = str.find_first_not_of(WHITESPACE, nameEnd);
-						if(separator != std::string::npos && str[separator] == '=') {
+					size_t newNameEnd = str.find_first_not_of(ALPHANUM, newValueStart);
+					if(newNameEnd != std::string::npos && newNameEnd != newValueStart) {
+						size_t newSeparator = str.find_first_not_of(WHITESPACE, newNameEnd);
+						if(newSeparator != std::string::npos && str[newSeparator] == '=') {
 							// New key
 							line--, readline = false;
 							break;
@@ -264,16 +273,16 @@ bool IniReader::read(std::istream & is) {
 					// Replace newlines with spaces!
 					value += ' ';
 					
-					size_t valueEnd = str.find_last_of('"');
-					if(valueEnd != std::string::npos) {
+					size_t newValueEnd = str.find_last_of('"');
+					if(newValueEnd != std::string::npos) {
 						// End of multi-line value
-						value += str.substr(start, valueEnd - start);
+						value += str.substr(newValueStart, newValueEnd - newValueStart);
 						break;
 					}
 					
-					valueEnd = str.find_last_not_of(WHITESPACE) + 1;
-					arx_assert(valueEnd > start);
-					value += str.substr(start, valueEnd - start);
+					newValueEnd = str.find_last_not_of(WHITESPACE) + 1;
+					arx_assert(newValueEnd > newValueStart);
+					value += str.substr(newValueStart, newValueEnd - newValueStart);
 				}
 				
 			} else {
@@ -287,7 +296,11 @@ bool IniReader::read(std::istream & is) {
 			value = str.substr(valueStart, valueEnd - valueStart);
 		}
 		
-		section->addKey(key, value);
+		if(overrideValues) {
+			section->setKey(key, value);
+		} else {
+			section->addKey(key, value);
+		}
 		
 		// Ignoring rest of the line, not verifying that it's only whitespace / comment
 		

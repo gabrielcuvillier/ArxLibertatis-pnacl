@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -45,6 +45,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <iomanip>
 
+#include <boost/array.hpp>
+
 #include "audio/AudioTypes.h"
 #include "graphics/Math.h"
 #include "io/log/Logger.h"
@@ -58,22 +60,24 @@ namespace {
 struct CinematicSound {
 	
 	CinematicSound()
-		: exists(false), isSpeech(false), handle(audio::INVALID_ID) { }
+		: exists(false)
+		, isSpeech(false)
+	{ }
 	
 	bool exists;
 	bool isSpeech;
 	res::path file;
-	audio::SourceId handle;
+	audio::SourcedSample handle;
 	
 };
 
-static CinematicSound TabSound[256];
+boost::array<CinematicSound, 256> TabSound;
 
 } // anonymous namespace
 
 static CinematicSound * GetFreeSound() {
 	
-	for(size_t i = 0; i < ARRAY_SIZE(TabSound); i++) {
+	for(size_t i = 0; i < TabSound.size(); i++) {
 		if(!TabSound[i].exists) {
 			return &TabSound[i];
 		}
@@ -82,7 +86,7 @@ static CinematicSound * GetFreeSound() {
 	return NULL;
 }
 
-static bool DeleteFreeSound(int num) {
+static bool DeleteFreeSound(size_t num) {
 	
 	if(!TabSound[num].exists) {
 		return false;
@@ -95,9 +99,8 @@ static bool DeleteFreeSound(int num) {
 	return true;
 }
 
-void DeleteAllSound(void) {
-	
-	for(size_t i = 0; i < ARRAY_SIZE(TabSound); i++) {
+void DeleteAllSound() {
+	for(size_t i = 0; i < TabSound.size(); i++) {
 		DeleteFreeSound(i);
 	}
 }
@@ -115,9 +118,9 @@ void AddSoundToList(const res::path & path, bool isSpeech) {
 	cs->exists = true;
 }
 
-bool PlaySoundKeyFramer(int index) {
+bool PlaySoundKeyFramer(size_t index) {
 	
-	if(index < 0 || size_t(index) >= ARRAY_SIZE(TabSound) || !TabSound[index].exists) {
+	if(index >= TabSound.size() || !TabSound[index].exists) {
 		return false;
 	}
 	
@@ -132,10 +135,10 @@ bool PlaySoundKeyFramer(int index) {
 
 void StopSoundKeyFramer() {
 	
-	for(size_t i = 0; i < ARRAY_SIZE(TabSound); i++) {
-		if(TabSound[i].exists && TabSound[i].handle != audio::INVALID_ID) {
+	for(size_t i = 0; i < TabSound.size(); i++) {
+		if(TabSound[i].exists) {
 			ARX_SOUND_Stop(TabSound[i].handle);
-			TabSound[i].handle = audio::INVALID_ID;
+			TabSound[i].handle = audio::SourcedSample();
 		}
 	}
 }

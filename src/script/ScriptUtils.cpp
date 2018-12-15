@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -21,6 +21,8 @@
 
 #include <set>
 
+#include <boost/lexical_cast.hpp>
+
 #include "game/Entity.h"
 #include "graphics/data/Mesh.h"
 
@@ -40,39 +42,77 @@ std::string loadUnlocalized(const std::string & str) {
 	return str;
 }
 
-Context::Context(EERIE_SCRIPT * script, size_t pos, Entity * entity, ScriptMessage msg)
-	: script(script), pos(pos), entity(entity), message(msg) { }
+Context::Context(const EERIE_SCRIPT * script, size_t pos, Entity * sender, Entity * entity,
+                 ScriptMessage msg, const ScriptParameters & parameters)
+	: m_script(script)
+	, m_pos(pos)
+	, m_sender(sender)
+	, m_entity(entity)
+	, m_message(msg)
+	, m_parameters(parameters)
+{ }
 
-std::string Context::getStringVar(const std::string & var) const {
-	return GetVarValueInterpretedAsText(var, getMaster(), entity);
+std::string Context::getStringVar(const std::string & name) const {
+	
+	if(name.empty()) {
+		return std::string();
+	} else if(name[0] == '^') {
+		long lv;
+		float fv;
+		std::string tv;
+		switch(getSystemVar(*this, name, tv, &fv, &lv)) {
+			case TYPE_TEXT: return tv;
+			case TYPE_LONG: return boost::lexical_cast<std::string>(lv);
+			default: return boost::lexical_cast<std::string>(fv);
+		}
+	} else if(name[0] == '#') {
+		return boost::lexical_cast<std::string>(GETVarValueLong(svar, name));
+	} else if(name[0] == '\xA7') {
+		return boost::lexical_cast<std::string>(GETVarValueLong(getEntity()->m_variables, name));
+	} else if(name[0] == '&') {
+		return boost::lexical_cast<std::string>(GETVarValueFloat(svar, name));
+	} else if(name[0] == '@') {
+		return boost::lexical_cast<std::string>(GETVarValueFloat(getEntity()->m_variables, name));
+	} else if(name[0] == '$') {
+		const SCRIPT_VAR * var = GetVarAddress(svar, name);
+		return var ? var->text : "void";
+	} else if(name[0] == '\xA3') {
+		const SCRIPT_VAR * var = GetVarAddress(getEntity()->m_variables, name);
+		return var ? var->text : "void";
+	}
+	
+	return name;
 }
 
 #define ScriptParserWarning ARX_LOG(isSuppressed(*this, "?") ? Logger::Debug : Logger::Warning) << ScriptContextPrefix(*this) << ": "
 
 std::string Context::getCommand(bool skipNewlines) {
 	
-	const char * esdat = script->data;
+	const std::string & esdat = m_script->data;
 	
 	skipWhitespace(skipNewlines);
 	
 	std::string word;
 	
 	// now take chars until it finds a space or unused char
-	for(; pos != script->size && !isWhitespace(esdat[pos]); pos++) {
+	for(; m_pos != esdat.size() && !isWhitespace(esdat[m_pos]); m_pos++) {
 		
-		char c = esdat[pos];
+		char c = esdat[m_pos];
 		if(c == '"') {
 			ScriptParserWarning << "unexpected '\"' in command name";
 		} else if(c == '~') {
 			ScriptParserWarning << "unexpected '~' in command name";
 		} else if(c == '\n') {
 			break;
-		} else if(c == '/' && pos + 1 != script->size && esdat[pos + 1] == '/') {
-			pos = std::find(esdat + pos + 2, esdat + script->size, '\n') - esdat;
+		} else if(c == '/' && m_pos + 1 != esdat.size() && esdat[m_pos + 1] == '/') {
+			m_pos = esdat.find('\n', m_pos + 2);
+			if(m_pos == std::string::npos) {
+				m_pos = esdat.size();
+			}
 			if(!word.empty()) {
 				break;
 			}
-			skipWhitespace(skipNewlines), pos--;
+			skipWhitespace(skipNewlines), m_pos--;
 		} else {
 			word.push_back(c);
 		}
@@ -83,42 +123,42 @@ std::string Context::getCommand(bool skipNewlines) {
 
 std::string Context::getWord() {
 	
-	skipWhitespace();
+	const std::string & esdat = m_script->data;
 	
-	if(pos >= script->size) {
+	skipWhitespace(false, true);
+	
+	if(m_pos >= esdat.size()) {
 		return std::string();
 	}
-	
-	const char * esdat = script->data;
 	
 	bool tilde = false; // number of tildes
 	
 	std::string word;
 	std::string var;
 	
-	if(pos != script->size && esdat[pos] == '"') {
+	if(m_pos != esdat.size() && esdat[m_pos] == '"') {
 		
-		for(pos++; pos != script->size && esdat[pos] != '"'; pos++) {
-			if(esdat[pos] == '\n') {
+		for(m_pos++; m_pos != esdat.size() && esdat[m_pos] != '"'; m_pos++) {
+			if(esdat[m_pos] == '\n') {
 				if(tilde) {
 					ScriptParserWarning << "unmatched '\"' before end of line";
 				}
 				return word;
-			} else if(esdat[pos] == '~') {
+			} else if(esdat[m_pos] == '~') {
 				if(tilde) {
-					word += GetVarValueInterpretedAsText(var, getMaster(), getEntity());
+					word += getStringVar(var);
 					var.clear();
 				}
 				tilde = !tilde;
 			} else if(tilde) {
-				var.push_back(esdat[pos]);
+				var.push_back(esdat[m_pos]);
 			} else {
-				word.push_back(esdat[pos]);
+				word.push_back(esdat[m_pos]);
 			}
 		}
 		
-		if(pos != script->size) {
-			pos++;
+		if(m_pos != esdat.size()) {
+			m_pos++;
 		} else {
 			ScriptParserWarning << "unmatched '\"'";
 		}
@@ -126,23 +166,26 @@ std::string Context::getWord() {
 	} else {
 		
 		// now take chars until it finds a space or unused char
-		for(; pos != script->size && !isWhitespace(esdat[pos]); pos++) {
+		for(; m_pos != esdat.size() && !isWhitespace(esdat[m_pos]); m_pos++) {
 			
-			if(esdat[pos] == '"') {
+			if(esdat[m_pos] == '"') {
 				ScriptParserWarning << "unexpected '\"' inside token";
-			} else if(esdat[pos] == '~') {
+			} else if(esdat[m_pos] == '~') {
 				if(tilde) {
-					word += GetVarValueInterpretedAsText(var, getMaster(), getEntity());
+					word += getStringVar(var);
 					var.clear();
 				}
 				tilde = !tilde;
 			} else if(tilde) {
-				var.push_back(esdat[pos]);
-			} else if(esdat[pos] == '/' && pos + 1 != script->size && esdat[pos + 1] == '/') {
-				pos = std::find(esdat + pos + 2, esdat + script->size, '\n') - esdat;
+				var.push_back(esdat[m_pos]);
+			} else if(esdat[m_pos] == '/' && m_pos + 1 != esdat.size() && esdat[m_pos + 1] == '/') {
+				m_pos = esdat.find('\n', m_pos + 2);
+				if(m_pos == std::string::npos) {
+					m_pos = esdat.size();
+				}
 				break;
 			} else {
-				word.push_back(esdat[pos]);
+				word.push_back(esdat[m_pos]);
 			}
 			
 		}
@@ -158,21 +201,21 @@ std::string Context::getWord() {
 
 void Context::skipWord() {
 	
-	skipWhitespace();
+	const std::string & esdat = m_script->data;
 	
-	const char * esdat = script->data;
+	skipWhitespace(false, true);
 	
-	if(pos != script->size && esdat[pos] == '"') {
+	if(m_pos != esdat.size() && esdat[m_pos] == '"') {
 		
-		for(pos++; pos != script->size && esdat[pos] != '"'; pos++) {
-			if(esdat[pos] == '\n') {
+		for(m_pos++; m_pos != esdat.size() && esdat[m_pos] != '"'; m_pos++) {
+			if(esdat[m_pos] == '\n') {
 				ScriptParserWarning << "missing '\"' before end of line";
 				return;
 			}
 		}
 		
-		if(pos != script->size) {
-			pos++;
+		if(m_pos != esdat.size()) {
+			m_pos++;
 		} else {
 			ScriptParserWarning << "unmatched '\"'";
 		}
@@ -180,11 +223,14 @@ void Context::skipWord() {
 	} else {
 		
 		// now take chars until it finds a space or unused char
-		for(; pos != script->size && !isWhitespace(esdat[pos]); pos++) {
-			if(esdat[pos] == '"') {
+		for(; m_pos != esdat.size() && !isWhitespace(esdat[m_pos]); m_pos++) {
+			if(esdat[m_pos] == '"') {
 				ScriptParserWarning << "unexpected '\"' inside token";
-			} else if(esdat[pos] == '/' && pos + 1 != script->size && esdat[pos + 1] == '/') {
-				pos = std::find(esdat + pos + 2, esdat + script->size, '\n') - esdat;
+			} else if(esdat[m_pos] == '/' && m_pos + 1 != esdat.size() && esdat[m_pos + 1] == '/') {
+				m_pos = esdat.find('\n', m_pos + 2);
+				if(m_pos == std::string::npos) {
+					m_pos = esdat.size();
+				}
 				break;
 			}
 		}
@@ -192,23 +238,32 @@ void Context::skipWord() {
 	}
 }
 
-void Context::skipWhitespace(bool skipNewlines) {
+void Context::skipWhitespace(bool skipNewlines, bool warnNewlines) {
 	
-	const char * esdat = script->data;
+	const std::string & esdat = m_script->data;
 	
 	// First ignores spaces & unused chars
-	for(; pos != script->size && isWhitespace(esdat[pos]); pos++) {
-		if(!skipNewlines && esdat[pos] == '\n') {
-			return;
+	for(; m_pos != esdat.size() && isWhitespace(esdat[m_pos]); m_pos++) {
+		if(esdat[m_pos] == '\n') {
+			if(warnNewlines) {
+				ScriptParserWarning << "unexpected newline";
+				if(isBlockEndSuprressed(*this, "?")) {
+					// Ignore the newline
+					continue;
+				}
+			}
+			if(!skipNewlines) {
+				return;
+			}
 		}
 	}
 }
 
 std::string Context::getFlags() {
 	
-	skipWhitespace();
+	skipWhitespace(false, true);
 	
-	if(pos < script->size && script->data[pos] == '-') {
+	if(m_pos < m_script->data.size() && m_script->data[m_pos] == '-') {
 		return getWord();
 	}
 	
@@ -227,27 +282,55 @@ bool Context::getBool() {
 }
 
 float Context::getFloatVar(const std::string & name) const {
-	return GetVarValueInterpretedAsFloat(name, getMaster(), entity);
+	
+	if(name.empty()) {
+		return 0.f;
+	} else if(name[0] == '^') {
+		long lv;
+		float fv;
+		std::string tv;
+		switch(getSystemVar(*this, name, tv, &fv, &lv)) {
+			case TYPE_TEXT:
+				return float(atof(tv.c_str()));
+			case TYPE_LONG:
+				return float(lv);
+			default:
+				return fv;
+		}
+	} else if(name[0] == '#') {
+		return float(GETVarValueLong(svar, name));
+	} else if(name[0] == '\xA7') {
+		return float(GETVarValueLong(getEntity()->m_variables, name));
+	} else if(name[0] == '&') {
+		return GETVarValueFloat(svar, name);
+	} else if(name[0] == '@') {
+		return GETVarValueFloat(getEntity()->m_variables, name);
+	}
+	
+	return float(atof(name.c_str()));
 }
 
 size_t Context::skipCommand() {
 	
 	skipWhitespace();
 	
-	const char * esdat = script->data;
+	const std::string & esdat = m_script->data;
 	
-	if(pos == script->size || esdat[pos] == '\n') {
-		return (size_t)-1;
+	if(m_pos == esdat.size() || esdat[m_pos] == '\n') {
+		return size_t(-1);
 	}
 	
-	size_t oldpos = pos;
+	size_t oldpos = m_pos;
 	
-	if(esdat[pos] == '/' && pos + 1 != script->size && esdat[pos + 1] == '/') {
-		oldpos = (size_t)-1;
-		pos += 2;
+	if(esdat[m_pos] == '/' && m_pos + 1 != esdat.size() && esdat[m_pos + 1] == '/') {
+		oldpos = size_t(-1);
+		m_pos += 2;
 	}
 	
-	pos = std::find(esdat + pos, esdat + script->size, '\n') - esdat;
+	m_pos = esdat.find('\n', m_pos);
+	if(m_pos == std::string::npos) {
+		m_pos = esdat.size();
+	}
 	
 	return oldpos;
 }
@@ -255,33 +338,33 @@ size_t Context::skipCommand() {
 bool Context::jumpToLabel(const std::string & target, bool substack) {
 	
 	if(substack) {
-		stack.push_back(pos);
+		m_stack.push_back(m_pos);
 	}
 	
-	long targetpos = FindScriptPos(script, ">>" + target);
-	if(targetpos == -1) {
+	size_t targetpos = FindScriptPos(m_script, ">>" + target);
+	if(targetpos == size_t(-1)) {
 		return false;
 	}
 	
-	pos = targetpos + target.length() + 2;
+	m_pos = targetpos;
 	return true;
 }
 
 bool Context::returnToCaller() {
 	
-	if(stack.empty()) {
+	if(m_stack.empty()) {
 		return false;
 	}
 	
-	pos = stack.back();
-	stack.pop_back();
+	m_pos = m_stack.back();
+	m_stack.pop_back();
 	return true;
 }
 
 void Context::skipStatement() {
 	
 	std::string word = getCommand();
-	if(pos == script->size) {
+	if(m_pos == m_script->data.size()) {
 		ScriptParserWarning << "missing statement before end of script";
 		return;
 	}
@@ -290,11 +373,9 @@ void Context::skipStatement() {
 		long brackets = 1;
 		while(brackets > 0) {
 			
-			if(script->data[pos] == '\n') {
-				pos++;
-			}
+			skipWhitespace(true);
 			word = getWord(); // TODO should not evaluate ~var~
-			if(pos == script->size) {
+			if(m_pos == m_script->data.size()) {
 				ScriptParserWarning << "missing '}' before end of script";
 				return;
 			}
@@ -310,10 +391,10 @@ void Context::skipStatement() {
 	}
 	
 	skipWhitespace(true);
-	size_t oldpos = pos;
+	size_t oldpos = m_pos;
 	word = getCommand();
 	if(word != "else") {
-		pos = oldpos;
+		m_pos = oldpos;
 	}
 }
 
@@ -352,9 +433,12 @@ bool contains(const SuppressionsForPos & list, const Context & context, const st
 	return (i1->second.find(command) != i1->second.end());
 }
 
-}
+} // anonymous namespace
 
 size_t initSuppressions() {
+	
+	suppressBlockEnd("akbaa_tentacle", 2428, "?"); // unexpected newline (newline inside command)
+	suppressBlockEnd("akbaa_tentacle", 3420, "?"); // unexpected newline (newline inside command)
 	
 	suppressBlockEnd("camera_0027", 1140, "}"); // '}' should be commented out!
 	
@@ -368,6 +452,9 @@ size_t initSuppressions() {
 	
 	suppressBlockEnd("goblin_base_0031", 974, "on"); // missing '}'
 	
+	suppressBlockEnd("human_base_0082", 24110, "?"); // unexpected newline (newline inside command)
+	suppressBlockEnd("human_base_0082", 24135, "?"); // unexpected newline (newline inside command)
+	
 	suppressBlockEnd("lever_0028", 402, "}"); // extranous '}'
 	
 	// TODO(broken-scripts)
@@ -377,8 +464,9 @@ size_t initSuppressions() {
 	suppress("akbaa_phase2", 19998, "play"); // sound number is sonetimes too high; missing 'akbaa_hail1', should be 'akbaa_hail'
 	suppress("akbaa_phase2", 18549, "playanim"); // animation 'grunt' not loaded
 	
-	suppress("akbaa_tentacle", 2432, "on"); // unknown command 'on' (bad newline!)
-	suppress("akbaa_tentacle", 3424, "on"); // unknown command 'on' (bad newline!)
+	suppress("akbaa_tentacle", 2428, "?"); // unexpected newline (newline inside command)
+	suppress("akbaa_tentacle", 3420, "?"); // unexpected newline (newline inside command)
+	suppress("akbaa_tentacle", 3747, "?"); // unexpected newline (missing parameter)
 	suppress("akbaa_tentacle", 3747, "dodamage"); // missing target parameter
 	
 	suppress("axe_2handed", 26, "settwohanded"); // obsolete command
@@ -471,6 +559,8 @@ size_t initSuppressions() {
 	suppress("goblin_base_0009", 1455, "setevent"); // unsupported event: combine
 	suppress("goblin_base_0009", 3864, "playanim"); // used -e flag without command
 	
+	suppress("goblin_base_0016", 2320, "playanim"); // used -e flag without command
+	
 	suppress("goblin_base_0027", 8463, "wrong]"); // space instead of _ in localisation key
 	
 	suppress("goblin_base_0034", 771, "detach"); // object mug_full_0003 already destroyed
@@ -517,8 +607,8 @@ size_t initSuppressions() {
 	suppress("human_base_0079", 239, "inventory add"); // missing object: "graph/obj3d/interactive/items/armor/chest_leatherac/chest_leatherac.teo" (should be 'chest_leather_ac'?)
 	suppress("human_base_0079", 303, "inventory add"); // missing object: "graph/obj3d/interactive/items/armor/leggings_leatherac/leggings_leatherac.teo" (should be 'legging_leather_ac'?)
 	
-	suppress("human_base_0082", 24114, "on"); // unknown command 'on' (bad linebreak!)
-	suppress("human_base_0082", 24141, "hide"); // unknown command 'hide' (bad linebreak!)
+	suppress("human_base_0082", 24110, "?"); // unexpected newline (newline inside command)
+	suppress("human_base_0082", 24135, "?"); // unexpected newline (newline inside command)
 	
 	suppress("human_base_0085", 426, "loadanim"); // missing animation 'human_noraml_sit_out', should be 'human_normal_sit_out'?
 	
@@ -526,6 +616,8 @@ size_t initSuppressions() {
 	suppress("human_base_0086", 787, "loadanim"); // missing animation 'human_noraml_sit_out', should be 'human_normal_sit_out'?
 	
 	suppress("human_base_0095", 722, "setcontrolledzone"); // unknown zone 'maria_shop'
+	
+	suppress("human_base_0097", 9830, "speak"); // unexpected flags: -0 (should be -O?)
 	
 	suppress("human_base_0099", 997, "errata"); // unknown command 'errata', should be 'goto errata'
 	
@@ -623,6 +715,8 @@ size_t initSuppressions() {
 	
 	suppress("rat_base_0059", 62, "behavior"); // unknown behavior 'firendly', should be 'friendly'
 	suppress("rat_base_0059", 160, "behavior"); // unknown behavior 'firendly', should be 'friendly'
+	
+	suppress("rat_base_0077", 38, "?"); // unexpected newline (missing parameter)
 	
 	suppress("ratman_base", 22834, "goto"); // missing label "main_alert"
 	
@@ -723,4 +817,4 @@ bool isBlockEndSuprressed(const Context & context, const std::string & command) 
 	return contains(blockSuppressions, context, command);
 }
 
-}
+} // namespace script

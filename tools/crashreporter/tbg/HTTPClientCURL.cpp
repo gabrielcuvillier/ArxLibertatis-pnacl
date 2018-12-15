@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,7 +19,7 @@
 
 #include "crashreporter/tbg/HTTPClient.h"
 
-#include "boost/scope_exit.hpp"
+#include <boost/scope_exit.hpp>
 
 #include <curl/curl.h>
 
@@ -32,7 +32,7 @@ static struct InitCURL {
 } initCURL;
 
 static size_t writeToString(void * ptr, size_t size, size_t nmemb, void * string) {
-	std::string & data = *(std::string *)string;
+	std::string & data = *static_cast<std::string *>(string);
 	data.append(reinterpret_cast<const char *>(ptr), size * nmemb);
 	return nmemb;
 }
@@ -47,7 +47,7 @@ class CURLSession : public Session {
 	
 public:
 	
-	explicit CURLSession(std::string userAgent)
+	explicit CURLSession(const std::string & userAgent)
 		: m_userAgent(userAgent)
 		, m_curl(curl_easy_init())
 	{
@@ -55,7 +55,7 @@ public:
 			// Enable cookies
 			curl_easy_setopt(m_curl, CURLOPT_COOKIEFILE, "");
 		}
-	};
+	}
 	
 	~CURLSession() {
 		if(m_curl) {
@@ -71,18 +71,18 @@ public:
 
 void CURLSession::setup(const Request & request) {
 	
-  if(!m_curl) {
+	if(!m_curl) {
 		return;
 	}
 	
 	curl_easy_reset(m_curl);
 	
 	curl_easy_setopt(m_curl, CURLOPT_URL, request.url().c_str());
-	curl_easy_setopt(m_curl, CURLOPT_FOLLOWLOCATION, request.followRedirects() ? 1L : 0L);
+	curl_easy_setopt(m_curl, CURLOPT_FOLLOWLOCATION, request.followRedirects() ? 1l : 0l);
 	
 	curl_easy_setopt(m_curl, CURLOPT_USERAGENT, m_userAgent.c_str());
 	
-	curl_easy_setopt(m_curl, CURLOPT_NOPROGRESS, 1L);
+	curl_easy_setopt(m_curl, CURLOPT_NOPROGRESS, 1l);
 	
 }
 
@@ -97,7 +97,7 @@ Response * CURLSession::perform(const Request & request) {
 	curl_easy_setopt(m_curl, CURLOPT_WRITEFUNCTION, writeToString);
 	curl_easy_setopt(m_curl, CURLOPT_WRITEDATA, &data);
 	
-  CURLcode res = curl_easy_perform(m_curl);
+	CURLcode res = curl_easy_perform(m_curl);
 	if(res != CURLE_OK) {
 		return new Response(curl_easy_strerror(res));
 	}
@@ -137,7 +137,7 @@ Response * CURLSession::post(const POSTRequest & request) {
 		}
 	} BOOST_SCOPE_EXIT_END
 	if(m_curl) {
-		curl_easy_setopt(m_curl, CURLOPT_POST, 1L);
+		curl_easy_setopt(m_curl, CURLOPT_POST, 1l);
 		curl_easy_setopt(m_curl, CURLOPT_POSTFIELDS, request.data().c_str());
 		curl_easy_setopt(m_curl, CURLOPT_INFILESIZE_LARGE, curl_off_t(request.data().size()));
 		if(!request.contentType().empty()) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,28 +23,34 @@
 #include <vector>
 
 #include "gui/widget/Widget.h"
+#include "platform/Platform.h"
 
-class PanelWidget : public Widget {
+class PanelWidget arx_final : public Widget {
 	
 public:
+	
 	PanelWidget();
 	virtual ~PanelWidget();
 	
-	void Move(const Vec2f & offset);
-	void AddElement(Widget * widget);
+	void move(const Vec2f & offset);
 	
-	void Update();
-	void Render();
-	bool OnMouseClick() { return false; }
-	void RenderMouseOver() { }
-	Widget * IsMouseOver(const Vec2f & mousePos) const;
-	Widget * GetZoneWithID(MenuButton zoneId);
+	void add(Widget * widget);
+	
+	void update();
+	void render(bool mouseOver = false);
+	
+	Widget * getWidgetAt(const Vec2f & mousePos);
+	
+	const std::vector<Widget *> & children() const { return m_children; }
 	
 	virtual WidgetType type() const {
 		return WidgetType_Panel;
-	};
+	}
+	
+private:
 	
 	std::vector<Widget *> m_children;
+	
 };
 
 #endif // ARX_GUI_WIDGET_PANELWIDGET_H

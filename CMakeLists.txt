@@ -1,20 +1,9 @@
 project(ArxLibertatis)
 
-if(MSVC)
-	# CMake 2.8.5 or newer is needed for CMAKE_LIBRARY_ARCHITECTURE support.
-	cmake_minimum_required(VERSION 2.8.5)
-	# Change CMAKE_LIBRARY_ARCHITECTURE to ensure the right libs are used
-	if(CMAKE_CL_64)
-		set(CMAKE_LIBRARY_ARCHITECTURE "x64")
-	else()
-		set(CMAKE_LIBRARY_ARCHITECTURE "x86")
-	endif()
-else()
-	cmake_minimum_required(VERSION 2.8.3)
-endif()
+cmake_minimum_required(VERSION 2.8.3)
 
-if(CMAKE_VERSION VERSION_GREATER 3.4)
-	cmake_policy(VERSION 3.4)
+if(CMAKE_VERSION VERSION_GREATER 3.12)
+	cmake_policy(VERSION 3.12)
 else()
 	cmake_policy(VERSION ${CMAKE_VERSION})
 endif()
@@ -23,9 +12,9 @@ endif()
 # Define configuration options
 
 if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
-	set(MACOSX 1)
+	set(MACOS 1)
 else()
-	set(MACOSX 0)
+	set(MACOS 0)
 endif()
 
 macro(suboption _var _comment _type _default)
@@ -36,23 +25,33 @@ macro(suboption _var _comment _type _default)
 	endif()
 endmacro()
 
+option(DEVELOPER "Use build settings suitable for developers" OFF)
+
 # Components
-option(BUILD_TESTS "Build tests" OFF)
+option(BUILD_ALL OFF)
+set(default_BUILD_TESTS OFF)
+if(BUILD_ALL OR DEVELOPER)
+	set(default_BUILD_TESTS ON)
+endif()
+suboption(BUILD_TESTS "Build tests" BOOL ${default_BUILD_TESTS})
 option(BUILD_TOOLS "Build tools" ON)
 set(def_BUILD_CRASHHANDLER ON)
-if(MACOSX)
+if(MACOS)
 	set(def_BUILD_CRASHHANDLER OFF)
 elseif(WIN32 AND NOT MSVC)
 	set(def_BUILD_CRASHHANDLER OFF)
 endif()
 option(BUILD_CRASHHANDLER "Build the crash handler" ${def_BUILD_CRASHHANDLER})
-option(BUILD_CRASHREPORTER "Build the crash reporter" ${BUILD_CRASHHANDLER})
+suboption(BUILD_CRASHREPORTER "Build the crash reporter" BOOL ${BUILD_CRASHHANDLER})
 if(NOT BUILD_CRASHHANDLER)
 	set(BUILD_CRASHREPORTER OFF)
 endif()
 option(BUILD_PROFILER_INSTRUMENT "Enable instrumentation for the profiler" OFF)
-suboption(BUILD_PROFILER "Build the profiler GUI" BOOL ${BUILD_PROFILER_INSTRUMENT})
-option(BUILD_EDIT_LOADSAVE "Build save/load functions only used by the editor" ON)
+set(def_BUILD_PROFILER OFF)
+if(BUILD_PROFILER_INSTRUMENT OR BUILD_ALL)
+	set(def_BUILD_PROFILER ON)
+endif()
+suboption(BUILD_PROFILER "Build the profiler GUI" BOOL ${def_BUILD_PROFILER})
 option(INSTALL_BLENDER_PLUGIN "Install the Arx Libertatis blender plugin" ON)
 suboption(BUILD_IO_LIBRARY "Build shared library for reading and writing arx data"
           BOOL ${INSTALL_BLENDER_PLUGIN})
@@ -66,25 +65,34 @@ option(USE_OPENAL "Build the OpenAL audio backend" ON)
 option(USE_OPENGL "Build the OpenGL renderer backend" ON)
 option(USE_WINHTTP "Use the native WinHTTP API instead of CURL on Windows" ON)
 option(USE_NATIVE_FS "Use the native filesystem backend directly instead of boost" ON)
+option(USE_X11 "Check for X11 support in used libraries" OFF)
+option(USE_WAYLAND "Check for Wayland support in used libraries" OFF)
 
 # Alternative dependencies
 set(WITH_SDL CACHE STRING "The SDL version to use: 1 or 2 or empty (use any)")
 set(WITH_QT CACHE STRING "The Qt version to use: 4 or 5 or empty (use any)")
+set(WITH_OPENGL CACHE STRING "The OpenGL wrangler to use: epoxy or glew or empty (use any)")
 
 # Build types
-option(DEVELOPER "Use build settings suitable for developers" OFF)
+set(default_UNITY_BUILD ON)
 if(DEVELOPER)
 	set(default_UNITY_BUILD OFF)
-else()
-	set(default_UNITY_BUILD ON)
 endif()
 suboption(UNITY_BUILD "Unity build" BOOL ${default_UNITY_BUILD})
 option(DEBUG_EXTRA "Expensive debug options" OFF)
 option(SET_WARNING_FLAGS "Adjust compiler warning flags" ON)
 option(SET_NOISY_WARNING_FLAGS "Enable noisy compiler warnings" OFF)
 option(SET_OPTIMIZATION_FLAGS "Adjust compiler optimization flags" ON)
+suboption(USE_LDGOLD "Use the Gold linker" BOOL ${SET_OPTIMIZATION_FLAGS})
+suboption(FASTLINK "Optimize (incremental) linking speed" BOOL ${DEVELOPER})
+set(default_USE_LTO OFF)
+if(SET_OPTIMIZATION_FLAGS AND NOT FASTLINK)
+	set(default_USE_LTO ON)
+endif()
+suboption(USE_LTO "Use link-time code generation" BOOL ${default_USE_LTO})
+	
 
-option(USE_CXX11 "Try to use C++11 if available" ON)
+suboption(CXX_STD_VERSION "Maximum C++ standard version to enable" STRING 2017)
 if(DEVELOPER OR CMAKE_BUILD_TYPE STREQUAL "Debug")
 	set(default_DEBUG ON)
 else()
@@ -94,6 +102,8 @@ suboption(DEBUG "Build with debug output" BOOL ${default_DEBUG})
 if(DEBUG)
 	add_definitions(-DARX_DEBUG=1)
 endif()
+suboption(DEBUG_GL "Enable OpenGL debug output by default" BOOL ${DEBUG})
+set(ARX_DEBUG_GL ${DEBUG_GL})
 
 # Static libs
 set(default_USE_STATIC_LIBS OFF)
@@ -101,6 +111,7 @@ if(WIN32)
 	set(default_USE_STATIC_LIBS ON)
 endif()
 option(USE_STATIC_LIBS          "Statically link libraries" ${default_USE_STATIC_LIBS})
+suboption(Epoxy_USE_STATIC_LIBS    "Statically link libepoxy" BOOL ${USE_STATIC_LIBS})
 suboption(GLEW_USE_STATIC_LIBS     "Statically link GLEW"     BOOL ${USE_STATIC_LIBS})
 suboption(Boost_USE_STATIC_LIBS    "Statically link Boost"    BOOL ${USE_STATIC_LIBS})
 # Should be called FreeType_*, but keep it consistent with the FindFreetype.cmake module.
@@ -110,7 +121,7 @@ suboption(ZLIB_USE_STATIC_LIBS     "Statically link ZLIB"     BOOL ${USE_STATIC_
 # Icons
 if(WIN32)
 	set(default_ICON_TYPE "ico")
-elseif(MACOSX)
+elseif(MACOS)
 	set(default_ICON_TYPE "icns")
 else()
 	set(default_ICON_TYPE "iconset")
@@ -186,7 +197,7 @@ mark_as_advanced(
 # Default runtime user and data directories
 if(WIN32)
 	set(USER_DIR          "Arx Libertatis"                CACHE STRING "User dir names")
-elseif(MACOSX)
+elseif(MACOS)
 	set(DATA_DIR          "ArxLibertatis"                 CACHE STRING "Data dir names")
 	set(DATA_DIR_PREFIXES "/Applications"                 CACHE STRING "Data dir paths")
 	set(USER_DIR          "ArxLibertatis"                 CACHE STRING "User dir names")
@@ -237,10 +248,11 @@ mark_as_advanced(
 # Helper scrips
 
 include(CheckCXXSourceCompiles)
+include(CheckIncludeFiles)
 include(CheckSymbolExists)
 include(CheckTypeSize)
 
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake") # For custom cmake modules
+set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake") # For custom cmake modules
 
 include(VersionString)
 set(version_names VERSION ICON_NAME DATA_VERSION IO_LIBRARY_ABI_VERSION)
@@ -252,7 +264,7 @@ endif()
 include(BuildSystem)
 include(BuildType)
 include(CompileCheck)
-include(CXX11Check)
+include(CXXVersionCheck)
 include(CreateSourceGroups)
 include(PrintConfiguration)
 include(StyleCheck)
@@ -272,6 +284,7 @@ if((NOT LAST_CMAKE_CXX_FLAGS STREQUAL CMAKE_CXX_FLAGS)
 	force_recheck_library(Threads)
 	force_recheck_library(OpenAL)
 	force_recheck_library(OpenGL)
+	force_recheck_library(Epoxy)
 	force_recheck_library(GLEW)
 	force_recheck_library(Boost)
 	force_recheck_library(QtCore)
@@ -294,7 +307,7 @@ if(WIN32)
 	add_definitions(-DUNICODE)
 	add_definitions(-D_UNICODE)
 	if(MSVC)
-		if(CMAKE_LIBRARY_ARCHITECTURE STREQUAL "x64")
+		if(CMAKE_CL_64)
 			set(subsystem_xp "5.02")
 		else()
 			set(subsystem_xp "5.01")
@@ -341,23 +354,23 @@ if(Freetype_HAS_STATIC_LIBS)
 	find_package(PkgConfig QUIET)
 	pkg_check_modules(PC_Freetype freetype2)
 	foreach(lib IN LISTS PC_Freetype_STATIC_LIBRARIES)
-		if(lib MATCHES "(^|/|\\\\)(lib)?z(lib)?(\\.so|\\.a||.dll|\\.lib)?$")
+		if(lib MATCHES "(^|^\-l|/|\\\\)(lib)?z(lib)?(\\.so|\\.a||.dll|\\.lib)?$")
 			if(NOT Freetype_LINKING_ZLIB)
 				message(STATUS "FreeType: linking ZLIB")
 				set(Freetype_LINKING_ZLIB 1 CACHE INTERNAL "foobar")
 			endif()
 			# We always link ZLIB
 			list(APPEND FREETYPE_LIBRARIES ${ZLIB_LIBRARIES})
-		elseif(lib MATCHES "(^|/|\\\\)(lib)?freetype")
+		elseif(lib MATCHES "(^|^\-l|/|\\\\)(lib)?freetype")
 			# The main lib we linked above
-		elseif(lib MATCHES "(^|/|\\\\)(lib)?bz(ip)?2")
+		elseif(lib MATCHES "(^|^\-l|/|\\\\)(lib)?bz(ip)?2")
 			if(NOT Freetype_LINKING_BZip2)
 				message(STATUS "FreeType: linking BZip2")
 				set(Freetype_LINKING_BZip2 1 CACHE INTERNAL "foobar")
 			endif()
 			find_package(BZip2 REQUIRED)
 			list(APPEND FREETYPE_LIBRARIES ${BZIP2_LIBRARIES})
-		elseif(lib MATCHES "(^|/|\\\\)(lib)?png")
+		elseif(lib MATCHES "(^|^\-l|/|\\\\)(lib)?png")
 			if(NOT Freetype_LINKING_PNG)
 				message(STATUS "FreeType: linking libpng")
 				set(Freetype_LINKING_PNG 1 CACHE INTERNAL "foobar")
@@ -386,12 +399,35 @@ list(APPEND ARX_LIBRARIES ${FREETYPE_LIBRARIES})
 
 # OpenGL
 if(USE_OPENGL)
-	find_package(OpenGL ${OPTIONAL_DEPENDENCY})
-	find_package(GLEW 1.5.2 ${OPTIONAL_DEPENDENCY})
-	add_definitions(-DGLEW_NO_GLU)
-	if(NOT MSVC AND OPENGL_FOUND AND GLEW_FOUND)
-		check_link_library(OpenGL OPENGL_gl_LIBRARY)
-		check_link_library(GLEW GLEW_LIBRARIES)
+	if(NOT ARX_HAVE_OPENGL AND (WITH_OPENGL STREQUAL "" OR WITH_OPENGL STREQUAL "epoxy"))
+	if(NOT WITH_OPENGL)
+		set(EPOXY_OPTIONAL_DEPENDENCY)
+	else()
+		set(EPOXY_OPTIONAL_DEPENDENCY ${OPTIONAL_DEPENDENCY})
+	endif()
+		find_package(Epoxy ${EPOXY_OPTIONAL_DEPENDENCY})
+		if(EPOXY_FOUND)
+			if(NOT MSVC)
+				check_link_library(Epoxy Epoxy_LIBRARIES)
+			endif()
+			set(ARX_HAVE_EPOXY 1)
+			set(ARX_HAVE_OPENGL 1)
+			set(ARX_HAVE_GL_STATIC ${Epoxy_USE_STATIC_LIBS})
+		endif()
+	endif()
+	if(NOT ARX_HAVE_OPENGL AND (WITH_OPENGL STREQUAL "" OR WITH_OPENGL STREQUAL "glew"))
+		find_package(OpenGL ${OPTIONAL_DEPENDENCY})
+		find_package(GLEW 1.5.2 ${OPTIONAL_DEPENDENCY})
+		list(APPEND GLEW_DEFINITIONS -DGLEW_NO_GLU)
+		if(OPENGL_FOUND AND GLEW_FOUND)
+			if(NOT MSVC)
+				check_link_library(OpenGL OPENGL_gl_LIBRARY)
+				check_link_library(GLEW GLEW_LIBRARIES)
+			endif()
+			set(ARX_HAVE_GLEW 1)
+			set(ARX_HAVE_OPENGL 1)
+			set(ARX_HAVE_GL_STATIC ${GLEW_USE_STATIC_LIBS})
+		endif()
 	endif()
 endif()
 
@@ -412,7 +448,7 @@ if(NOT ARX_HAVE_SDL AND (NOT WITH_SDL OR WITH_SDL EQUAL 2))
 		set(SDL_OPTIONAL_DEPENDENCY ${OPTIONAL_DEPENDENCY})
 	endif()
 	set(SDL2_BUILDING_LIBRARY 1) # we don't need SDL2main!
-	find_package(SDL2 ${OPTIONAL_DEPENDENCY})
+	find_package(SDL2 ${SDL_OPTIONAL_DEPENDENCY})
 	if(SDL2_FOUND)
 		if(NOT MSVC)
 			check_link_library(SDL2 SDL2_LIBRARIES)
@@ -422,13 +458,24 @@ if(NOT ARX_HAVE_SDL AND (NOT WITH_SDL OR WITH_SDL EQUAL 2))
 	endif()
 endif()
 if(NOT ARX_HAVE_SDL AND (NOT WITH_SDL OR WITH_SDL EQUAL 1))
-	if(NOT MACOSX)
-		# Required to avoid linking with SDLmain except for OS X where it is necessary
+	if(NOT MACOS)
+		# Required to avoid linking with SDLmain except for macOS where it is necessary
 		# due to the need to have NSApplication correctly setup by SDLmain.
 		set(SDL_BUILDING_LIBRARY 1)
 	endif()
 	find_package(SDL 1.2 ${OPTIONAL_DEPENDENCY})
 	if(SDL_FOUND)
+		if(NOT WIN32 AND NOT MACOS)
+			# Some builds of SDL1 have references to X11 symbols but do not link to libX11.
+			# If we do not use GLEW then we do not indirectly link to libX11 anywhere and those
+			# symbols remain unresolved, resulting in a linker error.
+			# If libX11 was not actually needed, then the linker will discard it.
+			find_package(X11)
+			if(X11_FOUND)
+				list(APPEND SDL_LIBRARY ${X11_LIBRARIES})
+				list(APPEND SDL_INCLUDE_DIR ${X11_INCLUDE_DIR})
+			endif()
+		endif()
 		if(NOT MSVC)
 			check_link_library(SDL SDL_LIBRARY)
 		endif()
@@ -443,11 +490,22 @@ include_directories(SYSTEM ${Boost_INCLUDE_DIRS})
 add_definitions(-DBOOST_ALL_NO_LIB)
 # We compile with -fno-rtti and boost is not able to detect that for all compilers.
 add_definitions(-DBOOST_NO_RTTI -DBOOST_NO_TYPEID)
+# Boost 1.62 has a bug in the type_index library:
+# BOOST_TYPE_INDEX_REGISTER_CTTI_PARSING_PARAMS are wrong for 32-bit GCC builds in C++14 mode
+# This leads to a static assert when (indirectly) including <boost/type_index/ctti_type_index.hpp>
+#   /usr/include/boost/type_index/detail/compile_time_type_info.hpp:78:9: error: static assertion failed: TypeIndex library is misconfigured for your compiler. Please define BOOST_TYPE_INDEX_CTTI_USER_DEFINED_PARSING to correct values. See section 'RTTI emulation limitations' of the documentation for more information.
+# Fixed in Boost type_index commit b669f0244e4b0bf146f18e9293e6e87842f4bbe0
+if(NOT Boost_VERSION VERSION_LESS 106200 AND Boost_VERSION VERSION_LESS 106300)
+	if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_SIZEOF_VOID_P EQUAL 4)
+		message("Applying workaround for Boost.TypeIndex bug")
+		add_definitions("-DBOOST_NO_CXX14_CONSTEXPR")
+	endif()
+endif()
 
 # glm
 find_package(GLM 0.9.5.0 REQUIRED)
 include_directories(SYSTEM ${GLM_INCLUDE_DIRS})
-add_definitions(-DGLM_FORCE_RADIANS)
+add_definitions(-DGLM_FORCE_RADIANS) # Only needed for older GLM versions
 
 # DbgHelp
 if(MSVC AND BUILD_CRASHHANDLER)
@@ -493,14 +551,48 @@ find_package(Doxygen)
 
 find_package(PythonInterp)
 
+# Check for consistent configuration between SDL and libepoxy/GLEW
+if(ARX_HAVE_SDL AND ARX_HAVE_OPENGL AND NOT WIN32 AND NOT APPLE)
+	set(old_CMAKE_REQUIRED_INCLUDES)
+	if(ARX_HAVE_SDL2)
+		set(CMAKE_REQUIRED_INCLUDES ${SDL2_INCLUDE_DIR})
+	else()
+		set(CMAKE_REQUIRED_INCLUDES ${SDL_INCLUDE_DIR})
+	endif()
+	check_symbol_exists(SDL_VIDEO_DRIVER_X11 "SDL_config.h" SDL_HAVE_VIDEO_X11)
+	check_symbol_exists(SDL_VIDEO_DRIVER_WAYLAND "SDL_config.h" SDL_HAVE_VIDEO_WAYLAND)
+	if(EPOXY_FOUND)
+		set(CMAKE_REQUIRED_INCLUDES ${Epoxy_INCLUDE_DIR})
+	else()
+		set(CMAKE_REQUIRED_INCLUDES ${OPENGL_INCLUDE_DIR} ${GLEW_INCLUDE_DIR})
+	endif()
+	if(SDL_HAVE_VIDEO_X11)
+		if(EPOXY_FOUND)
+			check_include_files("epoxy/glx.h" ARX_HAVE_GLX)
+		else()
+			check_include_files("GL/glxew.h" ARX_HAVE_GLX)
+		endif()
+	endif()
+	if(SDL_HAVE_VIDEO_WAYLAND)
+		if(EPOXY_FOUND)
+			check_include_files("epoxy/egl.h" ARX_HAVE_EGL)
+		else()
+			check_include_files("GL/eglew.h" ARX_HAVE_EGL)
+		endif()
+	endif()
+	set(CMAKE_REQUIRED_INCLUDES ${old_CMAKE_REQUIRED_INCLUDES})
+endif()
+
 
 # Check for optional functionality and system configuration
 
-if(USE_CXX11)
-	enable_cxx11()
+if(NOT CXX_STD_VERSION LESS 2011)
+	enable_cxx_version(${CXX_STD_VERSION})
+	set(ARX_HAVE_CXX11_LONG_LONG 1) # everyone has had this for ages
 	check_cxx11("alignas"                ARX_HAVE_CXX11_ALIGNAS            1900)
 	check_cxx11("alignof"                ARX_HAVE_CXX11_ALIGNOF            1900)
 	check_cxx11("auto"                   ARX_HAVE_CXX11_AUTO               1600)
+	check_cxx11("decltype"               ARX_HAVE_CXX11_DECLTYPE           1900)
 	check_cxx11("std::atomic"            ARX_HAVE_CXX11_ATOMIC             1700)
 	check_cxx11("std::forward"           ARX_HAVE_CXX11_FORWARD            1800)
 	check_cxx11("std::integral_constant" ARX_HAVE_CXX11_INTEGRAL_CONSTANT  1500)
@@ -508,18 +600,29 @@ if(USE_CXX11)
 	check_cxx11("noexcept"               ARX_HAVE_CXX11_NOEXCEPT           1900)
 	check_cxx11("static_assert"          ARX_HAVE_CXX11_STATIC_ASSERT      1600)
 	check_cxx11("variadic templates"     ARX_HAVE_CXX11_VARIADIC_TEMPLATES 1800)
-	set(ARX_HAVE_CXX11_LONG_LONG 1) # everyone has had this for ages
+	check_cxx11("thread_local"           ARX_HAVE_CXX11_THREADLOCAL        1900)
+	check_cxx11("default"                ARX_HAVE_CXX11_DEFAULT            1800)
+	check_cxx11("final"                  ARX_HAVE_CXX11_FINAL              1700)
+	check_cxx17("[[nodiscard]]"          ARX_HAVE_CXX17_NODISCARD          1911)
+	if(WIN32)
+		check_cxx17("fstream(wchar*)" ARX_HAVE_CXX17_FSTREAM_WCHAR ALWAYS)
+	endif()
 endif()
 
 if(MSVC)
 	
 	# Compiler builtins & language extensions
+	set(ARX_HAVE_ASSUME 1)
 	set(ARX_HAVE_DECLSPEC_ALIGN 1)
 	set(ARX_HAVE_MSVC_ALIGNOF 1)
+	set(ARX_HAVE_DECLSPEC_THREADLOCAL 1)
 	
 	# Standard library features
 	set(ARX_HAVE_ALIGNED_MALLOC 1)
 	set(ARX_HAVE_ALIGNED_FREE 1)
+	
+	set(ARX_HAVE_XMMINTRIN 1)
+	set(ARX_HAVE_PMMINTRIN 1)
 	
 else(MSVC)
 	
@@ -528,35 +631,58 @@ else(MSVC)
 		add_ldflag("-static-libgcc")
 	endif()
 	
-	if(USE_CXX11 AND WIN32)
-		add_definitions(-U__STRICT_ANSI__) # __argc and __argv
-	endif()
-	
 	# Don't expose internal symbols to the outside world by default
 	add_cxxflag("-fvisibility=hidden")
 	add_cxxflag("-fvisibility-inlines-hidden")
 	
 	# Define _POSIX_C_SOURCE and _XOPEN_SOURCE for GNU systems
-	if(CMAKE_SYSTEM_NAME MATCHES "Linux" OR CMAKE_SYSTEM_NAME MATCHES "GNU"
-	   OR CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
-		set(CMAKE_REQUIRED_DEFINITIONS "-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=600")
-		add_definitions(-D_POSIX_C_SOURCE=200809L -D_XOPEN_SOURCE=600)
-		if(CMAKE_SYSTEM_NAME MATCHES "kFreeBSD")
-			set(CMAKE_REQUIRED_DEFINITIONS "${CMAKE_REQUIRED_DEFINITIONS} -D_BSD_SOURCE")
-			add_definitions(-D_BSD_SOURCE)
-		endif()
+	check_symbol_exists(__GLIBC__ "features.h" HAVE_GLIBC)
+	set(libc_features)
+	if(HAVE_GLIBC)
+		list(APPEND libc_features
+			-D_ISOC11_SOURCE
+			-D_POSIX_C_SOURCE=200809L
+			-D_XOPEN_SOURCE=600
+			-D_BSD_SOURCE # Required for dirfd with glibc <= 2.19
+			-D_DEFAULT_SOURCE # Required not to warn on _BSD_SOURCE with glibc >= 2.20
+			-D_ATFILE_SOURCE # Required for fstatat with glibc <= 2.9
+		)
 	endif()
+	if(USE_NATIVE_FS AND NOT WIN32)
+		list(APPEND libc_features -D_FILE_OFFSET_BITS=64)
+	endif()
+	string(REPLACE ";" " " CMAKE_REQUIRED_DEFINITIONS "${libc_features}")
+	add_definitions(${libc_features})
 	
 	# Check compiler builtins & language extensions
 	# These are a symbols, so we can't use check_symbol_exists
 	if(NOT ARX_HAVE_CXX11_ALIGNAS)
-		check_builtin(ARX_HAVE_ATTRIBUTE_ALIGNED     "__attribute__((aligned(n)))")
+		check_builtin(ARX_HAVE_ATTRIBUTE_ALIGNED      "__attribute__((aligned(n)))")
 	endif()
-	check_builtin(ARX_HAVE_ATTRIBUTE_FORMAT_PRINTF "__attribute__((format(printf, i, j)))")
-	check_builtin(ARX_HAVE_BUILTIN_TRAP            "__builtin_trap")
-	check_builtin(ARX_HAVE_BUILTIN_UNREACHABLE     "__builtin_unreachable")
+	check_builtin(ARX_HAVE_ATTRIBUTE_ALLOC_ALIGN    "__attribute__((alloc_align(i)))")
+	check_builtin(ARX_HAVE_ATTRIBUTE_ALLOC_SIZE     "__attribute__((alloc_size(i)))")
+	check_builtin(ARX_HAVE_ATTRIBUTE_ALWAYS_INLINE  "__attribute__((always_inline))")
+	check_builtin(ARX_HAVE_ATTRIBUTE_ASSUME_ALIGNED "__attribute__((assume_aligned(n)))")
+	check_builtin(ARX_HAVE_ATTRIBUTE_FORMAT_PRINTF  "__attribute__((format(printf, i, j)))")
+	check_builtin(ARX_HAVE_ATTRIBUTE_MALLOC         "__attribute__((malloc))")
+	if(NOT ARX_HAVE_CXX17_NODISCARD)
+		check_builtin(ARX_HAVE_ATTRIBUTE_WARN_UNUSED_RESULT "__attribute__((warn_unused_result))")
+	endif()
+	check_builtin(ARX_HAVE_BUILTIN_ASSUME           "__builtin_assume")
+	if(NOT ARX_HAVE_BUILTIN_ASSUME)
+		check_builtin(ARX_HAVE_ASSUME                 "__assume")
+	endif()
+	check_builtin(ARX_HAVE_BUILTIN_ASSUME_ALIGNED   "__builtin_assume_aligned")
+	check_builtin(ARX_HAVE_BUILTIN_TRAP             "__builtin_trap")
+	check_builtin(ARX_HAVE_BUILTIN_UNREACHABLE      "__builtin_unreachable")
 	if(NOT ARX_HAVE_CXX11_ALIGNOF)
-		check_builtin(ARX_HAVE_GCC_ALIGNOF           "__alignof__")
+		check_builtin(ARX_HAVE_GCC_ALIGNOF            "__alignof__")
+	endif()
+	if(NOT ARX_HAVE_CXX11_THREADLOCAL)
+		check_builtin(ARX_HAVE_GCC_THREADLOCAL        "__thread")
+	endif()
+	if(NOT ARX_HAVE_CXX11_DECLTYPE)
+		check_builtin(ARX_HAVE_GCC_TYPEOF             "__typeof__")
 	endif()
 	
 	if(WIN32)
@@ -570,9 +696,13 @@ else(MSVC)
 		endif()
 	endif()
 	
+	set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_DL_LIBS})
+	check_symbol_exists(dlsym "dlfcn.h" ARX_HAVE_DLSYM)
+	unset(CMAKE_REQUIRED_LIBRARIES)
+	
 	check_symbol_exists(nanosleep "time.h" ARX_HAVE_NANOSLEEP)
 	
-	set(CMAKE_REQUIRED_LIBRARIES "${CMAKE_THREAD_LIBS_INIT}")
+	set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
 	check_symbol_exists(pthread_setname_np "pthread.h" ARX_HAVE_PTHREAD_SETNAME_NP)
 	if(NOT ARX_HAVE_PTHREAD_SETNAME_NP)
 		check_symbol_exists(pthread_set_name_np "pthread_np.h" ARX_HAVE_PTHREAD_SET_NAME_NP)
@@ -583,12 +713,20 @@ else(MSVC)
 	check_symbol_exists(uname "sys/utsname.h" ARX_HAVE_UNAME)
 	check_symbol_exists(getrusage "sys/resource.h" ARX_HAVE_GETRUSAGE)
 	
-	check_symbol_exists(popen "stdio.h" ARX_HAVE_POPEN)
-	check_symbol_exists(pclose "stdio.h" ARX_HAVE_PCLOSE)
-	
 	check_symbol_exists(getexecname "stdlib.h" ARX_HAVE_GETEXECNAME)
 	check_symbol_exists(setenv "stdlib.h" ARX_HAVE_SETENV)
 	check_symbol_exists(unsetenv "stdlib.h" ARX_HAVE_UNSETENV)
+	
+	check_symbol_exists(__get_cpuid "cpuid.h" ARX_HAVE_GET_CPUID)
+	if(ARX_HAVE_GET_CPUID)
+		check_symbol_exists(__get_cpuid_max "cpuid.h" ARX_HAVE_GET_CPUID_MAX)
+	endif()
+	
+	# CMake has trouble detecting _MM_SET_FLUSH_ZERO_MODE with GCC, check for the includes instead
+	check_include_files("xmmintrin.h" ARX_HAVE_XMMINTRIN)
+	check_include_files("pmmintrin.h" ARX_HAVE_PMMINTRIN)
+	# _fxsave is unreliable with GCC, use the builtin directly
+	check_builtin(ARX_HAVE_BUILTIN_IA32_FXSAVE "__builtin_ia32_fxsave")
 	
 	find_library(LIBRT_LIBRARY rt)
 	
@@ -605,9 +743,8 @@ else(MSVC)
 		                    ARX_HAVE_MACH_CLOCK)
 	endif()
 	
-	check_symbol_exists(wordexp "wordexp.h" ARX_HAVE_WORDEXP)
-	
 	check_symbol_exists(open "fcntl.h" ARX_HAVE_OPEN)
+	check_symbol_exists(O_CLOEXEC "fcntl.h" ARX_HAVE_O_CLOEXEC)
 	check_symbol_exists(fcntl "fcntl.h" ARX_HAVE_FCNTL)
 	
 	check_symbol_exists(chdir "unistd.h" ARX_HAVE_CHDIR)
@@ -643,52 +780,104 @@ else(MSVC)
 	
 	check_symbol_exists(sysconf "unistd.h" ARX_HAVE_SYSCONF)
 	
+	check_symbol_exists(confstr "unistd.h" ARX_HAVE_CONFSTR)
+	
 	check_symbol_exists(sigaction "signal.h" ARX_HAVE_SIGACTION)
 	
 	check_symbol_exists(setrlimit "sys/resource.h" ARX_HAVE_SETRLIMIT)
 	
-	check_symbol_exists(sysctl "sys/sysctl.h" ARX_HAVE_SYSCTL)
-	check_symbol_exists(sysctlbyname "sys/sysctl.h" ARX_HAVE_SYSCTLBYNAME)
+	if(CMAKE_SYSTEM_NAME MATCHES "BSD")
+		check_symbol_exists(sysctl "sys/types.h;sys/sysctl.h" ARX_HAVE_SYSCTL)
+		check_symbol_exists(sysctlbyname "sys/types.h;sys/sysctl.h" ARX_HAVE_SYSCTLBYNAME)
+	endif()
 	
-	if(USE_NATIVE_FS)
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "PathScale")
+		# EKOPath recognizes these but then fails to link
+	else()
+		check_builtin(INNOEXTRACT_HAVE_BUILTIN_BSWAP16 "__builtin_bswap16(0)")
+		check_builtin(INNOEXTRACT_HAVE_BUILTIN_BSWAP32 "__builtin_bswap32(0)")
+		check_builtin(INNOEXTRACT_HAVE_BUILTIN_BSWAP64 "__builtin_bswap64(0)")
+	endif()
+	if(NOT INNOEXTRACT_HAVE_BUILTIN_BSWAP16)
+		check_symbol_exists(bswap_16 "byteswap.h" INNOEXTRACT_HAVE_BSWAP_16)
+	endif()
+	if(NOT INNOEXTRACT_HAVE_BUILTIN_BSWAP32)
+		check_symbol_exists(bswap_32 "byteswap.h" INNOEXTRACT_HAVE_BSWAP_32)
+	endif()
+	if(NOT INNOEXTRACT_HAVE_BUILTIN_BSWAP64)
+		check_symbol_exists(bswap_64 "byteswap.h" INNOEXTRACT_HAVE_BSWAP_64)
+	endif()
+	
+	if(USE_NATIVE_FS AND NOT WIN32)
+		
+		# Whether multiple cuncurrent readdir calls with *different* directory streams are threadsafe
+		set(READDIR_IS_THREADSAFE 0)
+		if(HAVE_GLIBC)
+			# TODO Find a more portable check for this - from the glibc documentation:
+			# POSIX-1.2008 does not guarantee that readdir is thread-safe, even when access to the same
+			# dirstream is serialized. But in current implementations (including the GNU C Library),
+			# it is safe to call readdir concurrently on different dirstreams, so there is no need to
+			# use readdir_r in most multi-threaded programs.
+			# It is expected that future versions of POSIX will obsolete readdir_r and mandate the level
+			# of thread safety for readdir which is provided by the GNU C Library and other
+			# implementations today.
+			set(READDIR_IS_THREADSAFE 1)
+		endif()
 		
 		check_include_file("sys/stat.h" ARX_HAVE_SYS_STAT_H)
 		check_include_file("sys/errno.h" ARX_HAVE_SYS_ERRNO_H)
 		check_include_file("dirent.h" ARX_HAVE_DIRENT_H)
 		
-		check_symbol_exists(readdir_r "dirent.h" ARX_HAVE_READDIR_R)
+		check_symbol_exists(dirfd "dirent.h" ARX_HAVE_DIRFD)
+		if(ARX_HAVE_DIRFD)
+			check_symbol_exists(fstatat "sys/stat.h" ARX_HAVE_FSTATAT)
+		endif()
+		
+		# readdir_r is complicated to use and is deprecated in glibc 2.24
+		# Prefer readdir if it is know to be threadsafe
+		if(READDIR_IS_THREADSAFE)
+			check_symbol_exists(readdir "dirent.h" ARX_HAVE_THREADSAFE_READDIR)
+		endif()
+		if(NOT ARX_HAVE_THREADSAFE_READDIR)
+			check_symbol_exists(readdir_r "dirent.h" ARX_HAVE_READDIR_R)
+			check_symbol_exists(_PC_NAME_MAX "unistd.h" ARX_HAVE_PC_NAME_MAX)
+			check_symbol_exists(NAME_MAX "dirent.h" ARX_HAVE_NAME_MAX)
+			if(ARX_HAVE_DIRFD AND ARX_HAVE_PC_NAME_MAX)
+				check_symbol_exists(fpathconf "unistd.h" ARX_HAVE_FPATHCONF)
+			endif()
+		endif()
+		
+		check_symbol_exists(_PC_CASE_SENSITIVE "unistd.h" ARX_HAVE_PC_CASE_SENSITIVE)
+		if(ARX_HAVE_PC_NAME_MAX OR ARX_HAVE_PC_CASE_SENSITIVE)
+			check_symbol_exists(pathconf "unistd.h" ARX_HAVE_PATHCONF)
+		endif()
 		
 		check_symbol_exists(getcwd "unistd.h" ARX_HAVE_GETCWD)
-		check_symbol_exists(fpathconf "unistd.h" ARX_HAVE_FPATHCONF)
-		check_symbol_exists(pathconf "unistd.h" ARX_HAVE_PATHCONF)
-		check_symbol_exists(_PC_NAME_MAX "unistd.h" ARX_HAVE_PC_NAME_MAX)
-		check_symbol_exists(_PC_CASE_SENSITIVE "unistd.h" ARX_HAVE_PC_CASE_SENSITIVE)
-		
-		check_symbol_exists(dirfd "dirent.h" ARX_HAVE_DIRFD)
-		
-		check_symbol_exists(fstatat "sys/stat.h" ARX_HAVE_FSTATAT)
-		
-		check_symbol_exists(NAME_MAX "dirent.h" ARX_HAVE_NAME_MAX)
 		
 		if(ARX_HAVE_SYS_STAT_H AND ARX_HAVE_SYS_ERRNO_H AND ARX_HAVE_DIRENT_H
-		   AND ARX_HAVE_READDIR_R AND ARX_HAVE_GETCWD
-			 AND ((((ARX_HAVE_DIRFD AND ARX_HAVE_FPATHCONF) OR ARX_HAVE_PATHCONF)
-			       AND ARX_HAVE_PC_NAME_MAX) OR ARX_HAVE_NAME_MAX))
+		   AND ARX_HAVE_GETCWD
+		   AND (ARX_HAVE_THREADSAFE_READDIR
+		        OR (ARX_HAVE_READDIR_R
+		            AND (ARX_HAVE_PC_NAME_MAX
+		                   AND ((ARX_HAVE_DIRFD AND ARX_HAVE_FPATHCONF) OR ARX_HAVE_PATHCONF)
+			               OR ARX_HAVE_NAME_MAX)
+		           )
+		       )
+		  )
 			set(ARX_HAVE_POSIX_FILESYSTEM 1)
 		elseif(STRICT_USE)
 			message(FATAL_ERROR "Missing dependencies for native filesystem backend.")
 		endif()
 		
-	endif(USE_NATIVE_FS)
+	endif()
 	
 endif(MSVC)
 
 
 # Sources
 
-set(SRC_DIR src)
-
 set(AI_SOURCES
+	src/ai/Anchors.cpp
 	src/ai/PathFinder.cpp
 	src/ai/PathFinderManager.cpp
 	src/ai/Paths.cpp
@@ -698,7 +887,6 @@ set(ANIMATION_SOURCES
 	src/animation/Animation.cpp
 	src/animation/AnimationRender.cpp
 	src/animation/Skeleton.cpp
-	src/animation/Intro.cpp
 )
 
 set(CINEMATIC_SOURCES
@@ -742,7 +930,6 @@ set(CORE_SOURCES
 	src/core/Localisation.cpp
 	src/core/SaveGame.cpp
 	src/core/Startup.cpp
-	src/util/cmdline/Parser.cpp # TODO: move to UTIL_SOURCES once it's used in the tools
 )
 
 set(GAME_SOURCES
@@ -760,6 +947,7 @@ set(GAME_SOURCES
 	src/game/Player.cpp
 	src/game/Spells.cpp
 	src/game/effect/Quake.cpp
+	src/game/effect/ParticleSystems.cpp
 	src/game/magic/Precast.cpp
 	src/game/magic/Rune.cpp
 	src/game/magic/RuneDraw.cpp
@@ -785,17 +973,17 @@ set(GRAPHICS_SOURCES
 	src/graphics/Draw.cpp
 	src/graphics/DrawLine.cpp
 	src/graphics/DrawDebug.cpp
-	src/graphics/GraphicsModes.cpp
+	src/graphics/GlobalFog.cpp
 	src/graphics/Math.cpp
+	src/graphics/Raycast.cpp
 	src/graphics/Renderer.cpp
 	src/graphics/RenderBatcher.cpp
 	src/graphics/data/FTL.cpp
 	src/graphics/data/Mesh.cpp
 	src/graphics/data/MeshManipulation.cpp
-	src/graphics/data/BackgroundEdit.cpp
-	src/graphics/data/Progressive.cpp
 	src/graphics/data/TextureContainer.cpp
-	src/graphics/effects/DrawEffects.cpp
+	src/graphics/effects/BlobShadow.cpp
+	src/graphics/effects/Cabal.cpp
 	src/graphics/effects/Fade.cpp
 	src/graphics/effects/Field.cpp
 	src/graphics/effects/Fissure.cpp
@@ -803,21 +991,24 @@ set(GRAPHICS_SOURCES
 	src/graphics/effects/Fog.cpp
 	src/graphics/effects/SpellEffects.cpp
 	src/graphics/effects/Halo.cpp
+	src/graphics/effects/LightFlare.cpp
 	src/graphics/effects/Lightning.cpp
 	src/graphics/effects/MagicMissile.cpp
+	src/graphics/effects/PolyBoom.cpp
 	src/graphics/effects/RotatingCone.cpp
 	src/graphics/effects/Trail.cpp
 	src/graphics/font/Font.cpp
 	src/graphics/font/FontCache.cpp
 	src/graphics/image/Image.cpp
 	src/graphics/image/ImageColorKey.cpp
+	src/graphics/image/ImageSave.cpp
 	src/graphics/image/stb_image.cpp
-	src/graphics/image/stb_image_write.cpp
 	src/graphics/particle/Particle.cpp
 	src/graphics/particle/ParticleEffects.cpp
 	src/graphics/particle/ParticleManager.cpp
 	src/graphics/particle/ParticleSystem.cpp
 	src/graphics/particle/MagicFlare.cpp
+	src/graphics/particle/Spark.cpp
 	src/graphics/spells/Spells05.cpp
 	src/graphics/texture/PackedTexture.cpp
 	src/graphics/texture/Texture.cpp
@@ -826,57 +1017,68 @@ set(GRAPHICS_SOURCES
 
 set(GRAPHICS_OPENGL_SOURCES
 	src/graphics/opengl/GLDebug.cpp
-	src/graphics/opengl/GLTexture2D.cpp
+	src/graphics/opengl/GLTexture.cpp
 	src/graphics/opengl/GLTextureStage.cpp
 	src/graphics/opengl/GLVertexBuffer.cpp
 	src/graphics/opengl/OpenGLRenderer.cpp
 )
 
 set(GUI_SOURCES
+	src/gui/CharacterCreation.cpp
 	src/gui/CinematicBorder.cpp
+	src/gui/Console.cpp
 	src/gui/Credits.cpp
 	src/gui/Cursor.cpp
-	src/gui/DebugHud.cpp
-	src/gui/DebugUtils.cpp
 	src/gui/Hud.cpp
 	src/gui/Interface.cpp
 	src/gui/LoadLevelScreen.cpp
+	src/gui/Logo.cpp
 	src/gui/MainMenu.cpp
 	src/gui/Menu.cpp
 	src/gui/MenuPublic.cpp
 	src/gui/MenuWidgets.cpp
 	src/gui/MiniMap.cpp
 	src/gui/Note.cpp
+	src/gui/Notification.cpp
 	src/gui/Speech.cpp
 	src/gui/Text.cpp
 	src/gui/TextManager.cpp
 	src/gui/book/Book.cpp
 	src/gui/book/Necklace.cpp
+	src/gui/debug/DebugHud.cpp
+	src/gui/debug/DebugHudAudio.cpp
+	src/gui/debug/DebugKeys.cpp
+	src/gui/debug/DebugPanel.cpp
 	src/gui/hud/HudCommon.cpp
 	src/gui/hud/PlayerInventory.cpp
 	src/gui/hud/SecondaryInventory.cpp
 	src/gui/menu/MenuCursor.cpp
 	src/gui/menu/MenuFader.cpp
+	src/gui/menu/MenuPage.cpp
 	src/gui/widget/ButtonWidget.cpp
 	src/gui/widget/CheckboxWidget.cpp
 	src/gui/widget/CycleTextWidget.cpp
+	src/gui/widget/KeybindWidget.cpp
 	src/gui/widget/PanelWidget.cpp
+	src/gui/widget/SaveSlotWidget.cpp
 	src/gui/widget/SliderWidget.cpp
+	src/gui/widget/TextInputWidget.cpp
 	src/gui/widget/TextWidget.cpp
 	src/gui/widget/Widget.cpp
 	src/gui/widget/WidgetContainer.cpp
 )
 
-set(INPUT_SOURCES src/input/Input.cpp)
+set(INPUT_SOURCES
+	src/input/Input.cpp
+	src/input/TextInput.cpp
+)
 set(INPUT_SDL1_SOURCES src/input/SDL1InputBackend.cpp)
 set(INPUT_SDL2_SOURCES src/input/SDL2InputBackend.cpp)
 
 set(IO_SOURCES
-	src/io/Implode.cpp
 	src/io/IniReader.cpp
 	src/io/IniSection.cpp
 	src/io/IniWriter.cpp
-	src/io/IO.cpp
 	src/io/SaveBlock.cpp
 	src/io/Screenshot.cpp
 )
@@ -913,10 +1115,7 @@ set(MATH_SOURCES
 )
 
 set(PHYSICS_SOURCES
-	src/physics/Anchors.cpp
 	src/physics/Attractors.cpp
-	src/physics/Box.cpp
-	src/physics/Clothes.cpp
 	src/physics/Collisions.cpp
 	src/physics/CollisionShapes.cpp
 	src/physics/Projectile.cpp
@@ -947,13 +1146,16 @@ set(PLATFORM_EXTRA_SOURCES
 	src/platform/Dialog.cpp
 	src/platform/Thread.cpp
 )
-if(MACOSX)
+if(MACOS)
 	list(APPEND PLATFORM_EXTRA_SOURCES src/platform/Dialog.mm)
 endif()
 
 # Crash handler sources
 set(PLATFORM_CRASHHANDLER_SOURCES src/platform/CrashHandler.cpp)
-set(PLATFORM_CRASHHANDLER_IMPL_SOURCES src/platform/crashhandler/CrashHandlerImpl.cpp)
+set(PLATFORM_CRASHHANDLER_IMPL_SOURCES
+	src/platform/crashhandler/CrashHandlerImpl.cpp
+	src/platform/crashhandler/CrashProcessorImpl.cpp
+)
 set(PLATFORM_CRASHHANDLER_POSIX_SOURCES
 	src/platform/crashhandler/CrashHandlerPOSIX.cpp
 	src/platform/crashhandler/CrashProcessorPOSIX.cpp
@@ -967,6 +1169,7 @@ set(PLATFORM_CRASHHANDLER_WINDOWS_SOURCES
 set(PLATFORM_PROFILER_SOURCES src/platform/profiler/Profiler.cpp)
 
 set(SCENE_SOURCES
+	src/scene/Background.cpp
 	src/scene/ChangeLevel.cpp
 	src/scene/GameSound.cpp
 	src/scene/Interactive.cpp
@@ -1000,17 +1203,29 @@ set(UTIL_SOURCES
 	src/util/String.cpp
 )
 
+set(UTIL_CMDLINE_SOURCES
+	src/util/cmdline/Parser.cpp
+	src/util/cmdline/CommandLine.cpp
+)
+
+set(UTIL_MD5_SOURCES
+	src/util/MD5.cpp
+)
+
 set(WINDOW_SOURCES
 	src/window/RenderWindow.cpp
 	src/window/Window.cpp
 )
 set(WINDOW_SDL1_SOURCES src/window/SDL1Window.cpp)
 set(WINDOW_SDL2_SOURCES src/window/SDL2Window.cpp)
+if(NOT WIN32 AND NOT MACOS)
+	list(APPEND WINDOW_SDL2_SOURCES src/window/SDL2X11Util.c)
+endif()
 
 # TODO manually specify theese like we do for the tools
-file(GLOB_RECURSE ALL_INCLUDES RELATIVE ${CMAKE_SOURCE_DIR} ${SRC_DIR}/*.h)
+file(GLOB_RECURSE ALL_INCLUDES RELATIVE ${PROJECT_SOURCE_DIR} src/*.h)
 
-include_directories(${SRC_DIR} ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}/tools)
+include_directories(src ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/tools)
 
 
 # Check for optional / alternative subsystem implementations
@@ -1024,18 +1239,24 @@ if(USE_OPENAL AND OPENAL_FOUND)
 	if(OPENALEFX_FOUND)
 		include_directories(SYSTEM ${OPENAL_EFX_INCLUDE_DIR})
 		set(ARX_HAVE_OPENAL_EFX 1)
-	else()
-		set(ARX_HAVE_OPENAL_NOEFX 1)
 	endif()
+	set(old_CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES})
+	set(CMAKE_REQUIRED_INCLUDES ${OPENAL_INCLUDE_DIR})
+	check_symbol_exists(ALC_SOFT_HRTF "alext.h" ARX_HAVE_OPENAL_HRTF)
+	set(CMAKE_REQUIRED_INCLUDES ${old_CMAKE_REQUIRED_INCLUDES})
 endif()
 
 # Graphics
-if(USE_OPENGL AND OPENGL_FOUND AND GLEW_FOUND)
+if(ARX_HAVE_OPENGL)
 	list(APPEND GRAPHICS_SOURCES ${GRAPHICS_OPENGL_SOURCES})
-	list(APPEND ARX_LIBRARIES ${GLEW_LIBRARIES} ${OPENGL_gl_LIBRARY})
-	include_directories(SYSTEM ${OPENGL_INCLUDE_DIR} ${GLEW_INCLUDE_DIR})
-	add_definitions(${GLEW_DEFINITIONS})
-	set(ARX_HAVE_OPENGL 1)
+	if(EPOXY_FOUND)
+		list(APPEND ARX_LIBRARIES ${Epoxy_LIBRARIES})
+		include_directories(SYSTEM ${Epoxy_INCLUDE_DIR})
+	else()
+		list(APPEND ARX_LIBRARIES ${GLEW_LIBRARIES} ${OPENGL_gl_LIBRARY})
+		include_directories(SYSTEM ${OPENGL_INCLUDE_DIR} ${GLEW_INCLUDE_DIR})
+		add_definitions(${GLEW_DEFINITIONS})
+	endif()
 else()
 	# SDL backends require OpenGL
 	unset(ARX_HAVE_SDL)
@@ -1056,7 +1277,7 @@ if(ARX_HAVE_SDL)
 		list(APPEND ARX_LIBRARIES ${SDL_LIBRARY})
 		include_directories(SYSTEM ${SDL_INCLUDE_DIR})
 	endif()
-	add_definitions(-DNO_SDL_GLEXT) # we use GLEW for that
+	add_definitions(-DNO_SDL_GLEXT) # we use libepoxy/GLEW for that
 endif()
 
 # Logging
@@ -1089,7 +1310,7 @@ else()
 	# This means the Boost.Filesystem ABI depends on what C++ version was used
 	# to compile the library - check for that!
 	check_compile(boost_filesystem_abi_matches
-		"${CXX11_CHECK_DIR}/boostfs-cxx11-scoped_enum.cpp"
+		"${CXX_CHECK_DIR}/boostfs-cxx11-scoped_enum.cpp"
 		"scoped enum" "Boost ABI"
 		"${Boost_LIBRARIES}"
 		"mismatch, fixing"
@@ -1121,6 +1342,10 @@ if(BUILD_CRASHHANDLER)
 		# Don't bother building arxcrashreporter if it will never be used.
 		set(ARX_HAVE_CRASHREPORTER 0)
 	endif()
+endif()
+
+if(ARX_HAVE_DLSYM)
+	list(APPEND ARX_LIBRARIES ${CMAKE_DL_LIBS})
 endif()
 
 if(LIBRT_LIBRARY AND (ARX_HAVE_CLOCK_GETTIME OR ARX_HAVE_CRASHHANDLER_POSIX))
@@ -1162,6 +1387,7 @@ set(ARX_SOURCES
 	${SCENE_SOURCES}
 	${SCRIPT_SOURCES}
 	${UTIL_SOURCES}
+	${UTIL_CMDLINE_SOURCES}
 	${WINDOW_SOURCES}
 )
 
@@ -1180,40 +1406,52 @@ endif()
 list(APPEND ALL_FILES_FOR_GROUPS ${ALL_INCLUDES} ${ARX_SOURCES})
 create_source_groups(ALL_FILES_FOR_GROUPS)
 
-configure_file("${SRC_DIR}/Configure.h.in" "Configure.h" ESCAPE_QUOTES)
+configure_file("src/Configure.h.in" "Configure.h" ESCAPE_QUOTES)
 
-configure_file("${SRC_DIR}/io/fs/PathConstants.h.in" "io/fs/PathConstants.h"
+configure_file("src/io/fs/PathConstants.h.in" "io/fs/PathConstants.h"
                ESCAPE_QUOTES)
 
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/platform")
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/platform")
 set(PLATFORM_CONFIG_H "platform/PlatformConfig.h")
-configure_file("${SRC_DIR}/${PLATFORM_CONFIG_H}.in" "${PLATFORM_CONFIG_H}" ESCAPE_QUOTES)
+configure_file("src/${PLATFORM_CONFIG_H}.in" "${PLATFORM_CONFIG_H}" ESCAPE_QUOTES)
 
-set(VERSION_TEMPLATE "${SRC_DIR}/core/Version.cpp.in")
-set(VERSION_FILE     "${CMAKE_BINARY_DIR}/core/Version.cpp")
+set(VERSION_TEMPLATE "src/core/Version.cpp.in")
+set(VERSION_FILE     "${PROJECT_BINARY_DIR}/core/Version.cpp")
 set(VERSION_SOURCES  VERSION "VERSION" AUTHORS "AUTHORS" COPYING "COPYING")
-file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/core")
+file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/core")
 version_file("${VERSION_TEMPLATE}" "${VERSION_FILE}" "${VERSION_SOURCES}" ".git")
 list(APPEND ARX_SOURCES ${VERSION_FILE})
 
 if(WIN32)
-	set(VERSION_RC_TEMPLATE "${SRC_DIR}/core/Version.rc.in")
+	set(VERSION_RC_TEMPLATE "src/core/Version.rc.in")
 	function(create_version_resource exe name)
-		set(rc_file "${CMAKE_BINARY_DIR}/${exe}-version.rc")
+		set(rc_file "${PROJECT_BINARY_DIR}/${exe}-version.rc")
 		set(rc_sources VERSION "VERSION" COPYING "COPYING")
 		if(ARGC GREATER 2)
 			list(APPEND rc_sources ${ARGV2} "${ARGV2}")
 		endif()
-		set(rc_defines
-			"-DEXE=${exe}"
-			"-DNAME=${name}"
-		)
+		set(rc_defines "-DEXE=${exe}" "-DNAME=${name}")
 		set(${exe}-version.rc "${rc_file}" PARENT_SCOPE)
 		version_file("${VERSION_RC_TEMPLATE}"
 		             "${rc_file}" "${rc_sources}" ".git" "${rc_defines}")
 	endfunction()
+	set(APPLICATION_MANIFEST_TEMPLATE "src/core/Version.manifest.in")
+	function(create_application_manifest exe)
+		set(manifest_file "${PROJECT_BINARY_DIR}/${exe}.manifest")
+		set(manifest_sources VERSION "VERSION")
+		set(manifest_defines "-DEXE=${exe}")
+		if(ARGC GREATER 1 AND ARGV1 STREQUAL "dpiaware")
+			list(APPEND manifest_defines "-DDPIAWARE=true")
+		else()
+			list(APPEND manifest_defines "-DDPIAWARE=false")
+		endif()
+		version_file("${APPLICATION_MANIFEST_TEMPLATE}"
+		             "${manifest_file}" "${manifest_sources}" ".git" "${manifest_defines}")
+		set(${exe}.manifest "${manifest_file}" PARENT_SCOPE)
+	endfunction()
 	create_version_resource(arx "${VERSION_NAME}")
-	list(APPEND ARX_SOURCES ${arx-version.rc})
+	create_application_manifest(arx dpiaware)
+	list(APPEND ARX_SOURCES ${arx-version.rc} ${arx.manifest})
 endif()
 
 
@@ -1222,6 +1460,20 @@ endif()
 add_executable_shared(arx "${ARX_SOURCES}" "${ARX_LIBRARIES}" "${ALL_INCLUDES}")
 set_binary_type(arx WIN32)
 set_binary_installdir(arx "${GAMESBINDIR}")
+
+if(Qt_VERSION VERSION_LESS 5.6)
+	set(qt_dpiaware)
+else()
+	set(qt_dpiaware dpiaware)
+endif()
+
+set(BASE_SOURCES
+	${PLATFORM_SOURCES}
+	${IO_FILESYSTEM_SOURCES}
+	${IO_LOGGER_SOURCES}
+	${UTIL_SOURCES}
+	${VERSION_FILE}
+)
 
 if(ARX_HAVE_CRASHREPORTER)
 	
@@ -1245,11 +1497,7 @@ if(ARX_HAVE_CRASHREPORTER)
 	
 	set(arxcrashreporter_SOURCES
 		tools/crashreporter/tbg/HTTPClient.h
-		${PLATFORM_SOURCES}
-		${IO_FILESYSTEM_SOURCES}
-		${IO_LOGGER_SOURCES}
-		${UTIL_SOURCES}
-		${VERSION_FILE}
+		${BASE_SOURCES}
 	)
 	
 	if(WIN32 AND USE_WINHTTP)
@@ -1261,15 +1509,14 @@ if(ARX_HAVE_CRASHREPORTER)
 	if(WIN32)
 		list(APPEND arxcrashreporter_SOURCES ${arx-libertatis-icon.rc})
 		create_version_resource(arxcrashreporter "${VERSION_NAME} Crash Reporter")
-		list(APPEND arxcrashreporter_SOURCES ${arxcrashreporter-version.rc})
+		create_application_manifest(arxcrashreporter ${qt_dpiaware})
+		list(APPEND arxcrashreporter_SOURCES ${arxcrashreporter-version.rc} ${arxcrashreporter.manifest})
 	endif()
 	
 	set(arxcrashreporter_MANUAL_SOURCES
 		${arxcrashreporter_SOURCES}
 		${arxcrashreporter_Qt_SOURCES}
 	)
-	
-	set(SRC_DIR tools/crashreporter/)
 	
 	create_source_groups(arxcrashreporter_MANUAL_SOURCES)
 	
@@ -1283,18 +1530,18 @@ if(ARX_HAVE_CRASHREPORTER)
 		tools/crashreporter/qhexedit/QHexEditPrivate.h
 	)
 	
-	file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/tools/crashreporter/resources")
+	file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/tools/crashreporter/resources")
 	if(HAVE_QT4 AND "${arx-libertatis-logo-58.png}" STREQUAL "")
 		# Create a dummy file to prevent a RCC warning
-		set(arx-libertatis-logo-58.png "${CMAKE_BINARY_DIR}/arx-libertatis-logo-58.png")
+		set(arx-libertatis-logo-58.png "${PROJECT_BINARY_DIR}/arx-libertatis-logo-58.png")
 		file(WRITE ${arx-libertatis-logo-58.png} "")
 	endif()
 	configure_file(
 		tools/crashreporter/resources/CrashReporter.qrc.in
-		${CMAKE_BINARY_DIR}/tools/crashreporter/resources/CrashReporter.qrc
+		${PROJECT_BINARY_DIR}/tools/crashreporter/resources/CrashReporter.qrc
 	)
 	qt_add_resources(arxcrashreporter_Qt_SOURCES
-		${CMAKE_BINARY_DIR}/tools/crashreporter/resources/CrashReporter.qrc
+		${PROJECT_BINARY_DIR}/tools/crashreporter/resources/CrashReporter.qrc
 	)
 	
 	list(APPEND arxcrashreporter_SOURCES ${arxcrashreporter_Qt_SOURCES})
@@ -1356,22 +1603,20 @@ if(ARX_HAVE_PROFILER)
 	
 	set(arxprofiler_SOURCES
 		src/platform/profiler/ProfilerDataFormat.h
-		${UTIL_SOURCES}
-		${VERSION_FILE}
+		${BASE_SOURCES}
 	)
 	
 	if(WIN32)
 		list(APPEND arxprofiler_SOURCES ${arx-libertatis-icon.rc})
 		create_version_resource(arxprofiler "${VERSION_NAME} Profiler")
-		list(APPEND arxprofiler_SOURCES ${arxprofiler-version.rc})
+		create_application_manifest(arxprofiler ${qt_dpiaware})
+		list(APPEND arxprofiler_SOURCES ${arxprofiler-version.rc} ${arxprofiler.manifest})
 	endif()
 	
 	set(arxprofiler_MANUAL_SOURCES
 		${arxprofiler_SOURCES}
 		${arxprofiler_Qt_SOURCES}
 	)
-	
-	set(SRC_DIR tools/profiler/)
 	
 	create_source_groups(arxprofiler_SOURCES)
 	
@@ -1422,12 +1667,10 @@ endif()
 if(BUILD_TOOLS)
 	
 	set(arxsavetool_SOURCES
-		${PLATFORM_SOURCES}
+		${BASE_SOURCES}
 		${PLATFORM_CONSOLE_SOURCES}
-		${IO_FILESYSTEM_SOURCES}
-		${IO_LOGGER_SOURCES}
 		${IO_RESOURCE_SOURCES}
-		${UTIL_SOURCES}
+		${UTIL_CMDLINE_SOURCES}
 		src/core/Localisation.cpp
 		src/io/SaveBlock.cpp
 		src/io/IniReader.cpp
@@ -1442,7 +1685,8 @@ if(BUILD_TOOLS)
 	
 	if(WIN32)
 		create_version_resource(arxsavetool "${VERSION_NAME} Save File Tool")
-		list(APPEND arxsavetool_SOURCES ${arxsavetool-version.rc})
+		create_application_manifest(arxsavetool)
+		list(APPEND arxsavetool_SOURCES ${arxsavetool-version.rc} ${arxsavetool.manifest})
 	endif()
 	
 	set(arxsavetool_LIBRARIES ${BASE_LIBRARIES} ${ZLIB_LIBRARIES})
@@ -1450,18 +1694,18 @@ if(BUILD_TOOLS)
 	add_executable_shared(arxsavetool "${arxsavetool_SOURCES}" "${arxsavetool_LIBRARIES}")
 	
 	set(arxunpak_SOURCES
-		${PLATFORM_SOURCES}
+		${BASE_SOURCES}
 		${PLATFORM_CONSOLE_SOURCES}
-		${IO_FILESYSTEM_SOURCES}
-		${IO_LOGGER_SOURCES}
 		${IO_RESOURCE_SOURCES}
-		${UTIL_SOURCES}
+		${UTIL_CMDLINE_SOURCES}
+		${UTIL_MD5_SOURCES}
 		tools/unpak/UnPak.cpp
 	)
 	
 	if(WIN32)
 		create_version_resource(arxunpak "${VERSION_NAME} PAK File Unpacker")
-		list(APPEND arxunpak_SOURCES ${arxunpak-version.rc})
+		create_application_manifest(arxunpak)
+		list(APPEND arxunpak_SOURCES ${arxunpak-version.rc} ${arxunpak.manifest})
 	endif()
 	
 	set(arxunpak_LIBRARIES ${BASE_LIBRARIES})
@@ -1473,14 +1717,8 @@ endif()
 if(BUILD_IO_LIBRARY)
 	
 	set(ArxIO_SOURCES
-		${IO_FILESYSTEM_SOURCES}
-		${IO_LOGGER_SOURCES}
-		${UTIL_SOURCES}
+		${BASE_SOURCES}
 		src/io/Blast.cpp
-		src/platform/Lock.cpp
-		src/platform/Platform.cpp
-		src/platform/ProgramOptions.cpp
-		src/platform/Environment.cpp
 		src/lib/ArxIO.cpp
 	)
 	if(WIN32)
@@ -1512,19 +1750,27 @@ endif()
 # Custom make targets
 
 if(DOXYGEN_EXECUTABLE)
-	set(DOXYGEN_OUTPUT_DIR "${CMAKE_BINARY_DIR}/doc")
+	set(DOXYGEN_OUTPUT_DIR "${PROJECT_BINARY_DIR}/doc")
 	configure_file("scripts/Doxyfile" "Doxyfile" ESCAPE_QUOTES)
 	add_custom_target(doc
 		#build the documentation
 		COMMAND "${CMAKE_COMMAND}" -E make_directory "${DOXYGEN_OUTPUT_DIR}"
-		COMMAND "${CMAKE_COMMAND}" -E chdir ${CMAKE_SOURCE_DIR}
+		COMMAND "${CMAKE_COMMAND}" -E chdir ${PROJECT_SOURCE_DIR}
 			${DOXYGEN_EXECUTABLE} "${CMAKE_CURRENT_BINARY_DIR}/Doxyfile"
 		COMMENT "Building doxygen documentation."
 		VERBATIM
 	)
 endif()
 
-set(STYLE_CHECKED_SOURCES
+file(GLOB_RECURSE STYLE_CHECKED_SOURCES RELATIVE ${PROJECT_SOURCE_DIR}
+	src/*.cpp
+	src/*.c
+	src/*.h
+	tools/*.cpp
+	tools/*.c
+	tools/*.h
+)
+list(APPEND STYLE_CHECKED_SOURCES
 	${ARX_SOURCES}
 	${ALL_INCLUDES}
 	${arxsavetool_SOURCES}
@@ -1533,11 +1779,15 @@ set(STYLE_CHECKED_SOURCES
 	${arxprofiler_MANUAL_SOURCES}
 	${ArxIO_SOURCES}
 )
+list(REMOVE_ITEM STYLE_CHECKED_SOURCES
+	src/graphics/image/stb_image.h
+	src/graphics/image/stb_image.cpp
+)
 
 add_style_check_target(style "${STYLE_CHECKED_SOURCES}" ARX)
 
 if(BUILD_TESTS)
-	add_subdirectory(tests ${CMAKE_SOURCE_DIR}/bin/tests)
+	add_subdirectory(tests "${PROJECT_BINARY_DIR}/test")
 endif()
 
 
@@ -1546,17 +1796,17 @@ endif()
 install(DIRECTORY data/core/ DESTINATION "${INSTALL_DATADIR}")
 # Also tell arx where to find the not yet installed data
 # This is required to run arx from the build directory without installing
-set(arx_core_dir "${CMAKE_SOURCE_DIR}/data/core")
+set(arx_core_dir "${PROJECT_SOURCE_DIR}/data/core")
 get_filename_component(arx_core_dir "${arx_core_dir}" ABSOLUTE)
 file(TO_NATIVE_PATH "${arx_core_dir}" arx_core_dir)
 if(CMAKE_VERSION VERSION_LESS 2.8.12)
 	foreach(config IN LISTS BUILD_TYPES)
 		get_property(arx_location TARGET arx PROPERTY LOCATION_${config})
 		get_filename_component(arx_location "${arx_location}" PATH)
-		file(WRITE "${arx_location}/data" "${arx_core_dir}\n")
+		file(WRITE "${arx_location}/data.dirs" "${arx_core_dir}\n")
 	endforeach()
 else()
-	file(GENERATE OUTPUT "$<TARGET_FILE_DIR:arx>/data" CONTENT "${arx_core_dir}\n")
+	file(GENERATE OUTPUT "$<TARGET_FILE_DIR:arx>/data.dirs" CONTENT "${arx_core_dir}\n")
 endif()
 
 # Install the data install script
@@ -1565,7 +1815,7 @@ if(INSTALL_SCRIPTS AND NOT WIN32)
 endif()
 
 # Install icon and desktop entry
-if(NOT WIN32 AND NOT MACOSX)
+if(NOT WIN32 AND NOT MACOS)
 	
 	find_program(DESKTOP_FILE_VALIDATE desktop-file-validate)
 	
@@ -1621,11 +1871,13 @@ print_configuration("Filesystem backend" FIRST
 	1                         "Boost"
 )
 print_configuration("Renderer"
-	ARX_HAVE_OPENGL "OpenGL"
+	ARX_HAVE_EPOXY "OpenGL (libepoxy)"
+	ARX_HAVE_EPOXY "OpenGL ES (libepoxy)"
+	ARX_HAVE_GLEW  "OpenGL (GLEW)"
 )
-print_configuration("Audio backend"
-	ARX_HAVE_OPENAL_NOEFX "OpenAL without EFX"
-	ARX_HAVE_OPENAL_EFX   "OpenAL with EFX"
+print_configuration("Audio features"
+	ARX_HAVE_OPENAL_EFX  "EFX"
+	ARX_HAVE_OPENAL_HRTF "HRTF"
 )
 print_configuration("Windowing"
 	ARX_HAVE_SDL2 "SDL 2"
@@ -1653,7 +1905,7 @@ if(NOT (ARX_HAVE_PTHREADS OR WIN32))
 	message(SEND_ERROR "No supported thread libraries found.")
 endif()
 if(NOT (ARX_HAVE_OPENGL))
-	message(SEND_ERROR "No renderer available - need OpenGL and GLEW")
+	message(SEND_ERROR "No renderer available - need libepoxy or OpenGL and GLEW")
 endif()
 if(NOT (ARX_HAVE_OPENAL))
 	message(WARNING "No audio backend enabled - need OpenAL")
@@ -1666,4 +1918,28 @@ if(NOT (ARX_HAVE_NANOSLEEP OR WIN32))
 endif()
 if(NOT (ARX_HAVE_CLOCK_GETTIME OR WIN32 OR ARX_HAVE_MACH_CLOCK))
 	message(SEND_ERROR "Need either clock_gettime or WIN32 or mach clock_get_time.")
+endif()
+if(WIN32 AND NOT ARX_HAVE_CXX17_FSTREAM_WCHAR)
+	message(WARNING "Missing support for Unicode file paths")
+endif()
+
+# Check for consistent configuration between SDL and libepoxy/GLEW
+if(ARX_HAVE_SDL AND ARX_HAVE_OPENGL AND NOT WIN32 AND NOT APPLE)
+	if(USE_X11 AND NOT SDL_HAVE_VIDEO_X11)
+		message(WARNING "SDL is not configured with X11 support")
+	endif()
+	if(USE_WAYLAND AND NOT SDL_HAVE_VIDEO_WAYLAND)
+		message(WARNING "SDL is not configured with Wayland support")
+	endif()
+	if(EPOXY_FOUND)
+		set(wrangler "libepoxy")
+	else()
+		set(wrangler "GLEW")
+	endif()
+	if(SDL_HAVE_VIDEO_X11 AND NOT ARX_HAVE_GLX)
+		message(WARNING "SDL is configured with X11 support but ${wrangler} is missing GLX support")
+	endif()
+	if(SDL_HAVE_VIDEO_WAYLAND AND NOT ARX_HAVE_EGL)
+		message(WARNING "SDL is configured with Wayland support but ${wrangler} is missing EGL support")
+	endif()
 endif()

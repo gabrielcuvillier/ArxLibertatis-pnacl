@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -22,13 +22,17 @@
 
 class Window;
 
+#include "input/Keyboard.h"
 #include "input/Mouse.h"
+#include "math/Types.h"
+
+class TextInputHandler;
 
 class InputBackend {
 	
 public:
 	
-	virtual bool update() = 0;	
+	virtual bool update() = 0;
 	
 	// Mouse
 	virtual bool setMouseMode(Mouse::Mode mode) = 0;
@@ -36,11 +40,13 @@ public:
 	virtual bool getAbsoluteMouseCoords(int & absX, int & absY) const = 0;
 	virtual void setAbsoluteMouseCoords(int absX, int absY) = 0;
 	virtual void getRelativeMouseCoords(int & relX, int & relY, int & wheelDir) const = 0;
-	virtual bool isMouseButtonPressed(int buttonId, int & _iDeltaTime) const = 0;
 	virtual void getMouseButtonClickCount(int buttonId, int & _iNumClick, int & _iNumUnClick) const = 0;
 	
 	// Keyboard
 	virtual bool isKeyboardKeyPressed(int keyId) const = 0;
+	virtual void startTextInput(const Rect & box, TextInputHandler * handler) = 0;
+	virtual void stopTextInput() = 0;
+	virtual std::string getKeyName(Keyboard::Key key) const = 0;
 	
 protected:
 	

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -28,6 +28,7 @@
 #include <boost/random/uniform_real_distribution.hpp>
 
 #include "platform/Platform.h"
+#include "platform/ThreadLocal.h"
 
 /*!
  * Random number generator.
@@ -53,11 +54,11 @@ public:
 	
 	//! Return a random iterator in the given container.
 	template <class Container>
-	static typename Container::iterator getIterator(Container& container);
+	static typename Container::iterator getIterator(Container & container);
 	
 	//! Return a random const_iterator in the given container.
 	template <class Container>
-	static typename Container::const_iterator getIterator(const Container& container);
+	static typename Container::const_iterator getIterator(const Container & container);
 	
 	//! Seed the random number generator using the current time.
 	static void seed();
@@ -65,11 +66,14 @@ public:
 	//! Seed the random number generator with the given value.
 	static void seed(unsigned int seedVal);
 	
+	//! Release all resources held by this threads random generator
+	static void shutdown();
+	
 private:
 	
 	typedef boost::random::mt19937 Generator;
 	
-	static Generator rng;
+	static ARX_THREAD_LOCAL Generator * rng;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,7 +82,7 @@ template <class IntType>
 IntType Random::get(IntType min, IntType max) {
 	ARX_STATIC_ASSERT(boost::is_integral<IntType>::value, "get must be called with ints");
 	
-	return typename boost::random::uniform_int_distribution<IntType>(min, max)(rng);
+	return typename boost::random::uniform_int_distribution<IntType>(min, max)(*rng);
 }
 
 template <class IntType>
@@ -98,7 +102,7 @@ template <class RealType>
 RealType Random::getf(RealType min, RealType max) {
 	ARX_STATIC_ASSERT(boost::is_float<RealType>::value, "getf must be called with floats");
 	
-	return typename boost::random::uniform_real_distribution<RealType>(min, max)(rng);
+	return typename boost::random::uniform_real_distribution<RealType>(min, max)(*rng);
 }
 
 template <class RealType>
@@ -115,7 +119,7 @@ Iterator Random::getIterator(Iterator begin, Iterator end) {
 	typedef typename std::iterator_traits<Iterator>::difference_type diff_t;
 	
 	diff_t dist = std::distance(begin, end);
-	diff_t toAdvance = Random::get<diff_t>(0, dist-1);
+	diff_t toAdvance = Random::get<diff_t>(0, dist - 1);
 	
 	std::advance(begin, toAdvance);
 	
@@ -123,12 +127,12 @@ Iterator Random::getIterator(Iterator begin, Iterator end) {
 }
 
 template <class Container>
-typename Container::iterator Random::getIterator(Container& container) {
+typename Container::iterator Random::getIterator(Container & container) {
 	return getIterator(container.begin(), container.end());
 }
 
 template <class Container>
-typename Container::const_iterator Random::getIterator(const Container& container) {
+typename Container::const_iterator Random::getIterator(const Container & container) {
 	return getIterator(container.begin(), container.end());
 }
 

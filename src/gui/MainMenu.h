@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -22,37 +22,55 @@
 
 #include <string>
 
+#include <boost/noncopyable.hpp>
+
 #include "gui/MenuWidgets.h"
 #include "gui/widget/Widget.h"
 #include "gui/widget/WidgetContainer.h"
 #include "math/Types.h"
 
-void MainMenuLeftCreate(MENUSTATE eMenuState);
-
-class MainMenu {
-public:
-	bool					bReInitAll;
-	MENUSTATE				eOldMenuState;
-	MENUSTATE				eOldMenuWindowState;
+class MainMenu : private boost::noncopyable {
 	
-	Widget		*	m_selected;
+public:
+	
+	bool bReInitAll;
+	
+	MenuWindow * m_window;
 	
 	explicit MainMenu();
 	virtual ~MainMenu();
 	
 	void init();
-	void onClickedResumeGame();
-	void onClickedNewQuest();
-	void onClickedCredits();
+	void initWindowPages();
 	
-	MENUSTATE Update();
-	void Render();
+	void onClickedResumeGame(Widget * widget);
+	void onClickedNewQuest(Widget * widget);
+	void onClickedCredits(Widget * widget);
+	
+	void update();
+	void render();
+	
+	void requestPage(MENUSTATE page) {
+		m_requestedPage = page;
+	}
+	
+	MENUSTATE requestedPage() const {
+		return m_requestedPage;
+	}
 	
 private:
+	
+	MENUSTATE m_requestedPage;
+	
 	TextureContainer * m_background;
 	WidgetContainer * m_widgets;
 	
 	TextWidget * m_resumeGame;
+	
+	Widget * m_selected;
+	
 };
+
+extern MainMenu * g_mainMenu;
 
 #endif // ARX_GUI_MAINMENU_H

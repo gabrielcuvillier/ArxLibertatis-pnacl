@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -24,11 +24,20 @@
 #include "math/Angle.h"
 
 struct EYEBALL_DEF {
+	
 	long exist;
 	Vec3f pos;
 	Anglef angle;
 	Vec3f size;
 	float floating;
+	
+	EYEBALL_DEF()
+		: exist(0)
+		, pos(0.f)
+		, size(0.f)
+		, floating(0.f)
+	{ }
+	
 };
 
 extern float MagicSightFader;

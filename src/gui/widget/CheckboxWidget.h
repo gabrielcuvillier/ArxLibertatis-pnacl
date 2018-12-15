@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,40 +20,47 @@
 #ifndef ARX_GUI_WIDGET_CHECKBOXWIDGET_H
 #define ARX_GUI_WIDGET_CHECKBOXWIDGET_H
 
+#include <string>
+
 #include <boost/function.hpp>
 
 #include "gui/widget/Widget.h"
+#include "platform/Platform.h"
 
+class Font;
 class TextWidget;
 class TextureContainer;
 
-class CheckboxWidget : public Widget {
+class CheckboxWidget arx_final : public Widget {
 	
 public:
-	explicit CheckboxWidget(TextWidget * label);
+	
+	explicit CheckboxWidget(const Vec2f & size, Font * font, const std::string & label);
 	virtual ~CheckboxWidget();
 	
-	void Move(const Vec2f & offset);
-	bool OnMouseClick();
-	void Update();
+	void move(const Vec2f & offset);
+	bool click();
 	
-	void renderCommon();
-	void Render();
-	void RenderMouseOver();
+	void render(bool mouseOver = false);
 	
-	int					iState;
-	int					iOldState;
+	void setChecked(bool checked);
+	bool checked() const { return m_checked; }
 	
-	boost::function<void(int)> stateChanged;	// NOLINT
+	boost::function<void(bool /* checked */)> stateChanged;
 	
 	virtual WidgetType type() const {
 		return WidgetType_Checkbox;
-	};
+	}
 	
 private:
+	
+	TextWidget * m_label;
 	TextureContainer * m_textureOff;
 	TextureContainer * m_textureOn;
-	TextWidget	* m_label;
+	Rectf m_button;
+	
+	bool m_checked;
+	
 };
 
 #endif // ARX_GUI_WIDGET_CHECKBOXWIDGET_H

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -68,43 +68,33 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/Object.h"
 #include "scene/Interactive.h"
 
-
 CMagicMissile::CMagicMissile()
-	: CSpellFx()
-	, bExplo(false)
+	: bExplo(false)
 	, bMove(true)
-	, eCurPos()
-	, lightIntensityFactor()
-	, iLength()
-	, iBezierPrecision()
-	, fTrail()
-	, snd_loop()
+	, eCurPos(0.f)
+	, m_trailColor(Color3f(0.9f, 0.9f, 0.7f) + Color3f(0.1f, 0.1f, 0.3f) * randomColor3f())
+	, m_projectileColor(0.3f, 0.3f, 0.5f)
+	, tex_mm(TextureContainer::Load("graph/obj3d/textures/(fx)_bandelette_blue"))
+	, iLength(0)
+	, iBezierPrecision(0)
+	, fTrail(0.f)
 {
-	SetDuration(2000);
-	ulCurrentTime = ulDuration + 1;
-	
-	m_trailColor = Color3f(0.9f, 0.9f, 0.7f) + Color3f(0.1f, 0.1f, 0.3f) * randomColor3f();
-	m_projectileColor = Color3f(0.3f, 0.3f, 0.5f);
-	tex_mm = TextureContainer::Load("graph/obj3d/textures/(fx)_bandelette_blue");
+	SetDuration(GameDurationMs(2000));
+	m_elapsed = m_duration + GameDurationMs(1);
 }
 
-CMagicMissile::~CMagicMissile() {
-
-	lLightId = LightHandle();
-
-	ARX_SOUND_Stop(snd_loop);
-}
+CMagicMissile::~CMagicMissile() { }
 
 void CMagicMissile::Create(const Vec3f & startPos, const Anglef & angles)
 {
-	SetDuration(ulDuration);
+	SetDuration(m_duration);
 	
 	eCurPos = startPos;
 	
-	short i = 40.f;
+	size_t i = 40;
 	Vec3f endPos = startPos;
-	endPos += angleToVectorXZ(angles.getPitch()) * (50.f * i);
-	endPos.y += std::sin(glm::radians(MAKEANGLE(angles.getYaw()))) * (50.f * i);
+	endPos += angleToVectorXZ(angles.getYaw()) * (50.f * float(i));
+	endPos.y += std::sin(glm::radians(MAKEANGLE(angles.getPitch()))) * (50.f * float(i));
 	
 	pathways[0] = startPos;
 	pathways[5] = endPos;
@@ -122,41 +112,26 @@ void CMagicMissile::Create(const Vec3f & startPos, const Anglef & angles)
 	iBezierPrecision = BEZIERPrecision;
 	bExplo = false;
 	bMove = true;
-
-	ARX_SOUND_PlaySFX(SND_SPELL_MM_CREATE, &eCurPos);
-	ARX_SOUND_PlaySFX(SND_SPELL_MM_LAUNCH, &eCurPos);
-	snd_loop = ARX_SOUND_PlaySFX(SND_SPELL_MM_LOOP, &eCurPos, 1.0F, ARX_SOUND_PLAY_LOOPED);
 }
 
-void CMagicMissile::SetTTL(unsigned long aulTTL)
+void CMagicMissile::SetTTL(GameDuration aulTTL)
 {
-	unsigned long t = ulCurrentTime;
-	ulDuration = std::min(ulCurrentTime + aulTTL, ulDuration);
-	SetDuration(ulDuration);
-	ulCurrentTime = t;
+	GameDuration t = m_elapsed;
+	m_duration = std::min(m_elapsed + aulTTL, m_duration);
+	SetDuration(m_duration);
+	m_elapsed = t;
+}
+
+void CMagicMissile::Update(GameDuration timeDelta)
+{
+	m_elapsed += timeDelta;
+}
+
+void CMagicMissile::Render() {
 	
-	lLightId = LightHandle();
-}
-
-void CMagicMissile::Update(float timeDelta)
-{
-	ARX_SOUND_RefreshPosition(snd_loop, eCurPos);
-
-	ulCurrentTime += timeDelta;
-
-	if(ulCurrentTime >= ulDuration)
-		lightIntensityFactor = 0.f;
-	else
-		lightIntensityFactor = Random::getf(0.5f, 1.0f);
-}
-
-void CMagicMissile::Render()
-{ 
-	Vec3f lastpos, newpos;
-	Vec3f v;
-
-	if(ulCurrentTime >= ulDuration)
+	if(m_elapsed >= m_duration) {
 		return;
+	}
 	
 	RenderMaterial mat;
 	mat.setCulling(CullNone);
@@ -167,11 +142,11 @@ void CMagicMissile::Render()
 		mat.setTexture(tex_mm);
 	
 	if(bMove) {
-		float fOneOnDuration = 1.f / (float)(ulDuration);
-		fTrail = (ulCurrentTime * fOneOnDuration) * (iBezierPrecision + 2) * 5;
+		fTrail = (m_elapsed / m_duration) * (iBezierPrecision + 2) * 5;
 	}
 	
-	newpos = lastpos = pathways[0];
+	Vec3f lastpos = pathways[0];
+	Vec3f newpos = pathways[0];
 	
 	for(int i = 0; i < 5; i++) {
 		
@@ -186,9 +161,7 @@ void CMagicMissile::Render()
 
 			float t = toto * (1.0f / iBezierPrecision);
 			
-			v = glm::catmullRom(v1, v2, v3, v4, t);
-			
-			newpos = v;
+			newpos = arx::catmullRom(v1, v2, v3, v4, t);
 
 			if(!((fTrail - (i * iBezierPrecision + toto)) > iLength)) {
 				float c;
@@ -209,7 +182,7 @@ void CMagicMissile::Render()
 				
 				c = glm::clamp(c, 0.f, 1.f);
 				
-				Color color = (m_trailColor * (c * alpha)).to<u8>();
+				Color color(m_trailColor * (c * alpha));
 
 				if(fsize < 0.5f)
 					fsize = fsize * 2 * 3;
@@ -235,8 +208,8 @@ void CMagicMissile::Render()
 	eCurPos = lastpos;
 	
 	Anglef stiteangle;
-	stiteangle.setPitch(-glm::degrees(bubu));
-	stiteangle.setYaw(0);
+	stiteangle.setYaw(-glm::degrees(bubu));
+	stiteangle.setPitch(0);
 	stiteangle.setRoll(-(glm::degrees(bubu1)));
 
 	if(av.x < 0)
@@ -248,13 +221,11 @@ void CMagicMissile::Render()
 	if(stiteangle.getRoll() < 0)
 		stiteangle.setRoll(stiteangle.getRoll() + 360.0f);
 
-	Draw3DObject(smissile, stiteangle, eCurPos, Vec3f_ONE, m_projectileColor, mat);
+	Draw3DObject(smissile, stiteangle, eCurPos, Vec3f(1.f), m_projectileColor, mat);
 }
 
 
-MrMagicMissileFx::MrMagicMissileFx()
-	: CMagicMissile()
-{
+MrMagicMissileFx::MrMagicMissileFx() {
 	m_trailColor = Color3f(0.9f, 0.2f, 0.5f);
 	m_projectileColor = Color3f(1.f, 0.f, 0.2f);
 	tex_mm = NULL;

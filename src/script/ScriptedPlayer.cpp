@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -117,7 +117,7 @@ public:
 		DebugScript(' ' << val);
 		
 		if(val != 0.f) {
-			ARX_SOUND_PlayInterface(SND_GOLD);
+			ARX_SOUND_PlayInterface(g_snd.GOLD);
 		}
 		
 		ARX_PLAYER_AddGold(checked_range_cast<long>(val));
@@ -234,6 +234,7 @@ public:
 		DebugScript(' ' << name);
 		
 		ARX_PLAYER_Quest_Add(name);
+		g_hudRoot.bookIconGui.requestHalo();
 		
 		return Success;
 	}
@@ -297,13 +298,12 @@ public:
 
 class SetPlayerControlsCommand : public Command {
 	
-	static void Stack_SendMsgToAllNPC_IO(ScriptMessage msg, const char * dat) {
+	static void Stack_SendMsgToAllNPC_IO(Entity * sender, const ScriptEventName & event) {
 		for(size_t i = 0; i < entities.size(); i++) {
 			const EntityHandle handle = EntityHandle(i);
-			Entity * e = entities[handle];
-			
-			if(e && (e->ioflags & IO_NPC)) {
-				Stack_SendIOScriptEvent(e, msg, dat);
+			Entity * entity = entities[handle];
+			if(entity && (entity->ioflags & IO_NPC)) {
+				Stack_SendIOScriptEvent(sender, entity, event);
 			}
 		}
 	}
@@ -314,16 +314,13 @@ public:
 	
 	Result execute(Context & context) {
 		
-		Entity * oes = EVENT_SENDER;
-		EVENT_SENDER = context.getEntity();
-		
 		bool enable = context.getBool();
 		
 		DebugScript(' ' << enable);
 		
 		if(enable) {
 			if(BLOCK_PLAYER_CONTROLS) {
-				Stack_SendMsgToAllNPC_IO(SM_CONTROLS_ON, "");
+				Stack_SendMsgToAllNPC_IO(context.getEntity(), SM_CONTROLS_ON);
 			}
 			BLOCK_PLAYER_CONTROLS = false;
 		} else {
@@ -333,7 +330,7 @@ public:
 				for(size_t i = 0; i < MAX_SPELLS; i++) {
 					SpellBase * spell = spells[SpellHandle(i)];
 					
-					if(spell && (spell->m_caster == PlayerEntityHandle || spell->m_target == PlayerEntityHandle)) {
+					if(spell && (spell->m_caster == EntityHandle_Player || spell->m_target == EntityHandle_Player)) {
 						switch(spell->m_type) {
 							case SPELL_MAGIC_SIGHT:
 							case SPELL_LEVITATE:
@@ -346,14 +343,12 @@ public:
 					}
 				}
 				
-				Stack_SendMsgToAllNPC_IO(SM_CONTROLS_OFF, "");
-				spells.endByCaster(PlayerEntityHandle);
+				Stack_SendMsgToAllNPC_IO(context.getEntity(), SM_CONTROLS_OFF);
+				spells.endByCaster(EntityHandle_Player);
 			}
 			BLOCK_PLAYER_CONTROLS = true;
 			player.Interface &= ~INTER_COMBATMODE;
 		}
-		
-		EVENT_SENDER = oes;
 		
 		return Success;
 	}
@@ -371,7 +366,8 @@ public:
 		DebugScript("");
 		
 		if(player.Interface & INTER_STEAL) {
-			SendIOScriptEvent(ioSteal, SM_STEAL, "off");
+			// TODO This sender does not make sense
+			SendIOScriptEvent(context.getSender(), ioSteal, SM_STEAL, "off");
 		}
 		
 		player.Interface |= INTER_STEAL;
@@ -409,7 +405,7 @@ public:
 				ScriptWarning << "can only use 'specialfx player_appears' in IO context";
 				return Failed;
 			}
-			MakePlayerAppearsFX(io);
+			MakePlayerAppearsFX(*io);
 			
 		} else if(type == "heal") {
 			
@@ -552,7 +548,7 @@ public:
 			if(flg & flag('d')) {
 				spflags |= SPELLCAST_FLAG_NOCHECKCANCAST;
 				duration = (long)context.getFloat();
-				dur = 1;
+				dur = true;
 			}
 			if(flg & flag('f')) {
 				spflags |= SPELLCAST_FLAG_NOCHECKCANCAST | SPELLCAST_FLAG_NOMANA;
@@ -579,7 +575,7 @@ public:
 			spflags |= SPELLCAST_FLAG_NOCHECKCANCAST;
 		}
 		
-		TryToCastSpell(entities.player(), spellid, level, EntityHandle(), spflags, duration);
+		TryToCastSpell(entities.player(), spellid, level, EntityHandle(), spflags, GameDurationMs(duration));
 		
 		return Success;
 	}
@@ -671,7 +667,7 @@ public:
 	
 };
 
-}
+} // anonymous namespace
 
 void setupScriptedPlayer() {
 	

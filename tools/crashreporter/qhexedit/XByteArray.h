@@ -52,7 +52,7 @@ public:
 	void setAddressWidth(int width);
 	
 	QByteArray & data();
-	void setData(QByteArray data);
+	void setData(const QByteArray & data);
 	
 	bool dataChanged(int i);
 	QByteArray dataChanged(int i, int len);
@@ -65,7 +65,7 @@ public:
 	QByteArray & insert(int i, char ch);
 	QByteArray & insert(int i, const QByteArray & ba);
 	
-	QByteArray & remove(int pos, int len);
+	QByteArray & remove(int i, int len);
 	
 	QByteArray & replace(int index, char ch);
 	QByteArray & replace(int index, const QByteArray & ba);
@@ -87,6 +87,7 @@ private:
 	int _addressOffset;      //!< will be added to the real addres inside bytearray
 	int _realAddressNumbers; //!< real width of address area (can be greater then wanted width)
 	int _oldSize;            //!< size of data
+	
 };
 
 //! \endcond docNever

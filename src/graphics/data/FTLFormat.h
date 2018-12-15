@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -66,7 +66,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 // -> Then depending on offsets just read data directly.
 
 
-#pragma pack(push,1)
+#pragma pack(push, 1)
 
 
 struct ARX_FTL_PRIMARY_HEADER {
@@ -81,19 +81,6 @@ struct ARX_FTL_SECONDARY_HEADER {
 	s32 offset_clothes_data; // -1 = no
 	s32 offset_collision_spheres; // -1 = no
 	s32 offset_physics_box; // -1 = no
-};
-
-struct ARX_FTL_PROGRESSIVE_DATA_HEADER {
-	s32 nb_vertex;
-};
-
-struct ARX_FTL_CLOTHES_DATA_HEADER {
-	s32 nb_cvert;
-	s32 nb_springs;
-};
-
-struct ARX_FTL_COLLISION_SPHERES_DATA_HEADER {
-	s32 nb_spheres;
 };
 
 struct ARX_FTL_3D_DATA_HEADER {
@@ -140,15 +127,6 @@ struct EERIE_GROUPLIST_FTL {
 	s32 indexes;
 	f32 siz;
 	
-	EERIE_GROUPLIST_FTL & operator=(const VertexGroup & b) {
-		util::storeString(name, b.name.c_str());
-		origin = b.origin;
-		nb_index = b.indexes.size();
-		indexes = 0;
-		siz = b.siz;
-		return *this;
-	}
-	
 };
 
 struct EERIE_ACTIONLIST_FTL {
@@ -167,14 +145,6 @@ struct EERIE_ACTIONLIST_FTL {
 		return a;
 	}
 	
-	EERIE_ACTIONLIST_FTL & operator=(const EERIE_ACTIONLIST & b) {
-		util::storeString(name, b.name.c_str());
-		idx = b.idx.handleData();
-		action = b.act;
-		sfx = b.sfx;
-		return *this;
-	}
-	
 };
 
 struct EERIE_SELECTIONS_FTL {
@@ -183,138 +153,21 @@ struct EERIE_SELECTIONS_FTL {
 	s32 nb_selected;
 	s32 selected;
 	
-	EERIE_SELECTIONS_FTL & operator=(const EERIE_SELECTIONS & b) {
-		util::storeString(name, b.name.c_str());
-		nb_selected = b.selected.size();
-		selected = 0;
-		return *this;
-	}
-	
-};
-
-struct COLLISION_SPHERE_FTL {
-	
-	s16 idx;
-	s16 flags;
-	f32 radius;
-	
-	operator COLLISION_SPHERE() const {
-		COLLISION_SPHERE a;
-		a.idx = idx;
-		a.flags = flags;
-		a.radius = radius;
-		return a;
-	}
-	
-	COLLISION_SPHERE_FTL & operator=(const COLLISION_SPHERE & b) {
-		idx = b.idx;
-		flags = b.flags;
-		radius = b.radius;
-		return *this;
-	}
-	
-};
-
-struct EERIE_SPRINGS_FTL {
-	
-	s16 startidx;
-	s16 endidx;
-	f32 restlength;
-	f32 constant; // spring constant
-	f32 damping; // spring damping
-	s32 type;
-	
-	operator EERIE_SPRINGS() const {
-		EERIE_SPRINGS a;
-		a.startidx = startidx;
-		a.endidx = endidx;
-		a.restlength = restlength;
-		a.constant = constant;
-		a.damping = damping;
-		a.type = type;
-		return a;
-	}
-	
-	EERIE_SPRINGS_FTL & operator=(const EERIE_SPRINGS & b) {
-		startidx = b.startidx;
-		endidx = b.endidx;
-		restlength = b.restlength;
-		constant = b.constant;
-		damping = b.damping;
-		type = b.type;
-		return *this;
-	}
-	
 };
 
 struct EERIE_OLD_VERTEX {
 	
-	SavedTextureVertex vert;
+	char unused[32];
 	SavedVec3 v;
 	SavedVec3 norm;
 	
 	operator EERIE_VERTEX() const {
 		EERIE_VERTEX a;
-		a.vert = vert, a.v = v.toVec3(), a.norm = norm.toVec3();
+		a.v = v.toVec3(), a.norm = norm.toVec3();
 		return a;
 	}
 	
-	EERIE_OLD_VERTEX & operator=(const EERIE_VERTEX & b) {
-		vert = b.vert, v = b.v, norm = b.norm;
-		return *this;
-	}
-	
 };
-
-struct CLOTHESVERTEX_FTL {
-	
-	s16 idx;
-	u8 flags;
-	s8 coll;
-	SavedVec3 pos;
-	SavedVec3 velocity;
-	SavedVec3 force;
-	f32 mass;
-	
-	SavedVec3 t_pos;
-	SavedVec3 t_velocity;
-	SavedVec3 t_force;
-	
-	SavedVec3 lastpos;
-	
-	operator CLOTHESVERTEX() const {
-		CLOTHESVERTEX a;
-		a.idx = idx;
-		a.flags = flags;
-		a.coll = coll;
-		a.pos = pos.toVec3();
-		a.velocity = velocity.toVec3();
-		a.force = force.toVec3();
-		a.mass = mass;
-		a.t_pos = t_pos.toVec3();
-		a.t_velocity = t_velocity.toVec3();
-		a.t_force = t_force.toVec3();
-		a.lastpos = lastpos.toVec3();
-		return a;
-	}
-	
-	CLOTHESVERTEX_FTL & operator=(const CLOTHESVERTEX & b) {
-		idx = b.idx;
-		flags = b.flags;
-		coll = b.coll;
-		pos = b.pos;
-		velocity = b.velocity;
-		force = b.force;
-		mass = b.mass;
-		t_pos = b.t_pos;
-		t_velocity = b.t_velocity;
-		t_force = b.t_force;
-		lastpos = b.lastpos;
-		return *this;
-	}
-	
-};
-
 
 #pragma pack(pop)
 

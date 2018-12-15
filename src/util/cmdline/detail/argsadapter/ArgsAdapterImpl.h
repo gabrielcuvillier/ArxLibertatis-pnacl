@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -37,22 +37,22 @@
 
 #define SUPER_T args_adapter_impl<void(BOOST_PP_ENUM_PARAMS(DEC_N, A))>
 #define IMPL_T \
-	arg_impl<typename boost::remove_cv<typename boost::remove_reference<BOOST_PP_CAT(A,DEC_N)>::type>::type, DEC_N>
+	arg_impl<typename boost::remove_cv<typename boost::remove_reference<BOOST_PP_CAT(A, DEC_N)>::type>::type, DEC_N>
 
 template <BOOST_PP_ENUM_PARAMS(N, typename A)>
 struct args_adapter_impl<void(BOOST_PP_ENUM_PARAMS(N, A))>
-#if (N > 0)
+	#if (N > 0)
 	: SUPER_T
 	, IMPL_T
-#endif //(N > 0)
+	#endif // (N > 0)
 {
 	template <typename SourceType>
-	explicit args_adapter_impl(SourceType& s)
-#if (N > 0)
+	explicit args_adapter_impl(SourceType & s)
+		#if (N > 0)
 		: SUPER_T(s)
 		, IMPL_T(construct
-		(s,static_cast<typename IMPL_T::BOOST_PP_CAT(BOOST_PP_CAT(arg, DEC_N), _t) const*>(0)))
-#endif //(N > 0)
+		(s, static_cast<const typename IMPL_T::BOOST_PP_CAT(BOOST_PP_CAT(arg, DEC_N), _t) *>(0)))
+		#endif // (N > 0)
 	{
 	}
 };
@@ -61,7 +61,7 @@ struct args_adapter_impl<void(BOOST_PP_ENUM_PARAMS(N, A))>
 #undef SUPER_T
 
 template <
-	typename R 
+	typename R
 	BOOST_PP_COMMA_IF(N) BOOST_PP_ENUM_PARAMS(N, typename A)
 >
 struct args_adapter_impl<R(BOOST_PP_ENUM_PARAMS(N, A))>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -19,12 +19,14 @@
 
 #include "core/Localisation.h"
 
+#include <map>
 #include <stddef.h>
 #include <sstream>
 #include <cstdlib>
 #include <iterator>
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/foreach.hpp>
 
 #include "core/Config.h"
 
@@ -38,12 +40,12 @@
 #include "util/Unicode.h"
 
 namespace {
-IniReader localisation;
-}
 
-static PakFile * autodetectLanguage() {
+IniReader g_localisation;
+
+PakFile * autodetectLanguage() {
 	
-	PakDirectory * dir = resources->getDirectory("localisation");
+	PakDirectory * dir = g_resources->getDirectory("localisation");
 	if(!dir) {
 		LogCritical << "Missing 'localisation' directory. Is 'loc.pak' present?";
 		return NULL;
@@ -107,11 +109,74 @@ static PakFile * autodetectLanguage() {
 	return localisation;
 }
 
+void loadLocalisation(PakDirectory * dir, const std::string & name) {
+	
+	PakFile * file = dir->getFile(name);
+	arx_assert(file);
+	
+	std::string buffer = file->read();
+	if(buffer.empty()) {
+		LogWarning << "Error reading localisation file localisation/" << name;
+		return;
+	}
+	
+	if(buffer.size() >= 2 && buffer[0] == '\xFF' && buffer[1] == '\xFE') {
+		LogWarning << "UTF16le character encoding is unsupported for new localizations "
+		              "please use UTF8 for file localisation/" << name;
+		return;
+	}
+	
+	LogInfo << "Loading: " << name;
+	
+	std::istringstream iss(buffer);
+	if(!g_localisation.read(iss, true)) {
+		LogWarning << "Error parsing localisation file localisation/" << name;
+	}
+}
+
+void loadLocalisations() {
+	
+	const std::string suffix = ".ini";
+	const std::string fallbackPrefix = "xtext_english_";
+	const std::string localizedPrefix = "xtext_" + config.language + "_";
+	
+	typedef std::map<std::string, bool> LocalizationFiles;
+	
+	LocalizationFiles localizationFiles;
+	
+	PakDirectory * dir = g_resources->getDirectory("localisation");
+	PakDirectory::files_iterator fileIter = dir->files_begin();
+	
+	for(; fileIter != dir->files_end(); ++fileIter) {
+		const std::string & name = fileIter->first;
+		
+		if(boost::ends_with(name, suffix)) {
+			if(boost::starts_with(name, fallbackPrefix)) {
+				localizationFiles[name.substr(fallbackPrefix.length())];
+			}
+			if(boost::starts_with(name, localizedPrefix)) {
+				localizationFiles[name.substr(localizedPrefix.length())] = true;
+			}
+		}
+	}
+	
+	BOOST_FOREACH(const LocalizationFiles::value_type & i, localizationFiles) {
+		
+		loadLocalisation(dir, fallbackPrefix + i.first);
+		
+		if(i.second) {
+			loadLocalisation(dir, localizedPrefix + i.first);
+		}
+	}
+}
+
+} // anonymous namespace
+
 bool initLocalisation() {
 	
 	LogDebug("Starting localization");
 	
-	localisation.clear();
+	g_localisation.clear();
 	
 	PakFile * file;
 	
@@ -123,7 +188,7 @@ bool initLocalisation() {
 		
 		// Attempt to load localisation for the configured language.
 		std::string filename = "localisation/utext_" + config.language + ".ini";
-		file = resources->getFile(filename);
+		file = g_resources->getFile(filename);
 		
 		if(!file) {
 			LogWarning << "Localisation file " << filename << " not found, autodetecting language.";
@@ -141,36 +206,43 @@ bool initLocalisation() {
 	
 	arx_assert(!config.language.empty());
 	
-	char * data = file->readAlloc();
-	if(!data) {
+	std::string buffer = file->read();
+	if(buffer.empty()) {
 		return false;
 	}
 	
 	LogDebug("Loaded localisation file of size " << file->size());
-	std::string out = util::convert<util::UTF16LE, util::UTF8>(data, data + file->size());
-	LogDebug("Converted to UTF8 string of length " << out.size());
+	buffer = util::convert<util::UTF16LE, util::UTF8>(buffer);
+	LogDebug("Converted to UTF8 string of length " << buffer.size());
 	
-	if(!out.empty()) {
+	if(!buffer.empty()) {
 		LogDebug("Preparing to parse localisation file");
-		std::istringstream iss(out);
-		if(!::localisation.read(iss)) {
+		std::istringstream iss(buffer);
+		if(!g_localisation.read(iss)) {
 			LogWarning << "Error parsing localisation file localisation/utext_"
 			           << config.language << ".ini";
 		}
 	}
 	
-	free(data);
+	loadLocalisations();
 	
 	return true;
 }
 
 long getLocalisedKeyCount(const std::string & sectionname) {
-	return localisation.getKeyCount(sectionname);
+	return g_localisation.getKeyCount(sectionname);
+}
+
+std::string getLocalised(const std::string & name) {
+	
+	arx_assert(name.find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ[]") == std::string::npos);
+	
+	return g_localisation.getKey(name, std::string(), name);
 }
 
 std::string getLocalised(const std::string & name, const std::string & default_value) {
 	
 	arx_assert(name.find_first_of("ABCDEFGHIJKLMNOPQRSTUVWXYZ[]") == std::string::npos);
 	
-	return localisation.getKey(name, std::string(), default_value);
+	return g_localisation.getKey(name, std::string(), default_value);
 }

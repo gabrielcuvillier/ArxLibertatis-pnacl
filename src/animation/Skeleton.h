@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -26,36 +26,52 @@
 #include "glm/gtc/quaternion.hpp"
 
 #include "math/Types.h"
+#include "math/Angle.h"
 
 struct VertexGroup {
+	
 	std::string       name;
 	size_t            origin;
-	std::vector<size_t> indexes;
+	std::vector<u32> indexes; // TODO use u16 here ?
 	float             siz;
 	
 	VertexGroup()
-		: name()
-		, origin(0)
-		, indexes()
+		: origin(0)
 		, siz(0.0f)
-	{}
+	{ }
+	
 };
 
 struct BoneTransform {
+	
 	glm::quat quat;
-	Vec3f     trans;
-	Vec3f     scale;
+	Vec3f trans;
+	Vec3f scale;
+	
+	BoneTransform()
+		: quat(quat_identity())
+		, trans(0.f)
+		, scale(0.f) // TODO should this be 1.f?
+	{ }
+	
 };
 
 struct Bone {
-	std::vector<size_t> idxvertices;
-	long              father;
 	
-	BoneTransform     anim;
-	BoneTransform     last;
-	BoneTransform     init;
+	std::vector<u32> idxvertices; // TODO use u16 here ?
+	long father;
 	
-	Vec3f             transinit_global;
+	BoneTransform anim;
+	BoneTransform last;
+	BoneTransform init;
+	
+	Vec3f transinit_global;
+	
+	Bone()
+		: father(0)
+		, transinit_global(0.f)
+	{ }
+	
 };
 
 struct Skeleton {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,46 +20,42 @@
 #include "game/effect/Quake.h"
 
 #include "core/GameTime.h"
+#include "game/Camera.h"
+#include "math/RandomVector.h"
 #include "scene/GameSound.h"
 
 struct QUAKE_FX_STRUCT {
 	float intensity;
 	float frequency;
-	unsigned long start;
-	unsigned long duration;
+	GameInstant start;
+	GameDuration duration;
 	bool sound;
 };
 
 QUAKE_FX_STRUCT QuakeFx;
 
-void AddQuakeFX(float intensity, float duration, float period, bool sound) {
+void AddQuakeFX(float intensity, GameDuration duration, float period, bool sound) {
 
 	if(QuakeFx.intensity > 0.f) {
 		QuakeFx.intensity += intensity;
 
-		QuakeFx.duration += (unsigned long)duration;
+		QuakeFx.duration += duration;
 		QuakeFx.frequency += period;
 		QuakeFx.frequency *= .5f;
 		QuakeFx.sound = QuakeFx.sound || sound;
-
-		if(sound)
-			ARX_SOUND_PlaySFX(SND_QUAKE, NULL, 1.0F - 0.5F * QuakeFx.intensity);
 	} else {
 		QuakeFx.intensity = intensity;
 
-		QuakeFx.start = checked_range_cast<unsigned long>(arxtime.get_frame_time());
+		QuakeFx.start = g_gameTime.now();
 
-		QuakeFx.duration = (unsigned long)duration;
+		QuakeFx.duration = duration;
 		QuakeFx.frequency = period;
 		QuakeFx.sound = sound;
-
-		if(sound)
-			ARX_SOUND_PlaySFX(SND_QUAKE, NULL, 1.0F - 0.5F * QuakeFx.intensity);
 	}
 
 	if(!sound) {
-		if(QuakeFx.duration > 1500)
-			QuakeFx.duration = 1500;
+		if(QuakeFx.duration > GameDurationMs(1500))
+			QuakeFx.duration = GameDurationMs(1500);
 
 		if(QuakeFx.intensity > 220)
 			QuakeFx.intensity = 220;
@@ -67,30 +63,31 @@ void AddQuakeFX(float intensity, float duration, float period, bool sound) {
 }
 
 void RemoveQuakeFX() {
-
-	QuakeFx.intensity=0.f;
+	QuakeFx.intensity = 0.f;
 }
 
-void ManageQuakeFX(EERIE_CAMERA * cam) {
-	if(QuakeFx.intensity>0.f) {
-		float tim=(float)arxtime.get_frame_time()-(float)QuakeFx.start;
+void ManageQuakeFX(Camera * cam) {
+	if(QuakeFx.intensity > 0.f) {
+		GameDuration tim = g_gameTime.now() - QuakeFx.start;
 
 		if(tim >= QuakeFx.duration) {
-			QuakeFx.intensity=0.f;
+			QuakeFx.intensity = 0.f;
 			return;
 		}
 
-		float itmod=1.f-(tim/QuakeFx.duration);
-		float periodicity=std::sin((float)arxtime.get_frame_time()*QuakeFx.frequency*( 1.0f / 100 ));
-
-		if(periodicity > 0.5f && QuakeFx.sound)
-			ARX_SOUND_PlaySFX(SND_QUAKE, NULL, 1.0F - 0.5F * QuakeFx.intensity);
-
+		float itmod = 1.f - (tim / QuakeFx.duration);
+		
+		float periodicity = 0;
+		if(QuakeFx.frequency > 0.f) {
+			periodicity = timeWaveSin(g_gameTime.now(), GameDurationMsf(628.319f / QuakeFx.frequency));
+		}
+		
 		float truepower = periodicity * QuakeFx.intensity * itmod * 0.01f;
 		float halfpower = truepower * .5f;
-		cam->orgTrans.pos += randomVec(-halfpower, halfpower);
-		cam->angle.setYaw(cam->angle.getYaw() + Random::getf() * truepower - halfpower);
+		
+		cam->m_pos += arx::randomVec(-halfpower, halfpower);
 		cam->angle.setPitch(cam->angle.getPitch() + Random::getf() * truepower - halfpower);
+		cam->angle.setYaw(cam->angle.getYaw() + Random::getf() * truepower - halfpower);
 		cam->angle.setRoll(cam->angle.getRoll() + Random::getf() * truepower - halfpower);
 	}
 }

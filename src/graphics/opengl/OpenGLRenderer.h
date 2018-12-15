@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -23,12 +23,14 @@
 #include <boost/intrusive/list.hpp>
 
 #include "graphics/Renderer.h"
-#include "graphics/opengl/GLTexture2D.h"
+#include "graphics/opengl/GLTexture.h"
+#include "graphics/opengl/OpenGLUtil.h"
 #include "math/Rectangle.h"
+#include "platform/Platform.h"
 
 class GLTextureStage;
 
-class OpenGLRenderer : public Renderer {
+class OpenGLRenderer arx_final : public Renderer {
 	
 public:
 	
@@ -42,26 +44,18 @@ public:
 	
 	// Matrices
 	void SetViewMatrix(const glm::mat4x4 & matView);
-	void GetViewMatrix(glm::mat4x4 & matView) const;
 	void SetProjectionMatrix(const glm::mat4x4 & matProj);
-	void GetProjectionMatrix(glm::mat4x4 & matProj) const;
 	
 	// Texture management
 	void ReleaseAllTextures();
 	void RestoreAllTextures();
-
+	void reloadColorKeyTextures();
+	
 	// Factory
-	Texture2D * CreateTexture2D();
-	
-	// Render states
-	void SetRenderState(RenderStateFlag renderState, bool enable);
-	
-	// Alphablending & Transparency
-	void SetAlphaFunc(PixelCompareFunc func, float fef); // Ref = [0.0f, 1.0f]
+	Texture * createTexture();
 	
 	// Viewport
 	void SetViewport(const Rect & viewport);
-	Rect GetViewport();
 	
 	void SetScissor(const Rect & rect);
 	
@@ -80,6 +74,8 @@ public:
 	float getMaxSupportedAnisotropy() const { return m_maximumSupportedAnisotropy; }
 	void setMaxAnisotropy(float value);
 	
+	AlphaCutoutAntialising getMaxSupportedAlphaCutoutAntialiasing() const;
+	
 	VertexBuffer<TexturedVertex> * createVertexBufferTL(size_t capacity, BufferUsage usage);
 	VertexBuffer<SMY_VERTEX> * createVertexBuffer(size_t capacity, BufferUsage usage);
 	VertexBuffer<SMY_VERTEX3> * createVertexBuffer3(size_t capacity, BufferUsage usage);
@@ -89,24 +85,32 @@ public:
 	bool getSnapshot(Image & image);
 	bool getSnapshot(Image & image, size_t width, size_t height);
 	
-	bool isFogInEyeCoordinates();
-	
-	GLTextureStage * GetTextureStage(unsigned int textureStage) {
+	GLTextureStage * GetTextureStage(size_t textureStage) {
 		return reinterpret_cast<GLTextureStage *>(Renderer::GetTextureStage(textureStage));
 	}
 	
-	bool hasTextureNPOT() { return m_hasTextureNPOT; }
-
 	template <class Vertex>
 	void beforeDraw() { flushState(); selectTrasform<Vertex>(); }
+	
+	bool hasTextureNPOT() { return m_hasTextureNPOT; }
+	bool hasSizedTextureFormats() const { return m_hasSizedTextureFormats; }
+	bool hasIntensityTextures() const { return m_hasIntensityTextures; }
+	bool hasBGRTextureTransfer() const { return m_hasBGRTextureTransfer; }
+	
+	bool hasMapBuffer() const { return m_hasMapBuffer; }
+	bool hasMapBufferRange() const { return m_hasMapBufferRange; }
+	bool hasBufferStorage() const { return m_hasBufferStorage; }
+	bool hasBufferUsageStream() const { return m_hasBufferUsageStream; }
+	bool hasDrawRangeElements() const { return m_hasDrawRangeElements; }
+	bool hasDrawElementsBaseVertex() const { return m_hasDrawElementsBaseVertex; }
+	bool hasClearDepthf() const { return m_hasClearDepthf; }
+	bool hasVertexFogCoordinate() const { return m_hasVertexFogCoordinate; }
+	bool hasSampleShading() const { return m_hasSampleShading; }
 	
 private:
 	
 	void shutdown();
 	void reinit();
-	
-	bool useVertexArrays;
-	bool useVBOs;
 	
 	Rect viewport;
 	
@@ -122,19 +126,34 @@ private:
 	
 	size_t maxTextureStage; // the highest active texture stage
 	
-	GLuint shader;
-	
 	float m_maximumAnisotropy;
 	float m_maximumSupportedAnisotropy;
 	
-	typedef boost::intrusive::list<GLTexture2D, boost::intrusive::constant_time_size<false> > TextureList;
+	typedef boost::intrusive::list<GLTexture, boost::intrusive::constant_time_size<false> > TextureList;
 	TextureList textures;
 	
 	RenderState m_glstate;
 	GLenum m_glcull;
 	
+	Rect m_scissor;
+	
+	int m_MSAALevel;
 	bool m_hasMSAA;
+	
 	bool m_hasTextureNPOT;
+	bool m_hasSizedTextureFormats;
+	bool m_hasIntensityTextures;
+	bool m_hasBGRTextureTransfer;
+	
+	bool m_hasMapBuffer;
+	bool m_hasMapBufferRange;
+	bool m_hasBufferStorage;
+	bool m_hasBufferUsageStream;
+	bool m_hasDrawRangeElements;
+	bool m_hasDrawElementsBaseVertex;
+	bool m_hasClearDepthf;
+	bool m_hasVertexFogCoordinate;
+	bool m_hasSampleShading;
 	
 };
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -63,19 +63,23 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "game/spell/Cheat.h"
 
 #include "graphics/BaseGraphicsTypes.h"
-#include "graphics/GraphicsTypes.h"
 #include "graphics/Draw.h"
+#include "graphics/GlobalFog.h"
+#include "graphics/GraphicsTypes.h"
 #include "graphics/Math.h"
 #include "graphics/Renderer.h"
 #include "graphics/Vertex.h"
 #include "graphics/data/Mesh.h"
 #include "graphics/data/MeshManipulation.h"
 #include "graphics/data/TextureContainer.h"
+#include "graphics/texture/Texture.h"
 #include "graphics/texture/TextureStage.h"
 #include "graphics/particle/ParticleEffects.h"
+#include "graphics/effects/PolyBoom.h"
 #include "graphics/effects/Halo.h"
 
 #include "math/Angle.h"
+#include "math/RandomVector.h"
 #include "math/Vector.h"
 
 #include "physics/Collisions.h"
@@ -88,119 +92,106 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "scene/Scene.h"
 #include "scene/Interactive.h"
 
-extern Color ulBKGColor;
-
 // List of TO-TREAT vertex for MIPMESHING
 
 // TODO: Convert to a RenderBatch & make TextureContainer constructor private
 static TextureContainer TexSpecialColor("specialcolor_list", TextureContainer::NoInsert);
 
-static TexturedVertex * PushVertexInTable(TextureContainer * pTex,
-                                          TextureContainer::TransparencyType type) {
-	
-	if(pTex->count[type] + 3 > pTex->max[type]) {
-		pTex->max[type] += 20 * 3;
-		pTex->list[type] = (TexturedVertex *)realloc(pTex->list[type], pTex->max[type] * sizeof(TexturedVertex));
-
-		if(!pTex->list[type]) {
-			pTex->max[type] = 0;
-			pTex->count[type] = 0;
-			return NULL;
-		}
-	}
-
-	pTex->count[type] += 3;
-	return &pTex->list[type][pTex->count[type] - 3];
+static TexturedVertex * PushVertexInTable(std::vector<TexturedVertex> & bucket) {
+	bucket.resize(bucket.size() + 3);
+	return &bucket[bucket.size() - 3];
 }
 
-static void PopOneTriangleList(TextureContainer * _pTex, bool clear) {
-
-	if(!_pTex->count[TextureContainer::Opaque]) {
+static void PopOneTriangleList(RenderState baseState, TextureContainer * material, bool clear) {
+	
+	std::vector<TexturedVertex> & bucket = material->m_modelBatch[BatchBucket_Opaque];
+	
+	if(bucket.empty()) {
 		return;
 	}
-
-	GRenderer->SetTexture(0, _pTex);
-
-	if(_pTex->userflags & POLY_LATE_MIP) {
+	
+	GRenderer->SetTexture(0, material);
+	baseState.setAlphaCutout(material->m_pTexture && material->m_pTexture->hasAlpha());
+	
+	UseRenderState state(baseState);
+	UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
+	
+	if(material->userflags & POLY_LATE_MIP) {
 		const float GLOBAL_NPC_MIPMAP_BIAS = -2.2f;
 		GRenderer->GetTextureStage(0)->setMipMapLODBias(GLOBAL_NPC_MIPMAP_BIAS);
 	}
-
-
-	EERIEDRAWPRIM(Renderer::TriangleList, _pTex->list[TextureContainer::Opaque], _pTex->count[TextureContainer::Opaque]);
+	
+	EERIEDRAWPRIM(Renderer::TriangleList, &bucket[0], bucket.size());
 	
 	if(clear) {
-		_pTex->count[TextureContainer::Opaque] = 0;
+		bucket.clear();
 	}
-
-	if(_pTex->userflags & POLY_LATE_MIP) {
+	
+	if(material->userflags & POLY_LATE_MIP) {
 		float biasResetVal = 0;
 		GRenderer->GetTextureStage(0)->setMipMapLODBias(biasResetVal);
 	}
 
 }
 
-static void PopOneTriangleListTransparency(TextureContainer *_pTex) {
-
-	if(!_pTex->count[TextureContainer::Blended]
-	   && !_pTex->count[TextureContainer::Additive]
-	   && !_pTex->count[TextureContainer::Subtractive]
-	   && !_pTex->count[TextureContainer::Multiplicative]) {
+static void PopOneTriangleListTransparency(TextureContainer * material) {
+	
+	std::vector<TexturedVertex> * batch = material->m_modelBatch;
+	
+	if(batch[BatchBucket_Blended].empty()
+	   && batch[BatchBucket_Additive].empty()
+	   && batch[BatchBucket_Subtractive].empty()
+	   && batch[BatchBucket_Multiplicative].empty()) {
 		return;
 	}
-
-	GRenderer->SetTexture(0, _pTex);
-
-	if(_pTex->count[TextureContainer::Blended]) {
-		GRenderer->SetBlendFunc(BlendDstColor, BlendSrcColor);
-		if(_pTex->count[TextureContainer::Blended]) {
-			EERIEDRAWPRIM(Renderer::TriangleList, _pTex->list[TextureContainer::Blended],
-						  _pTex->count[TextureContainer::Blended]);
-			_pTex->count[TextureContainer::Blended]=0;
-		}
+	
+	RenderState baseState = render3D().depthWrite(false);
+	UseTextureState textureState(TextureStage::FilterLinear, TextureStage::WrapClamp);
+	
+	GRenderer->SetTexture(0, material);
+	baseState.setAlphaCutout(material->m_pTexture && material->m_pTexture->hasAlpha());
+	
+	if(!batch[BatchBucket_Blended].empty()) {
+		UseRenderState state(baseState.blend(BlendDstColor, BlendSrcColor));
+		EERIEDRAWPRIM(Renderer::TriangleList, &batch[BatchBucket_Blended][0],
+		                                      batch[BatchBucket_Blended].size());
+		batch[BatchBucket_Blended].clear();
 	}
-
-	if(_pTex->count[TextureContainer::Additive]) {
-		GRenderer->SetBlendFunc(BlendOne, BlendOne);
-		if(_pTex->count[TextureContainer::Additive]) {
-			EERIEDRAWPRIM(Renderer::TriangleList, _pTex->list[TextureContainer::Additive],
-						  _pTex->count[TextureContainer::Additive]);
-			_pTex->count[TextureContainer::Additive]=0;
-		}
+	
+	if(!batch[BatchBucket_Additive].empty()) {
+		UseRenderState state(baseState.blend(BlendOne, BlendOne));
+		EERIEDRAWPRIM(Renderer::TriangleList, &batch[BatchBucket_Additive][0],
+		                                      batch[BatchBucket_Additive].size());
+		batch[BatchBucket_Additive].clear();
 	}
-
-	if(_pTex->count[TextureContainer::Subtractive]) {
-		GRenderer->SetBlendFunc(BlendZero, BlendInvSrcColor);
-		if(_pTex->count[TextureContainer::Subtractive]) {
-			EERIEDRAWPRIM(Renderer::TriangleList, _pTex->list[TextureContainer::Subtractive],
-						  _pTex->count[TextureContainer::Subtractive]);
-			_pTex->count[TextureContainer::Subtractive]=0;
-		}
+	
+	if(!batch[BatchBucket_Subtractive].empty()) {
+		UseRenderState state(baseState.blend(BlendZero, BlendInvSrcColor));
+		EERIEDRAWPRIM(Renderer::TriangleList, &batch[BatchBucket_Subtractive][0],
+		                                      batch[BatchBucket_Subtractive].size());
+		batch[BatchBucket_Subtractive].clear();
 	}
-
-	if(_pTex->count[TextureContainer::Multiplicative]) {
-		GRenderer->SetBlendFunc(BlendOne, BlendOne);
-		if(_pTex->count[TextureContainer::Multiplicative]) {
-			EERIEDRAWPRIM(Renderer::TriangleList, _pTex->list[TextureContainer::Multiplicative],
-						  _pTex->count[TextureContainer::Multiplicative]);
-			_pTex->count[TextureContainer::Multiplicative] = 0;
-		}
+	
+	if(!batch[BatchBucket_Multiplicative].empty()) {
+		UseRenderState state(baseState.blend(BlendOne, BlendOne));
+		EERIEDRAWPRIM(Renderer::TriangleList, &batch[BatchBucket_Multiplicative][0],
+		                                      batch[BatchBucket_Multiplicative].size());
+		batch[BatchBucket_Multiplicative].clear();
 	}
+	
 }
 
-void PopAllTriangleList(bool clear) {
+void PopAllTriangleListOpaque(RenderState baseState, bool clear) {
 	
 	ARX_PROFILE_FUNC();
 	
-	GRenderer->SetAlphaFunc(Renderer::CmpGreater, .5f);
-	GRenderer->SetCulling(CullNone);
-
+	// TODO sort texture list according to material properties to reduce state changes
 	TextureContainer * pTex = GetTextureList();
 	while(pTex) {
-		PopOneTriangleList(pTex, clear);
+		PopOneTriangleList(baseState, pTex, clear);
 		pTex = pTex->m_pNext;
 	}
-	GRenderer->SetAlphaFunc(Renderer::CmpNotEqual, 0.f);
+	
 }
 
 void PopAllTriangleListTransparency() {
@@ -208,188 +199,171 @@ void PopAllTriangleListTransparency() {
 	ARX_PROFILE_FUNC();
 	
 	GRenderer->SetFogColor(Color::none);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, true);
-	GRenderer->SetRenderState(Renderer::DepthWrite, false);
-	GRenderer->SetBlendFunc(BlendDstColor, BlendOne);
-	GRenderer->SetAlphaFunc(Renderer::CmpGreater, .5f);
-
-	GRenderer->SetCulling(CullNone);
-
-	PopOneTriangleList(&TexSpecialColor, true);
-
+	
+	PopOneTriangleList(render3D().depthWrite(false).blend(BlendDstColor, BlendOne), &TexSpecialColor, true);
+	
 	TextureContainer * pTex = GetTextureList();
 	while(pTex) {
 		PopOneTriangleListTransparency(pTex);
 		pTex = pTex->m_pNext;
 	}
-
-	GRenderer->SetFogColor(ulBKGColor);
-	GRenderer->SetRenderState(Renderer::AlphaBlending, false);
-	GRenderer->SetRenderState(Renderer::DepthWrite, true);
-	GRenderer->SetAlphaFunc(Renderer::CmpNotEqual, 0.f);
+	
+	GRenderer->SetFogColor(g_fogColor);
+	
 }
 
 
 extern bool EXTERNALVIEW;
 
-float Cedric_GetInvisibility(Entity *io) {
-	if(io) {
-		float invisibility = io->invisibility;
-
-		if (invisibility > 1.f)
-			invisibility -= 1.f;
-
-		if(io != entities.player() && invisibility > 0.f && !EXTERNALVIEW) {
-			SpellBase * spell = spells.getSpellOnTarget(io->index(), SPELL_INVISIBILITY);
-
-			if(spell) {
-				if(player.m_skillFull.intuition > spell->m_level * 10) {
-					invisibility -= player.m_skillFull.intuition * (1.0f / 100)
-									+ spell->m_level * (1.0f / 10);
-
-					invisibility = glm::clamp(invisibility, 0.1f, 1.f);
-				}
-			}
-		}
-		return invisibility;
-	} else {
+float Cedric_GetInvisibility(Entity * io) {
+	
+	if(!io) {
 		return 0.f;
 	}
+	
+	float invisibility = io->invisibility;
+	if(invisibility > 1.f) {
+		invisibility -= 1.f;
+	}
+	
+	if(io != entities.player() && invisibility > 0.f && !EXTERNALVIEW) {
+		SpellBase * spell = spells.getSpellOnTarget(io->index(), SPELL_INVISIBILITY);
+		if(spell) {
+			if(player.m_skillFull.intuition > spell->m_level * 10) {
+				invisibility -= player.m_skillFull.intuition * (1.0f / 100) + spell->m_level * (1.0f / 10);
+				invisibility = glm::clamp(invisibility, 0.1f, 1.f);
+			}
+		}
+	}
+	
+	return invisibility;
 }
 
-//TODO Move somewhere else
-void Cedric_ApplyLightingFirstPartRefactor(Entity *io) {
-
-	if(!io)
-		return;
-
-	io->special_color = Color3f::white;
+// TODO Move somewhere else
+void Cedric_ApplyLightingFirstPartRefactor(Entity & io) {
+	
+	io.special_color = Color3f::white;
 
 	float poisonpercent = 0.f;
 	float trappercent = 0.f;
 	float secretpercent = 0.f;
 
-	if((io->ioflags & IO_NPC) && io->_npcdata->poisonned > 0.f) {
-		poisonpercent = io->_npcdata->poisonned * ( 1.0f / 20 );
+	if((io.ioflags & IO_NPC) && io._npcdata->poisonned > 0.f) {
+		poisonpercent = io._npcdata->poisonned * 0.05f;
 		if(poisonpercent > 1.f)
 			poisonpercent = 1.f;
 	}
 
-	if((io->ioflags & IO_ITEM) && io->poisonous > 0.f && io->poisonous_count) {
-		poisonpercent = io->poisonous * (1.0f / 20);
+	if((io.ioflags & IO_ITEM) && io.poisonous > 0.f && io.poisonous_count) {
+		poisonpercent = io.poisonous * (1.0f / 20);
 		if(poisonpercent > 1.f)
 			poisonpercent = 1.f;
 	}
 
-	if((io->ioflags & IO_FIX) && io->_fixdata->trapvalue > -1) {
-		trappercent = player.TRAP_DETECT - io->_fixdata->trapvalue;
+	if((io.ioflags & IO_FIX) && io._fixdata->trapvalue > -1) {
+		trappercent = player.TRAP_DETECT - io._fixdata->trapvalue;
 		if(trappercent > 0.f) {
-			trappercent = 0.6f + trappercent * ( 1.0f / 100 );
+			trappercent = 0.6f + trappercent * 0.01f;
 			trappercent = glm::clamp(trappercent, 0.6f, 1.f);
 		}
 	}
 
-	if((io->ioflags & IO_FIX) && io->secretvalue > -1) {
-		secretpercent = player.TRAP_SECRET - io->secretvalue;
+	if((io.ioflags & IO_FIX) && io.secretvalue > -1) {
+		secretpercent = player.TRAP_SECRET - io.secretvalue;
 		if(secretpercent > 0.f) {
-			secretpercent = 0.6f + secretpercent * ( 1.0f / 100 );
+			secretpercent = 0.6f + secretpercent * 0.01f;
 			secretpercent = glm::clamp(secretpercent, 0.6f, 1.f);
 		}
 	}
 
 	if(poisonpercent > 0.f) {
-		io->special_color = Color3f::green;
+		io.special_color = Color3f::green;
 	}
 
 	if(trappercent > 0.f) {
-		io->special_color = Color3f(trappercent, 1.f - trappercent, 1.f - trappercent);
+		io.special_color = Color3f(trappercent, 1.f - trappercent, 1.f - trappercent);
 	}
 
 	if(secretpercent > 0.f) {
-		io->special_color = Color3f(1.f - secretpercent, 1.f - secretpercent, secretpercent);
+		io.special_color = Color3f(1.f - secretpercent, 1.f - secretpercent, secretpercent);
 	}
 
-	if(io->ioflags & IO_FREEZESCRIPT) {
-		io->special_color = Color3f::blue;
+	if(io.ioflags & IO_FREEZESCRIPT) {
+		io.special_color = Color3f::blue;
 	}
 
-	if(io->sfx_flag & SFX_TYPE_YLSIDE_DEATH) {
-		if(io->show == SHOW_FLAG_TELEPORTING) {
-			float fTime = io->sfx_time + g_framedelay;
-			io->sfx_time = checked_range_cast<unsigned long>(fTime);
-
-			if (io->sfx_time >= arxtime.now_ul())
-				io->sfx_time = arxtime.now_ul();
+	if(io.sfx_flag & SFX_TYPE_YLSIDE_DEATH) {
+		if(io.show == SHOW_FLAG_TELEPORTING) {
+			io.sfx_time = io.sfx_time + g_gameTime.lastFrameDuration();
+			if(io.sfx_time >= g_gameTime.now()) {
+				io.sfx_time = g_gameTime.now();
+			}
 		} else {
-			const unsigned long elapsed = arxtime.now_ul() - io->sfx_time;
+			const GameDuration elapsed = g_gameTime.now() - io.sfx_time;
 
 			if(elapsed > 0) {
-				if(elapsed < 3000) { // 5 seconds to red
-					float ratio = elapsed * (1.0f / 3000);
-					io->special_color = Color3f(1.f, 1.f - ratio, 1.f - ratio);
-					io->highlightColor += Color3f(std::max(ratio - 0.5f, 0.f), 0.f, 0.f) * 255;
+				if(elapsed < GameDurationMs(3000)) { // 5 seconds to red
+					float ratio = elapsed / GameDurationMs(3000);
+					io.special_color = Color3f(1.f, 1.f - ratio, 1.f - ratio);
+					io.highlightColor += Color3f(std::max(ratio - 0.5f, 0.f), 0.f, 0.f) * 255;
 					AddRandomSmoke(io, 1);
-				} else if(elapsed < 6000) { // 5 seconds to White
-					float ratio = elapsed * (1.0f / 3000);
-					io->special_color = Color3f::red;
-					io->highlightColor += Color3f(std::max(ratio - 0.5f, 0.f), 0.f, 0.f) * 255;
+				} else if(elapsed < GameDurationMs(6000)) { // 5 seconds to White
+					float ratio = elapsed / GameDurationMs(3000);
+					io.special_color = Color3f::red;
+					io.highlightColor += Color3f(std::max(ratio - 0.5f, 0.f), 0.f, 0.f) * 255;
 					AddRandomSmoke(io, 2);
 				} else { // SFX finish
-					io->sfx_time = 0;
+					io.sfx_time = 0;
 
-					if(io->ioflags & IO_NPC) {
+					if(io.ioflags & IO_NPC) {
 						MakePlayerAppearsFX(io);
 						AddRandomSmoke(io, 50);
-						Color3f rgb = io->_npcdata->blood_color.to<float>();
-						Sphere sp = Sphere(io->pos, 200.f);
+						Color3f rgb(io._npcdata->blood_color);
+						Sphere sp = Sphere(io.pos, 200.f);
 						
 						long count = 6;
 						while(count--) {
 							Sphere splatSphere = Sphere(sp.origin, Random::getf(30.f, 60.f));
-							SpawnGroundSplat(splatSphere, rgb, 1);
+							PolyBoomAddSplat(splatSphere, rgb, 1);
 							sp.origin.y -= Random::getf(0.f, 150.f);
-
-							ARX_PARTICLES_Spawn_Splat(sp.origin, 200.f, io->_npcdata->blood_color);
-
-							sp.origin = io->pos + randomVec3f() * Vec3f(200.f, 20.f,200.f) - Vec3f(100.f, 10.f, 100.f);
+							ARX_PARTICLES_Spawn_Splat(sp.origin, 200.f, io._npcdata->blood_color);
+							sp.origin = io.pos + arx::randomVec3f() * Vec3f(200.f, 20.f, 200.f) - Vec3f(100.f, 10.f, 100.f);
 							sp.radius = Random::getf(100.f, 200.f);
 						}
-
-						LightHandle nn = GetFreeDynLight();
-						if(lightHandleIsValid(nn)) {
-							EERIE_LIGHT * light = lightHandleGet(nn);
-							
+						
+						EERIE_LIGHT * light = dynLightCreate();
+						if(light) {
 							light->intensity = Random::getf(0.7f, 2.7f);
 							light->fallend = 600.f;
 							light->fallstart = 400.f;
 							light->rgb = Color3f(1.0f, 0.8f, 0.f);
-							light->pos = io->pos + Vec3f(0.f, -80.f, 0.f);
-							light->duration = 600;
+							light->pos = io.pos + Vec3f(0.f, -80.f, 0.f);
+							light->duration = GameDurationMs(600);
 						}
 
-						if(io->sfx_flag & SFX_TYPE_INCINERATE) {
-							io->sfx_flag &= ~SFX_TYPE_INCINERATE;
-							io->sfx_flag &= ~SFX_TYPE_YLSIDE_DEATH;
-							SpellBase * spell = spells.getSpellOnTarget(io->index(), SPELL_INCINERATE);
+						if(io.sfx_flag & SFX_TYPE_INCINERATE) {
+							io.sfx_flag &= ~SFX_TYPE_INCINERATE;
+							io.sfx_flag &= ~SFX_TYPE_YLSIDE_DEATH;
+							SpellBase * spell = spells.getSpellOnTarget(io.index(), SPELL_INCINERATE);
 
 							if(!spell)
-								spell = spells.getSpellOnTarget(io->index(), SPELL_MASS_INCINERATE);
+								spell = spells.getSpellOnTarget(io.index(), SPELL_MASS_INCINERATE);
 
 							if(spell) {
 								spells.endSpell(spell);
 								float damages = 20 * spell->m_level;
-								damages = ARX_SPELLS_ApplyFireProtection(io, damages);
+								damages = ARX_SPELLS_ApplyFireProtection(&io, damages);
 
 								if (ValidIONum(spell->m_caster))
-									ARX_DAMAGES_DamageNPC(io, damages, spell->m_caster, true, &entities[spell->m_caster]->pos);
+									ARX_DAMAGES_DamageNPC(&io, damages, spell->m_caster, true, &entities[spell->m_caster]->pos);
 								else
-									ARX_DAMAGES_DamageNPC(io, damages, spell->m_caster, true, &io->pos);
+									ARX_DAMAGES_DamageNPC(&io, damages, spell->m_caster, true, &io.pos);
 
-								ARX_SOUND_PlaySFX(SND_SPELL_FIRE_HIT, &io->pos);
+								ARX_SOUND_PlaySFX(g_snd.SPELL_FIRE_HIT, &io.pos);
 							}
 						} else {
-							io->sfx_flag &= ~SFX_TYPE_YLSIDE_DEATH;
-							ARX_INTERACTIVE_DestroyIOdelayed(io);
+							io.sfx_flag &= ~SFX_TYPE_YLSIDE_DEATH;
+							ARX_INTERACTIVE_DestroyIOdelayed(&io);
 						}
 					}
 				}
@@ -399,7 +373,8 @@ void Cedric_ApplyLightingFirstPartRefactor(Entity *io) {
 }
 
 static void Cedric_PrepareHalo(EERIE_3DOBJ * eobj, Skeleton * obj) {
-	Vec3f cam_vector = angleToVector(ACTIVECAM->angle);
+	
+	Vec3f cam_vector = angleToVector(g_camera->angle);
 	
 	// Apply light on all vertices
 	for(size_t i = 0; i != obj->bones.size(); i++) {
@@ -414,59 +389,61 @@ static void Cedric_PrepareHalo(EERIE_3DOBJ * eobj, Skeleton * obj) {
 			const Vec3f & inVert = eobj->vertexlist[vertIndex].norm;
 
 			// Get cos angle between light and vertex norm
-			eobj->vertexlist3[vertIndex].norm.z =
+			eobj->vertexWorldPositions[vertIndex].norm.z =
 			    (inVert.x * t_vector.x + inVert.y * t_vector.y + inVert.z * t_vector.z);
 
 		}
 	}
 }
 
-static TexturedVertex * GetNewVertexList(TextureContainer * container,
+static TexturedVertex * GetNewVertexList(std::vector<TexturedVertex> * batch,
                                          const EERIE_FACE & face, float invisibility,
                                          float & fTransp) {
 	
 	fTransp = 0.f;
-
+	
 	if((face.facetype & POLY_TRANS) || invisibility > 0.f) {
-		if(invisibility > 0.f)
+		if(invisibility > 0.f) {
 			fTransp = 2.f - invisibility;
-		else
+		} else {
 			fTransp = face.transval;
-
-		if(fTransp >= 2.f) { //MULTIPLICATIVE
+		}
+		if(fTransp >= 2.f) {
 			fTransp *= (1.f / 2);
 			fTransp += 0.5f;
-			return PushVertexInTable(container, TextureContainer::Multiplicative);
-		} else if(fTransp >= 1.f) { //ADDITIVE
+			return PushVertexInTable(batch[BatchBucket_Multiplicative]);
+		} else if(fTransp >= 1.f) {
 			fTransp -= 1.f;
-			return PushVertexInTable(container, TextureContainer::Additive);
-		} else if(fTransp > 0.f) { //NORMAL TRANS
+			return PushVertexInTable(batch[BatchBucket_Additive]);
+		} else if(fTransp > 0.f) {
 			fTransp = 1.f - fTransp;
-			return PushVertexInTable(container, TextureContainer::Blended);
-		} else { //SUBTRACTIVE
+			return PushVertexInTable(batch[BatchBucket_Blended]);
+		} else {
 			fTransp = 1.f - fTransp;
-			return PushVertexInTable(container, TextureContainer::Subtractive);
+			return PushVertexInTable(batch[BatchBucket_Subtractive]);
 		}
 	} else {
-		return PushVertexInTable(container, TextureContainer::Opaque);
+		return PushVertexInTable(batch[BatchBucket_Opaque]);
 	}
+	
 }
 
 void drawQuadRTP(const RenderMaterial & mat, TexturedQuad quat) {
-	EE_RTP(quat.v[0].p, quat.v[0]);
-	EE_RTP(quat.v[1].p, quat.v[1]);
-	EE_RTP(quat.v[2].p, quat.v[2]);
-	EE_RTP(quat.v[3].p, quat.v[3]);
 	
-	RenderBatcher::getInstance().add(mat, quat);
+	worldToClipSpace(quat.v[0].p, quat.v[0]);
+	worldToClipSpace(quat.v[1].p, quat.v[1]);
+	worldToClipSpace(quat.v[2].p, quat.v[2]);
+	worldToClipSpace(quat.v[3].p, quat.v[3]);
+	
+	g_renderBatcher.add(mat, quat);
 }
 
-void drawTriangle(const RenderMaterial & mat, const TexturedVertex * vertices) {
+void drawTriangle(const RenderMaterial & mat, const TexturedVertexUntransformed * vertices) {
 	
 	TexturedVertex projected[3];
-	EE_P(vertices[0].p, projected[0]);
-	EE_P(vertices[1].p, projected[1]);
-	EE_P(vertices[2].p, projected[2]);
+	worldToClipSpace(vertices[0].p, projected[0]);
+	worldToClipSpace(vertices[1].p, projected[1]);
+	worldToClipSpace(vertices[2].p, projected[2]);
 	projected[0].color = vertices[0].color;
 	projected[0].uv = vertices[0].uv;
 	projected[1].color = vertices[1].color;
@@ -474,7 +451,7 @@ void drawTriangle(const RenderMaterial & mat, const TexturedVertex * vertices) {
 	projected[2].color = vertices[2].color;
 	projected[2].uv = vertices[2].uv;
 	
-	RenderBatcher::getInstance().add(mat, projected);
+	g_renderBatcher.add(mat, projected);
 }
 
 static bool Cedric_IO_Visible(const Vec3f & pos) {
@@ -482,31 +459,36 @@ static bool Cedric_IO_Visible(const Vec3f & pos) {
 	ARX_PROFILE_FUNC();
 	
 	if(ACTIVEBKG) {
-		//TODO maybe readd this
-		//if(fartherThan(io->pos, ACTIVECAM->orgTrans.pos, ACTIVECAM->cdepth * 0.6f))
-		//	return false;
-
-		long xx = pos.x * ACTIVEBKG->Xmul;
-		long yy = pos.z * ACTIVEBKG->Zmul;
-
-		if(xx >= 1 && yy >= 1 && xx < ACTIVEBKG->Xsize-1 && yy < ACTIVEBKG->Zsize-1) {
+		
+		// TODO maybe readd this
+		// if(fartherThan(io->pos, g_camera->pos, g_camera->cdepth * 0.6f))
+		//  return false;
+		
+		long xx = long(pos.x * ACTIVEBKG->m_mul.x);
+		long yy = long(pos.z * ACTIVEBKG->m_mul.y);
+		
+		if(xx >= 1 && yy >= 1 && xx < ACTIVEBKG->m_size.x - 1 && yy < ACTIVEBKG->m_size.y - 1) {
 			for(short z = yy - 1; z <= yy + 1; z++)
 			for(short x = xx - 1; x <= xx + 1; x++) {
-				const EERIE_BKG_INFO & feg = ACTIVEBKG->fastdata[x][z];
-				if(feg.treat)
+				if(ACTIVEBKG->isTileActive(Vec2s(x, z))) {
 					return true;
+				}
 			}
-
 			return false;
 		}
+		
 	}
-
+	
 	return true;
 }
 
 /* Object dynamic lighting */
-static void Cedric_ApplyLighting(ShaderLight lights[], int lightsCount, EERIE_3DOBJ * eobj, Skeleton * obj, const ColorMod & colorMod) {
-
+static void Cedric_ApplyLighting(ShaderLight lights[], size_t lightsCount, EERIE_3DOBJ * eobj, Skeleton * obj, const ColorMod & colorMod) {
+	
+	ARX_PROFILE_FUNC();
+	
+	arx_assert(eobj->vertexColors.size() == eobj->vertexWorldPositions.size());
+	
 	/* Apply light on all vertices */
 	for(size_t i = 0; i != obj->bones.size(); i++) {
 
@@ -516,21 +498,21 @@ static void Cedric_ApplyLighting(ShaderLight lights[], int lightsCount, EERIE_3D
 		for(size_t v = 0; v != obj->bones[i].idxvertices.size(); v++) {
 			size_t vertexIndex = obj->bones[i].idxvertices[v];
 
-			Vec3f & position = eobj->vertexlist3[vertexIndex].v;
+			Vec3f & position = eobj->vertexWorldPositions[vertexIndex].v;
 			Vec3f & normal = eobj->vertexlist[vertexIndex].norm;
 
-			eobj->vertexlist3[vertexIndex].vert.color = ApplyLight(lights, lightsCount, quat, position, normal, colorMod);
+			eobj->vertexColors[vertexIndex] = ApplyLight(lights, lightsCount, quat, position, normal, colorMod);
 		}
 	}
 }
 
-static EERIE_3D_BBOX UpdateBbox3d(EERIE_3DOBJ *eobj) {
+static EERIE_3D_BBOX UpdateBbox3d(EERIE_3DOBJ * eobj) {
 	
 	EERIE_3D_BBOX box3D;
 	box3D.reset();
 
 	for(size_t i = 0 ; i < eobj->vertexlist.size(); i++) {
-		box3D.add(eobj->vertexlist3[i].v);
+		box3D.add(eobj->vertexWorldPositions[i].v);
 	}
 	return box3D;
 }
@@ -539,45 +521,28 @@ EERIE_2D_BBOX UpdateBbox2d(const EERIE_3DOBJ & eobj) {
 	
 	EERIE_2D_BBOX box2D;
 	box2D.reset();
-
-	for(size_t i = 0; i < eobj.vertexlist.size(); i++) {
-		const EERIE_VERTEX & vertex = eobj.vertexlist[i];
-
-		if(   vertex.vert.rhw > 0.f
-		   && vertex.vert.p.x >= -32000
-		   && vertex.vert.p.x <=  32000
-		   && vertex.vert.p.y >= -32000
-		   && vertex.vert.p.y <=  32000
-		) {
-			box2D.add(vertex.vert.p);
-		}
-	}
-	return box2D;
-}
-
-static EERIE_2D_BBOX Cedric_UpdateBbox2d(const EERIE_3DOBJ & eobj) {
 	
-	EERIE_2D_BBOX box2D;
-	box2D.reset();
-
-	for(size_t i = 0; i < eobj.vertexlist.size(); i++) {
-		const EERIE_VERTEX & vertex = eobj.vertexlist3[i];
+	for(size_t i = 0; i < eobj.vertexClipPositions.size(); i++) {
+		const Vec4f & vertex = eobj.vertexClipPositions[i];
 		
-		if(   vertex.vert.rhw > 0.f
-		   && vertex.vert.p.x >= -32000
-		   && vertex.vert.p.x <=  32000
-		   && vertex.vert.p.y >= -32000
-		   && vertex.vert.p.y <=  32000
-		) {
-			box2D.add(vertex.vert.p);
+		if(vertex.w <= 0.f) {
+			continue;
 		}
+		
+		Vec3f p = Vec3f(vertex) / vertex.w;
+		if(p.x >= -32000 && p.x <=  32000 && p.y >= -32000 && p.y <=  32000) {
+			box2D.add(p);
+		}
+		
 	}
 	
 	return box2D;
 }
 
-void DrawEERIEInter_ModelTransform(EERIE_3DOBJ *eobj, const TransformInfo &t) {
-
+void DrawEERIEInter_ModelTransform(EERIE_3DOBJ * eobj, const TransformInfo & t) {
+	
+	arx_assert(eobj->vertexWorldPositions.size() == eobj->vertexlist.size());
+	
 	for(size_t i = 0 ; i < eobj->vertexlist.size(); i++) {
 
 		Vec3f temp = eobj->vertexlist[i].v;
@@ -587,32 +552,30 @@ void DrawEERIEInter_ModelTransform(EERIE_3DOBJ *eobj, const TransformInfo &t) {
 		temp = t.rotation * temp;
 		temp += t.pos;
 
-		eobj->vertexlist3[i].v = temp;
+		eobj->vertexWorldPositions[i].v = temp;
 	}
 }
 
-void DrawEERIEInter_ViewProjectTransform(EERIE_3DOBJ *eobj) {
-	for(size_t i = 0 ; i < eobj->vertexlist.size(); i++) {
-
-		Vec3f tempWorld = EE_RT(eobj->vertexlist3[i].v);
-		EE_P(tempWorld, eobj->vertexlist[i].vert);
+void DrawEERIEInter_ViewProjectTransform(EERIE_3DOBJ * eobj) {
+	arx_assert(eobj->vertexClipPositions.size() == eobj->vertexWorldPositions.size());
+	for(size_t i = 0 ; i < eobj->vertexWorldPositions.size(); i++) {
+		eobj->vertexClipPositions[i] = worldToClipSpace(eobj->vertexWorldPositions[i].v);
 	}
 }
 
 static bool CullFace(const EERIE_3DOBJ * eobj, const EERIE_FACE & face) {
 
 	if(!(face.facetype & POLY_DOUBLESIDED)) {
-		Vec3f normV10 = eobj->vertexlist3[face.vid[1]].v - eobj->vertexlist3[face.vid[0]].v;
-		Vec3f normV20 = eobj->vertexlist3[face.vid[2]].v - eobj->vertexlist3[face.vid[0]].v;
+		Vec3f normV10 = eobj->vertexWorldPositions[face.vid[1]].v - eobj->vertexWorldPositions[face.vid[0]].v;
+		Vec3f normV20 = eobj->vertexWorldPositions[face.vid[2]].v - eobj->vertexWorldPositions[face.vid[0]].v;
 		Vec3f normFace;
 		normFace.x = (normV10.y * normV20.z) - (normV10.z * normV20.y);
 		normFace.y = (normV10.z * normV20.x) - (normV10.x * normV20.z);
 		normFace.z = (normV10.x * normV20.y) - (normV10.y * normV20.x);
-
-		Vec3f nrm = eobj->vertexlist3[face.vid[0]].v - ACTIVECAM->orgTrans.pos;
-
-		if(glm::dot(normFace, nrm) > 0.f)
+		Vec3f nrm = eobj->vertexWorldPositions[face.vid[0]].v - g_camera->m_pos;
+		if(glm::dot(normFace, nrm) > 0.f) {
 			return true;
+		}
 	}
 
 	return false;
@@ -623,33 +586,23 @@ static void AddFixedObjectHalo(const EERIE_FACE & face, const TransformInfo & t,
                                const IO_HALO & halo, TexturedVertex * tvList,
                                const EERIE_3DOBJ * eobj) {
 	
-	float mdist=ACTIVECAM->cdepth;
-	float ddist = mdist-fdist(t.pos, ACTIVECAM->orgTrans.pos);
-	ddist = ddist/mdist;
-	ddist = std::pow(ddist, 6);
-
+	float mdist = g_camera->cdepth;
+	float ddist = mdist - fdist(t.pos, g_camera->m_pos);
+	ddist = ddist / mdist;
+	ddist = glm::pow(ddist, 6.f);
 	ddist = glm::clamp(ddist, 0.25f, 0.9f);
-
-	float tot=0;
+	
+	float tot = 0;
 	float _ffr[3];
-
+	
 	for(long o = 0; o < 3; o++) {
-		Vec3f temporary3D;
-		temporary3D = t.rotation * eobj->vertexlist[face.vid[o]].norm;
-
-		float power = 255.f- glm::abs(255.f*(temporary3D.z)*( 1.0f / 2 ));
-
-		power = glm::clamp(power, 0.f, 255.f);
-
-		tot += power;
-		_ffr[o] = power;
-
-		u8 lfr = halo.color.r * power;
-		u8 lfg = halo.color.g * power;
-		u8 lfb = halo.color.b * power;
-		tvList[o].color = Color(lfr, lfg, lfb, 255).toRGBA();
+		Vec3f temporary3D = t.rotation * eobj->vertexlist[face.vid[o]].norm;
+		float power = glm::clamp(1.f - glm::abs(temporary3D.z * 0.5f), 0.f, 1.f);
+		tot += power * 255.f;
+		_ffr[o] = power * 255.f;
+		tvList[o].color = (halo.color * power).toRGB();
 	}
-
+	
 	if(tot > 150.f) {
 		long first;
 		long second;
@@ -682,60 +635,49 @@ static void AddFixedObjectHalo(const EERIE_FACE & face, const TransformInfo & t,
 		}
 
 		if(_ffr[first] > 70.f && _ffr[second] > 60.f) {
+			float wave = timeWaveSin(g_gameTime.now(), GameDurationMsf(628.319f));
+			float siz = ddist * (halo.radius * 1.5f * (wave * .1f + .7f)) * .6f;
+			
 			TexturedVertex vert[4];
-
 			vert[0] = tvList[first];
 			vert[1] = tvList[first];
 			vert[2] = tvList[second];
 			vert[3] = tvList[second];
-
-			float siz = ddist * (halo.radius * 1.5f * (std::sin(arxtime.get_frame_time() * .01f) * .1f + .7f)) * .6f;
-
-			Vec3f vect1;
-			vect1.x = tvList[first].p.x - tvList[third].p.x;
-			vect1.y = tvList[first].p.y - tvList[third].p.y;
-			float len1 = 1.f / ffsqrt(vect1.x * vect1.x + vect1.y * vect1.y);
-
-			if(vect1.x < 0.f)
-				len1 *= 1.2f;
-
-			vect1.x *= len1;
-			vect1.y *= len1;
-
-			Vec3f vect2;
-			vect2.x = tvList[second].p.x - tvList[third].p.x;
-			vect2.y = tvList[second].p.y - tvList[third].p.y;
-			float len2 = 1.f / ffsqrt(vect2.x * vect2.x + vect2.y * vect2.y);
-
-			if(vect2.x < 0.f)
-				len2 *= 1.2f;
-
-			vect2.x *= len2;
-			vect2.y *= len2;
-
-			vert[1].p.x += (vect1.x + Random::getf(0.1f, 0.2f)) * siz;
-			vert[1].p.y += (vect1.y + Random::getf(0.1f, 0.2f)) * siz;
-			vert[1].color = Color(0, 0, 0, 255).toRGBA();
-
-			vert[0].p.z += 0.0001f;
-			vert[3].p.z += 0.0001f;
-			vert[1].rhw *= .8f;
-			vert[2].rhw *= .8f;
-
-			vert[2].p.x += (vect2.x + Random::getf(0.1f, 0.2f)) * siz;
-			vert[2].p.y += (vect2.y + Random::getf(0.1f, 0.2f)) * siz;
-
-			if(halo.flags & HALO_NEGATIVE)
-				vert[2].color = Color(0, 0, 0, 0).toRGBA();
-			else
-				vert[2].color = Color(0, 0, 0, 255).toRGBA();
-
+			
+			Vec3f a = tvList[first].p / tvList[first].w;
+			Vec3f b = tvList[second].p / tvList[second].w;
+			Vec3f c = tvList[third].p / tvList[third].w;
+			
+			Vec2f vect1 = Vec2f(a - c);
+			vect1 /= ffsqrt(arx::length2(vect1));
+			if(vect1.x < 0.f) {
+				vect1 *= 1.2f;
+			}
+			vert[1].p.x += (vect1.x + Random::getf(0.1f, 0.2f)) * siz * vert[1].w;
+			vert[1].p.y += (vect1.y + Random::getf(0.1f, 0.2f)) * siz * vert[1].w;
+			
+			Vec2f vect2 = Vec2f(b - c);
+			vect2 /= ffsqrt(arx::length2(vect2));
+			if(vect2.x < 0.f) {
+				vect2 *= 1.2f;
+			}
+			vert[2].p.x += (vect2.x + Random::getf(0.1f, 0.2f)) * siz * vert[2].w;
+			vert[2].p.y += (vect2.y + Random::getf(0.1f, 0.2f)) * siz * vert[2].w;
+			
+			vert[0].p.z += 0.0001f * vert[0].w;
+			vert[3].p.z += 0.0001f * vert[3].w;
+			
+			vert[1].color = Color::black.toRGB();
+			vert[2].color = ((halo.flags & HALO_NEGATIVE) ? Color::none : Color::black).toRGBA();
+			
 			Halo_AddVertices(vert);
 		}
 	}
 }
 
-void DrawEERIEInter_Render(EERIE_3DOBJ *eobj, const TransformInfo &t, Entity *io, float invisibility) {
+extern float WATEREFFECT;
+
+void DrawEERIEInter_Render(EERIE_3DOBJ * eobj, const TransformInfo & t, Entity * io, float invisibility) {
 
 	ColorMod colorMod;
 	colorMod.updateFromEntity(io, !io);
@@ -750,8 +692,10 @@ void DrawEERIEInter_Render(EERIE_3DOBJ *eobj, const TransformInfo &t, Entity *io
 	bool useFaceNormal = io && (io->ioflags & IO_ANGULAR);
 	
 	ShaderLight lights[llightsSize];
-	int lightsCount;
+	size_t lightsCount;
 	UpdateLlights(lights, lightsCount, tv, false);
+	
+	arx_assert(eobj->vertexColors.size() == eobj->vertexWorldPositions.size());
 
 	for(size_t i = 0; i < eobj->facelist.size(); i++) {
 		const EERIE_FACE & face = eobj->facelist[i];
@@ -761,71 +705,68 @@ void DrawEERIEInter_Render(EERIE_3DOBJ *eobj, const TransformInfo &t, Entity *io
 
 		if(face.texid < 0)
 			continue;
-
-		TextureContainer *pTex = eobj->texturecontainer[face.texid];
-		if(!pTex)
+		
+		TextureContainer * pTex = eobj->texturecontainer[face.texid];
+		if(!pTex) {
 			continue;
-
+		}
+		
 		float fTransp = 0.f;
-		TexturedVertex *tvList = GetNewVertexList(pTex, face, invisibility, fTransp);
-
+		TexturedVertex * tvList = GetNewVertexList(pTex->m_modelBatch, face, invisibility, fTransp);
+		
 		for(size_t n = 0; n < 3; n++) {
 
 			if(useFaceNormal) {
-				const Vec3f & position = eobj->vertexlist3[face.vid[n]].v;
+				const Vec3f & position = eobj->vertexWorldPositions[face.vid[n]].v;
 				const Vec3f & normal = face.norm;
 
-				eobj->vertexlist3[face.vid[n]].vert.color = ApplyLight(lights, lightsCount, t.rotation, position, normal, colorMod, 0.5f);
+				eobj->vertexColors[face.vid[n]] = ApplyLight(lights, lightsCount, t.rotation, position, normal, colorMod, 0.5f);
 			} else {
-				Vec3f & position = eobj->vertexlist3[face.vid[n]].v;
+				Vec3f & position = eobj->vertexWorldPositions[face.vid[n]].v;
 				Vec3f & normal = eobj->vertexlist[face.vid[n]].norm;
 
-				eobj->vertexlist3[face.vid[n]].vert.color = ApplyLight(lights, lightsCount, t.rotation, position, normal, colorMod);
+				eobj->vertexColors[face.vid[n]] = ApplyLight(lights, lightsCount, t.rotation, position, normal, colorMod);
 			}
-
-			tvList[n] = eobj->vertexlist[face.vid[n]].vert;
+			
+			tvList[n].p = Vec3f(eobj->vertexClipPositions[face.vid[n]]);
+			tvList[n].w = eobj->vertexClipPositions[face.vid[n]].w;
 			tvList[n].uv.x = face.u[n];
 			tvList[n].uv.y = face.v[n];
 
 			// Treat WATER Polys (modify UVs)
 			if(face.facetype & POLY_WATER) {
-				tvList[n].uv += getWaterFxUvOffset(eobj->vertexlist[face.vid[n]].v) * (0.3f * 0.05f);
+				tvList[n].uv += getWaterFxUvOffset(WATEREFFECT, eobj->vertexlist[face.vid[n]].v) * (0.3f * 0.05f);
 			}
 
 			if(face.facetype & POLY_GLOW) {
 				// unaffected by light
-				tvList[n].color = Color(255, 255, 255, 255).toRGBA();
+				tvList[n].color = Color::white.toRGB();
 			} else {
 				// Normal Illuminations
-				tvList[n].color = eobj->vertexlist3[face.vid[n]].vert.color;
+				tvList[n].color = eobj->vertexColors[face.vid[n]];
 			}
 
 			// TODO copy-paste
 			if(io && player.m_improve) {
-				long lr = Color::fromRGBA(tvList[n].color).r;
-				float ffr=(float)(lr);
-
-				float dd = tvList[n].rhw;
+				
+				float lr = Color4f::fromRGBA(tvList[n].color).r;
+				
+				float dd = 1.f / tvList[n].w;
 
 				dd = glm::clamp(dd, 0.f, 1.f);
 
 				Vec3f & norm = eobj->vertexlist[face.vid[n]].norm;
-
-				float fb=((1.f-dd)*6.f + (glm::abs(norm.x) + glm::abs(norm.y))) * 0.125f;
-				float fr=((.6f-dd)*6.f + (glm::abs(norm.z) + glm::abs(norm.y))) * 0.125f;
-
-				if(fr < 0.f)
+				
+				float fb = ((1.f - dd) * 6.f + (glm::abs(norm.x) + glm::abs(norm.y))) * 0.125f;
+				float fr = ((0.6f - dd) * 6.f + (glm::abs(norm.z) + glm::abs(norm.y))) * 0.125f;
+				
+				if(fr < 0.f) {
 					fr = 0.f;
-				else
-					fr = std::max(ffr, fr * 255.f);
-
-				fr=std::min(fr,255.f);
-				fb*=255.f;
-				fb=std::min(fb,255.f);
-				u8 lfr = fr;
-				u8 lfb = fb;
-				u8 lfg = 0x1E;
-				tvList[n].color = Color(lfr, lfg, lfb, 255).toRGBA();
+				} else {
+					fr = std::max(lr, fr);
+				}
+				
+				tvList[n].color = Color::rgb(fr, 0.118f, fb).toRGB();
 			}
 
 			// Transparent poly: storing info to draw later
@@ -878,21 +819,16 @@ struct HaloRenderInfo {
 	
 	HaloRenderInfo()
 		: halo(NULL)
-		, selection()
 	{ }
 	
-	HaloRenderInfo(IO_HALO * halo, ObjSelection selection)
-		: halo(halo)
-		, selection(selection)
+	explicit  HaloRenderInfo(IO_HALO * halo_, ObjSelection selection_ = ObjSelection())
+		: halo(halo_)
+		, selection(selection_)
 	{}
-
-	explicit HaloRenderInfo(IO_HALO * halo)
-		: halo(halo)
-		, selection()
-	{}
-
+	
 	IO_HALO * halo;
 	ObjSelection selection;
+	
 };
 
 struct HaloInfo {
@@ -933,25 +869,28 @@ extern long IN_BOOK_DRAW;
 static void PrepareAnimatedObjectHalo(HaloInfo & haloInfo, const Vec3f & pos,
                                       Skeleton * obj, EERIE_3DOBJ * eobj) {
 	
-		Vec3f ftrPos = pos;
-		//TODO copy-pase
-		float mdist = ACTIVECAM->cdepth;
-		mdist *= ( 1.0f / 2 );
-
-		float ddist = mdist-fdist(ftrPos, ACTIVECAM->orgTrans.pos);
-		ddist = ddist/mdist;
-		ddist = std::pow(ddist, 6);
-		ddist = glm::clamp(ddist, 0.25f, 0.9f);
-
-		haloInfo.ddist = ddist;
-
-		Cedric_PrepareHalo(eobj, obj);
-
-		haloInfo.MAX_ZEDE = 0.f;
-		for(size_t i = 0; i < eobj->vertexlist.size(); i++) {
-			if(eobj->vertexlist3[i].vert.rhw > 0.f)
-				haloInfo.MAX_ZEDE = std::max(eobj->vertexlist3[i].vert.p.z, haloInfo.MAX_ZEDE);
+	Vec3f ftrPos = pos;
+	// TODO copy-pase
+	float mdist = g_camera->cdepth;
+	mdist *= 0.5f;
+	
+	float ddist = mdist - fdist(ftrPos, g_camera->m_pos);
+	ddist = ddist / mdist;
+	ddist = glm::pow(ddist, 6.f);
+	ddist = glm::clamp(ddist, 0.25f, 0.9f);
+	
+	haloInfo.ddist = ddist;
+	
+	Cedric_PrepareHalo(eobj, obj);
+	
+	haloInfo.MAX_ZEDE = 0.f;
+	for(size_t i = 0; i < eobj->vertexlist.size(); i++) {
+		if(eobj->vertexClipPositions[i].w > 0.f) {
+			haloInfo.MAX_ZEDE = std::max(eobj->vertexClipPositions[i].z / eobj->vertexClipPositions[i].w,
+			                             haloInfo.MAX_ZEDE);
 		}
+	}
+	
 }
 
 // TODO copy-paste halo
@@ -975,23 +914,15 @@ static void AddAnimatedObjectHalo(HaloInfo & haloInfo, const unsigned short * pa
 	float tot = 0;
 	float _ffr[3];
 	ColorRGBA colors[3];
-
+	
 	for(size_t o = 0; o < 3; o++) {
-		float tttz	= glm::abs(eobj->vertexlist3[paf[o]].norm.z) * ( 1.0f / 2 );
-		float power = 255.f - (float)(255.f * tttz);
-		power *= (1.f - invisibility);
-
-		power = glm::clamp(power, 0.f, 255.f);
-
-		tot += power;
-		_ffr[o] = power;
-
-		u8 lfr = curhalo->color.r * power;
-		u8 lfg = curhalo->color.g * power;
-		u8 lfb = curhalo->color.b * power;
-		colors[o] = Color(lfr, lfg, lfb, 255).toRGBA();
+		float tttz = glm::abs(eobj->vertexWorldPositions[paf[o]].norm.z) * 0.5f;
+		float power =  glm::clamp((1.f - tttz) * (1.f - invisibility), 0.f, 1.f);
+		tot += power * 255.f;
+		_ffr[o] = power * 255.f;
+		colors[o] = (curhalo->color * power).toRGB();
 	}
-
+	
 	if(tot > 260) {
 		long first;
 		long second;
@@ -1024,93 +955,74 @@ static void AddAnimatedObjectHalo(HaloInfo & haloInfo, const unsigned short * pa
 		}
 
 		if(_ffr[first] > 150.f && _ffr[second] > 110.f) {
+			float wave = timeWaveSin(g_gameTime.now(), GameDurationMsf(628.319f));
+			float siz = haloInfo.ddist * (curhalo->radius * (wave * .1f + 1.f)) * .6f;
+			if(io == entities.player() && haloInfo.ddist > 0.8f && !EXTERNALVIEW) {
+				siz *= 1.5f;
+			}
+			
 			TexturedVertex vert[4];
-
 			vert[0] = tvList[first];
 			vert[1] = tvList[first];
 			vert[2] = tvList[second];
 			vert[3] = tvList[second];
-
+			
+			Vec3f a = tvList[first].p / tvList[first].w;
+			Vec3f b = tvList[second].p / tvList[second].w;
+			Vec3f c = tvList[third].p / tvList[third].w;
+			
+			float valll = 0.0006f + (glm::abs(a.z) + glm::abs(b.z) - 2 * glm::abs(c.z)) * 0.1f;
+			valll = std::max(valll, 0.f);
+			
+			Vec2f vect1 = Vec2f(a - c);
+			vect1 /= ffsqrt(arx::length2(vect1));
+			if(vect1.x < 0.f) {
+				vect1 *= 2.4f;
+			} else {
+				vect1 *= 2.f;
+			}
+			vert[1].p.x += (vect1.x + Random::getf(0.1f, 0.2f)) * (siz * vert[1].w);
+			vert[1].p.y += (vect1.y + Random::getf(0.1f, 0.2f)) * (siz * vert[1].w);
+			vert[1].p.z += valll * vert[1].w;
+			vert[1].p.z = (vert[1].p.z + haloInfo.MAX_ZEDE * vert[1].w) * 0.5f;
+			
+			Vec2f vect2 = Vec2f(b - c);
+			vect2 /= ffsqrt(arx::length2(vect2));
+			if(vect2.x < 0.f) {
+				vect2 *= 1.2f;
+			}
+			vert[2].p.x += (vect2.x + Random::getf(0.1f, 0.2f)) * (siz * vert[2].w);
+			vert[2].p.y += (vect2.y + Random::getf(0.1f, 0.2f)) * (siz * vert[2].w);
+			vert[2].p.z += valll * vert[2].w;
+			vert[2].p.z = (vert[2].p.z + haloInfo.MAX_ZEDE * vert[2].w) * 0.5f;
+			
+			vert[0].p.z += 0.0001f * vert[0].w;
+			vert[3].p.z += 0.0001f * vert[3].w;
+			
 			vert[0].color = colors[first];
-			vert[1].color = colors[first];
-			vert[2].color = colors[second];
+			vert[1].color = Color::black.toRGB();
+			vert[2].color = ((curhalo->flags & HALO_NEGATIVE) ? Color::none : Color::black).toRGBA();
 			vert[3].color = colors[second];
-
-			float siz = haloInfo.ddist * (curhalo->radius * (std::sin(arxtime.get_frame_time() * .01f) * .1f + 1.f)) * .6f;
-
-			if(io == entities.player() && haloInfo.ddist > 0.8f && !EXTERNALVIEW)
-				siz *= 1.5f;
-
-			Vec3f vect1;
-			vect1.x = tvList[first].p.x - tvList[third].p.x;
-			vect1.y = tvList[first].p.y - tvList[third].p.y;
-			float len1 = 2.f / ffsqrt(vect1.x * vect1.x + vect1.y * vect1.y);
-
-			if(vect1.x < 0.f)
-				len1 *= 1.2f;
-
-			vect1.x *= len1;
-			vect1.y *= len1;
-
-			Vec3f vect2;
-			vect2.x = tvList[second].p.x - tvList[third].p.x;
-			vect2.y = tvList[second].p.y - tvList[third].p.y;
-			float len2 = 1.f / ffsqrt(vect2.x * vect2.x + vect2.y * vect2.y);
-
-			if(vect2.x < 0.f)
-				len2 *= 1.2f;
-
-			vect2.x *= len2;
-			vect2.y *= len2;
-
-			vert[1].p.x += (vect1.x + Random::getf(0.1f, 0.2f)) * siz;
-			vert[1].p.y += (vect1.y + Random::getf(0.1f, 0.2f)) * siz;
-			vert[1].color = Color(0, 0, 0, 255).toRGBA();
-
-			float valll;
-			valll = 0.005f + (glm::abs(tvList[first].p.z) - glm::abs(tvList[third].p.z))
-						   + (glm::abs(tvList[second].p.z) - glm::abs(tvList[third].p.z));
-			valll = 0.0001f + valll * ( 1.0f / 10 );
-
-			if(valll < 0.f)
-				valll = 0.f;
-
-			vert[1].p.z	+= valll;
-			vert[2].p.z	+= valll;
-
-			vert[0].p.z	+= 0.0001f;
-			vert[3].p.z	+= 0.0001f;//*( 1.0f / 2 );
-			vert[1].rhw	*= .98f;
-			vert[2].rhw	*= .98f;
-			vert[0].rhw	*= .98f;
-			vert[3].rhw	*= .98f;
-
-			vert[2].p.x += (vect2.x + Random::getf(0.1f, 0.2f)) * siz;
-			vert[2].p.y += (vect2.y + Random::getf(0.1f, 0.2f)) * siz;
-
-			vert[1].p.z = (vert[1].p.z + haloInfo.MAX_ZEDE) * ( 1.0f / 2 );
-			vert[2].p.z = (vert[2].p.z + haloInfo.MAX_ZEDE) * ( 1.0f / 2 );
-
-			if(curhalo->flags & HALO_NEGATIVE)
-				vert[2].color = Color(0, 0, 0, 0).toRGBA();
-			else
-				vert[2].color = Color(0, 0, 0, 255).toRGBA();
-
+			
 			Halo_AddVertices(vert);
 		}
 	}
 }
 
-static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io, const Vec3f & pos, float invisibility) {
-
-	if(invisibility == 1.f)
+static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
+                                const Vec3f & pos, float invisibility) {
+	
+	ARX_PROFILE_FUNC();
+	
+	if(invisibility == 1.f) {
 		return;
-
-	Entity *use_io = io;
-
-	if(!io && IN_BOOK_DRAW && eobj == entities.player()->obj)
+	}
+	
+	Entity * use_io = io;
+	if(!io && IN_BOOK_DRAW && eobj == entities.player()->obj) {
 		use_io = entities.player();
-
+	}
+	
 	HaloInfo haloInfo;
 	if(use_io) {
 		if(use_io == entities.player()) {
@@ -1131,9 +1043,9 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 	bool glow = false;
 	ColorRGBA glowColor;
 	if(io && (io->sfx_flag & SFX_TYPE_YLSIDE_DEATH) && io->show != SHOW_FLAG_TELEPORTING) {
-		const unsigned long elapsed = arxtime.now_ul() - io->sfx_time;
-		if(elapsed >= 3000 && elapsed < 6000) {
-			float ratio = (elapsed - 3000) * (1.0f / 3000);
+		const GameDuration elapsed = g_gameTime.now() - io->sfx_time;
+		if(elapsed >= GameDurationMs(3000) && elapsed < GameDurationMs(6000)) {
+			float ratio = (elapsed - GameDurationMs(3000)) / GameDurationMs(3000);
 			glowColor = Color::gray(ratio).toRGB();
 			glow = true;
 		}
@@ -1150,21 +1062,21 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 
 		if(face.texid < 0)
 			continue;
-
-		TextureContainer *pTex = eobj->texturecontainer[face.texid];
-		if(!pTex)
+		
+		TextureContainer * pTex = eobj->texturecontainer[face.texid];
+		if(!pTex) {
 			continue;
-
+		}
+		
 		float fTransp = 0.f;
-
-		TexturedVertex *tvList = GetNewVertexList(pTex, face, invisibility, fTransp);
-
+		
+		TexturedVertex * tvList = GetNewVertexList(pTex->m_modelBatch, face, invisibility, fTransp);
+		
 		for(size_t n = 0; n < 3; n++) {
-			tvList[n].p     = eobj->vertexlist3[face.vid[n]].vert.p;
-			tvList[n].rhw   = eobj->vertexlist3[face.vid[n]].vert.rhw;
-			tvList[n].color = eobj->vertexlist3[face.vid[n]].vert.color;
-			tvList[n].uv.x  = face.u[n];
-			tvList[n].uv.y  = face.v[n];
+			tvList[n].p = Vec3f(eobj->vertexClipPositions[face.vid[n]]);
+			tvList[n].w = eobj->vertexClipPositions[face.vid[n]].w;
+			tvList[n].uv = Vec2f(face.u[n], face.v[n]);
+			tvList[n].color = eobj->vertexColors[face.vid[n]];
 		}
 
 		if((face.facetype & POLY_TRANS) || invisibility > 0.f) {
@@ -1176,61 +1088,63 @@ static void Cedric_RenderObject(EERIE_3DOBJ * eobj, Skeleton * obj, Entity * io,
 		}
 		
 		if(glow) {
-			TexturedVertex * tv2 = PushVertexInTable(&TexSpecialColor, TextureContainer::Opaque);
+			TexturedVertex * tv2 = PushVertexInTable(TexSpecialColor.m_modelBatch[BatchBucket_Opaque]);
 			std::copy(tvList, tvList + 3, tv2);
 			tv2[0].color = tv2[1].color = tv2[2].color = glowColor;
 		}
+		
 	}
 }
 
 static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos,
                                            Entity * io, float invisibility) {
 	
-	Skeleton *obj = eobj->m_skeleton;
-
-	if(!obj)
+	Skeleton * obj = eobj->m_skeleton;
+	if(!obj) {
 		return;
-
+	}
+	
 	ColorMod colorMod;
 	colorMod.updateFromEntity(io);
-
+	
 	/* Get nearest lights */
 	Vec3f tv = pos;
-
-	if(io && io->obj->fastaccess.view_attach != ActionPoint() && io->obj->fastaccess.head_group_origin != -1)
-		tv.y = io->obj->vertexlist3[io->obj->fastaccess.head_group_origin].v.y + 10;
-	else
+	
+	if(io && io->obj->fastaccess.head_group_origin != ObjVertHandle()) {
+		tv.y = io->obj->vertexWorldPositions[io->obj->fastaccess.head_group_origin.handleData()].v.y + 10;
+	} else {
 		tv.y -= 90.f;
-
+	}
+	
 	ShaderLight lights[llightsSize];
-	int lightsCount;
+	size_t lightsCount;
 	UpdateLlights(lights, lightsCount, tv, false);
-
+	
 	Cedric_ApplyLighting(lights, lightsCount, eobj, obj, colorMod);
-
+	
 	Cedric_RenderObject(eobj, obj, io, pos, invisibility);
-
+	
 	// Now we can render Linked Objects
 	for(size_t k = 0; k < eobj->linked.size(); k++) {
 		const EERIE_LINKED & link = eobj->linked[k];
-
+		
 		if(link.lgroup == ObjVertGroup() || !link.obj)
 			continue;
-
+		
 		// specific check to avoid drawing player weapon on its back when in subjective view
 		if(io == entities.player() &&
 			link.lidx == entities.player()->obj->fastaccess.weapon_attach &&
 			!EXTERNALVIEW
-		)
+		) {
 			continue;
-
-
+		}
+		
 		TransformInfo t(
 			actionPointPosition(eobj, link.lidx),
 			eobj->m_skeleton->bones[link.lgroup.handleData()].anim.quat,
 			link.io ? link.io->scale : 1.f,
 			link.obj->vertexlist[link.lidx2.handleData()].v - link.obj->vertexlist[link.obj->origin].v);
-
+		
 		DrawEERIEInter(link.obj, t, link.io, true, invisibility);
 	}
 }
@@ -1238,28 +1152,28 @@ static void Cedric_AnimateDrawEntityRender(EERIE_3DOBJ * eobj, const Vec3f & pos
 static Vec3f CalcTranslation(AnimLayer & layer) {
 	
 	if(!layer.cur_anim) {
-		return Vec3f_ZERO;
+		return Vec3f(0.f);
 	}
 	
-	EERIE_ANIM	*eanim = layer.cur_anim->anims[layer.altidx_cur];
-	
+	EERIE_ANIM * eanim = layer.currentAltAnim();
 	if(!eanim) {
-		return Vec3f_ZERO;
+		return Vec3f(0.f);
 	}
 	
-	//Avoiding impossible cases
+	// Avoiding impossible cases
 	if(layer.currentFrame < 0) {
 		layer.currentFrame = 0;
 		layer.currentInterpolation = 0.f;
-	} else if(layer.currentFrame >= eanim->nb_key_frames - 1) {
-		layer.currentFrame = eanim->nb_key_frames - 2;
+	} else if(layer.currentFrame >= long(eanim->frames.size()) - 1) {
+		layer.currentFrame = long(eanim->frames.size()) - 2;
 		layer.currentInterpolation = 1.f;
 	}
 	layer.currentInterpolation = glm::clamp(layer.currentInterpolation, 0.f, 1.f);
 	
 	// FIXME animation indices prevent invalid memory access, should be fixed properly
-	if(layer.currentFrame < 0 || layer.currentFrame + 1 >= eanim->nb_key_frames)
-		return Vec3f_ZERO;
+	if(layer.currentFrame < 0 || layer.currentFrame + 1 >= long(eanim->frames.size())) {
+		return Vec3f(0.f);
+	}
 	
 	// FRAME TRANSLATE : Gives the Virtual pos of Main Object
 	if(eanim->frames[layer.currentFrame].f_translate && !(layer.flags & EA_STATICANIM)) {
@@ -1270,7 +1184,7 @@ static Vec3f CalcTranslation(AnimLayer & layer) {
 		return sFrame.translate + (eFrame.translate - sFrame.translate) * layer.currentInterpolation;
 	}
 	
-	return Vec3f_ZERO;
+	return Vec3f(0.f);
 }
 
 static void StoreEntityMovement(Entity * io, Vec3f & ftr, float scale) {
@@ -1280,18 +1194,16 @@ static void StoreEntityMovement(Entity * io, Vec3f & ftr, float scale) {
 	
 	arx_assert(isallfinite(ftr));
 	
-	Vec3f ftr2 = Vec3f_ZERO;
-
 	ftr *= scale;
 
 	float temp;
 	if (io == entities.player()) {
-		temp = MAKEANGLE(180.f - player.angle.getPitch());
+		temp = MAKEANGLE(180.f - player.angle.getYaw());
 	} else {
-		temp = MAKEANGLE(180.f - io->angle.getPitch());
+		temp = MAKEANGLE(180.f - io->angle.getYaw());
 	}
 
-	ftr2 = VRotateY(ftr, temp);
+	Vec3f ftr2 = VRotateY(ftr, temp);
 
 	// stores Translations for a later use
 	io->move = ftr2;
@@ -1300,9 +1212,9 @@ static void StoreEntityMovement(Entity * io, Vec3f & ftr, float scale) {
 
 		// Use calculated value to notify the Movement engine of the translation to do
 		if(io->ioflags & IO_NPC) {
-			ftr = Vec3f_ZERO;
+			ftr = Vec3f(0.f);
 			io->move -= io->lastmove;
-		} else if (io->gameFlags & GFLAG_ELEVATOR) {
+		} else if(io->gameFlags & GFLAG_ELEVATOR) {
 			// Must recover translations for NON-NPC IO
 			PushIO_ON_Top(io, io->move.y - io->lastmove.y);
 		}
@@ -1314,62 +1226,65 @@ static void StoreEntityMovement(Entity * io, Vec3f & ftr, float scale) {
 /*!
  * Animate skeleton
  */
-static void Cedric_AnimateObject(Skeleton * obj, AnimLayer * animlayer)
-{
+static void Cedric_AnimateObject(Skeleton * obj, AnimLayer * animlayer) {
+	
 	std::vector<unsigned char> grps(obj->bones.size());
 
 	for(long count = MAX_ANIM_LAYERS - 1; count >= 0; count--) {
-
+		
 		AnimLayer & layer = animlayer[count];
-
-		if(!layer.cur_anim)
+		if(!layer.cur_anim) {
 			continue;
-
-		EERIE_ANIM *eanim = layer.cur_anim->anims[layer.altidx_cur];
-		if(!eanim)
+		}
+		
+		EERIE_ANIM * eanim = layer.currentAltAnim();
+		if(!eanim) {
 			continue;
-
+		}
+		
 		if(layer.currentFrame < 0) {
 			layer.currentFrame = 0;
 			layer.currentInterpolation = 0.f;
-		} else if(layer.currentFrame >= eanim->nb_key_frames - 1) {
-			layer.currentFrame = eanim->nb_key_frames - 2;
+		} else if(layer.currentFrame >= long(eanim->frames.size()) - 1) {
+			layer.currentFrame = long(eanim->frames.size()) - 2;
 			layer.currentInterpolation = 1.f;
 		}
 		layer.currentInterpolation = glm::clamp(layer.currentInterpolation, 0.f, 1.f);
 		
 		// FIXME animation indices are sometimes negative
-		//arx_assert(animuse->fr >= 0 && animuse->fr < eanim->nb_key_frames);
-		layer.currentFrame = glm::clamp(layer.currentFrame, 0l, long(eanim->nb_key_frames - 1));
+		layer.currentFrame = glm::clamp(layer.currentFrame, 0l, long(eanim->frames.size()) - 1l);
 		
 		// Now go for groups rotation/translation/scaling, And transform Linked objects by the way
-		int l = std::min(long(obj->bones.size() - 1), eanim->nb_groups - 1);
-
-		for(int j = l; j >= 0; j--) {
-			if(grps[j])
+		size_t l = std::min(obj->bones.size(), eanim->nb_groups());
+		
+		for(size_t j = 0; j < l; j++) {
+			
+			if(grps[j]) {
 				continue;
-
-			const EERIE_GROUP & sGroup = eanim->groups[j+(layer.currentFrame*eanim->nb_groups)];
-			const EERIE_GROUP & eGroup = eanim->groups[j+(layer.currentFrame*eanim->nb_groups)+eanim->nb_groups];
-
-			if(!eanim->voidgroups[j])
+			}
+			
+			const EERIE_GROUP & sGroup = eanim->groups[j + size_t(layer.currentFrame) * eanim->nb_groups()];
+			const EERIE_GROUP & eGroup = eanim->groups[j + size_t(layer.currentFrame + 1) * eanim->nb_groups()];
+			
+			if(!eanim->voidgroups[j]) {
 				grps[j] = 1;
-
-			if(eanim->nb_key_frames != 1) {
-				Bone & bone = obj->bones[j];
-
+			}
+			
+			if(eanim->frames.size() != 1) {
 				BoneTransform temp;
-
 				temp.quat = Quat_Slerp(sGroup.quat, eGroup.quat, layer.currentInterpolation);
-				temp.trans = sGroup.translate + (eGroup.translate - sGroup.translate) * layer.currentInterpolation;
-				temp.scale = sGroup.zoom + (eGroup.zoom - sGroup.zoom) * layer.currentInterpolation;
-
+				temp.trans = glm::mix(sGroup.translate, eGroup.translate, layer.currentInterpolation);
+				temp.scale = glm::mix(sGroup.zoom, eGroup.zoom, layer.currentInterpolation);
+				Bone & bone = obj->bones[j];
 				bone.init.quat = bone.init.quat * temp.quat;
 				bone.init.trans = temp.trans + bone.transinit_global;
 				bone.init.scale = temp.scale;
 			}
+			
 		}
+		
 	}
+	
 }
 
 static void Cedric_BlendAnimation(Skeleton & rig, AnimationBlendStatus * animBlend) {
@@ -1377,26 +1292,25 @@ static void Cedric_BlendAnimation(Skeleton & rig, AnimationBlendStatus * animBle
 	if(!animBlend->m_active) {
 		return;
 	}
-
-	float timm = (arxtime.get_frame_time() - animBlend->lastanimtime) + 0.0001f;
-
+	
+	float timm = toMsf(g_gameTime.now() - animBlend->lastanimtime) + 0.0001f;
 	if(timm >= 300.f) {
 		animBlend->m_active = false;
 		return;
-	} else {
-		timm *= ( 1.0f / 300 );
-
-		if(timm < 0.f || timm >= 1.f)
-			return;
 	}
-
+	
+	timm *= 1.0f / 300;
+	if(timm < 0.f || timm >= 1.f) {
+		return;
+	}
+	
 	for(size_t i = 0; i < rig.bones.size(); i++) {
-		Bone * bone = &rig.bones[i];
+		Bone & bone = rig.bones[i];
 
-		bone->init.quat = Quat_Slerp(bone->last.quat, bone->init.quat, timm);
+		bone.init.quat = Quat_Slerp(bone.last.quat, bone.init.quat, timm);
 
-		bone->init.trans = bone->last.trans + (bone->init.trans - bone->last.trans) * timm;
-		bone->init.scale = bone->last.scale + (bone->init.scale - bone->last.scale) * timm;
+		bone.init.trans = bone.last.trans + (bone.init.trans - bone.last.trans) * timm;
+		bone.init.scale = bone.last.scale + (bone.init.scale - bone.last.scale) * timm;
 	}
 }
 
@@ -1406,32 +1320,33 @@ static void Cedric_BlendAnimation(Skeleton & rig, AnimationBlendStatus * animBle
 static void Cedric_ConcatenateTM(Skeleton & rig, const TransformInfo & t) {
 
 	for(size_t i = 0; i != rig.bones.size(); i++) {
-		Bone * bone = &rig.bones[i];
+		Bone & bone = rig.bones[i];
 
-		if(bone->father >= 0) { // Child Bones
-			Bone * parent = &rig.bones[bone->father];
+		if(bone.father >= 0) { // Child Bones
+			size_t parentIndex = size_t(bone.father);
+			Bone & parent = rig.bones[parentIndex];
 			// Rotation
-			bone->anim.quat = parent->anim.quat * bone->init.quat;
+			bone.anim.quat = parent.anim.quat * bone.init.quat;
 
 			// Translation
-			bone->anim.trans = bone->init.trans * parent->anim.scale;
-			bone->anim.trans = parent->anim.quat * bone->anim.trans;
-			bone->anim.trans = parent->anim.trans + bone->anim.trans;
+			bone.anim.trans = bone.init.trans * parent.anim.scale;
+			bone.anim.trans = parent.anim.quat * bone.anim.trans;
+			bone.anim.trans = parent.anim.trans + bone.anim.trans;
 
 			// Scale
-			bone->anim.scale = (bone->init.scale + Vec3f_ONE) * parent->anim.scale;
+			bone.anim.scale = (bone.init.scale + Vec3f(1.f)) * parent.anim.scale;
 		} else { // Root Bone
 			// Rotation
-			bone->anim.quat = t.rotation * bone->init.quat;
+			bone.anim.quat = t.rotation * bone.init.quat;
 
 			// Translation
-			Vec3f vt1 = bone->init.trans + t.offset;
-			bone->anim.trans = t.rotation * vt1;
-			bone->anim.trans *= t.scale;
-			bone->anim.trans += t.pos;
+			Vec3f vt1 = bone.init.trans + t.offset;
+			bone.anim.trans = t.rotation * vt1;
+			bone.anim.trans *= t.scale;
+			bone.anim.trans += t.pos;
 
 			// Compute Global Object Scale AND Global Animation Scale
-			bone->anim.scale = (bone->init.scale + Vec3f_ONE) * t.scale;
+			bone.anim.scale = (bone.init.scale + Vec3f(1.f)) * t.scale;
 		}
 	}
 }
@@ -1439,15 +1354,17 @@ static void Cedric_ConcatenateTM(Skeleton & rig, const TransformInfo & t) {
 /*!
  * Transform object vertices
  */
-static void Cedric_TransformVerts(EERIE_3DOBJ * eobj, const Vec3f & pos) {
-
+static void Cedric_TransformVerts(EERIE_3DOBJ * eobj) {
+	
+	arx_assert(eobj->vertexWorldPositions.size() == eobj->vertexlist.size());
+	
 	Skeleton & rig = *eobj->m_skeleton;
 
 	// Transform & project all vertices
 	for(size_t i = 0; i != rig.bones.size(); i++) {
 		Bone & bone = rig.bones[i];
 
-		glm::mat4x4 matrix = glm::toMat4(bone.anim.quat);
+		glm::mat4x4 matrix = glm::mat4_cast(bone.anim.quat);
 		
 		// Apply Scale
 		matrix[0][0] *= bone.anim.scale.x;
@@ -1468,84 +1385,21 @@ static void Cedric_TransformVerts(EERIE_3DOBJ * eobj, const Vec3f & pos) {
 			size_t index = bone.idxvertices[v];
 
 			Vec3f & inVert = eobj->vertexlocal[index];
-			EERIE_VERTEX & outVert = eobj->vertexlist3[index];
+			EERIE_VERTEX & outVert = eobj->vertexWorldPositions[index];
 			
 			outVert.v = Vec3f(matrix * Vec4f(inVert, 1.f));
 			outVert.v += vector;
 			
-			outVert.vert.p = outVert.v;
 		}
 	}
-
-	if(eobj->sdata) {
-		for(size_t i = 0; i < eobj->vertexlist.size(); i++) {
-			eobj->vertexlist[i].vert.p = eobj->vertexlist3[i].v - pos;
-		}
-	}
-}
-
-static void Cedric_ViewProjectTransform(EERIE_3DOBJ * eobj) {
-
-	for(size_t i = 0; i < eobj->vertexlist.size(); i++) {
-		EERIE_VERTEX * outVert = &eobj->vertexlist3[i];
-
-		Vec3f tempWorld = EE_RT(outVert->v);
-		EE_P(tempWorld, outVert->vert);
-	}
-}
-
-/*!
- * \brief Apply animation and draw object
- */
-static void Cedric_AnimateDrawEntity(Skeleton & skeleton, AnimLayer * animlayer,
-                                     EERIE_EXTRA_ROTATE * extraRotation,
-                                     AnimationBlendStatus * animBlend,
-                                     EERIE_EXTRA_SCALE & extraScale) {
 	
-	// Initialize the rig
-	for(size_t i = 0; i != skeleton.bones.size(); i++) {
-		Bone & bone = skeleton.bones[i];
-
-		bone.init.quat = glm::quat();
-		bone.init.trans = bone.transinit_global;
-	}
-
-	// Apply Extra Rotations in Local Space
-	if(extraRotation) {
-		for(size_t k = 0; k < MAX_EXTRA_ROTATE; k++) {
-			ObjVertGroup i = extraRotation->group_number[k];
-
-			if(i != ObjVertGroup()) {
-				skeleton.bones[i.handleData()].init.quat = angleToQuatForExtraRotation(extraRotation->group_rotate[k]);
-			}
-		}
-	}
-
-	// Perform animation in Local space
-	Cedric_AnimateObject(&skeleton, animlayer);
-
-	if(extraScale.groupIndex != ObjVertGroup()) {
-		Bone & bone = skeleton.bones[extraScale.groupIndex.handleData()];
-
-		bone.init.scale += extraScale.scale;
-	}
-
-	// Check for Animation Blending in Local space
-	if(animBlend) {
-		// Is There any Between-Animations Interpolation to make ?
-		Cedric_BlendAnimation(skeleton, animBlend);
-
-		for(size_t i = 0; i < skeleton.bones.size(); i++) {
-			skeleton.bones[i].last = skeleton.bones[i].init;
-		}
-	}
 }
 
 void EERIEDrawAnimQuatUpdate(EERIE_3DOBJ * eobj,
                              AnimLayer * animlayer,
                              const Anglef & angle,
                              const Vec3f & pos,
-                             unsigned long time,
+                             AnimationDuration time,
                              Entity * io,
                              bool update_movement
 ) {
@@ -1558,20 +1412,12 @@ void EERIEDrawAnimQuatUpdate(EERIE_3DOBJ * eobj,
 		if(speedfactor < 0)
 			speedfactor = 0;
 
-		float tim = (float)time * speedfactor;
+		AnimationDuration tim = time * speedfactor;
 
-		if(tim<=0.f)
-			time=0;
+		if(tim <= 0)
+			time = 0;
 		else
-			time=(unsigned long)tim;
-
-		io->frameloss += tim - time;
-
-		if(io->frameloss > 1.f) { // recover lost time...
-			long tt = io->frameloss;
-			io->frameloss -= tt;
-			time += tt;
-		}
+			time = tim;
 	}
 
 	if(time > 0) {
@@ -1601,71 +1447,102 @@ void EERIEDrawAnimQuatUpdate(EERIE_3DOBJ * eobj,
 	bool isNpc = io && (io->ioflags & IO_NPC);
 	if(!isNpc) {
 		// To correct invalid angle in Animated FIX/ITEMS
-		rotation = glm::toQuat(toRotationMatrix(angle));
+		rotation = glm::quat_cast(toRotationMatrix(angle));
 	} else {
 		rotation = QuatFromAngles(angle);
 	}
 
 	EERIE_EXTRA_ROTATE * extraRotation = NULL;
-	AnimationBlendStatus * animBlend = NULL;
 
 	if(io && (io->ioflags & IO_NPC) && io->_npcdata->ex_rotate) {
 		extraRotation = io->_npcdata->ex_rotate;
-	}
-
-	if(io) {
-		animBlend = &io->animBlend;
 	}
 
 	EERIE_EXTRA_SCALE extraScale;
 
 	if(BH_MODE && eobj->fastaccess.head_group != ObjVertGroup()) {
 		extraScale.groupIndex = eobj->fastaccess.head_group;
-		extraScale.scale = Vec3f_ONE;
+		extraScale.scale = Vec3f(1.f);
 	}
 
 	arx_assert(eobj->m_skeleton);
 	Skeleton & skeleton = *eobj->m_skeleton;
 
-	Cedric_AnimateDrawEntity(skeleton, animlayer, extraRotation, animBlend, extraScale);
+	// Initialize the rig
+	for(size_t i = 0; i != skeleton.bones.size(); i++) {
+		Bone & bone = skeleton.bones[i];
 
+		bone.init.quat = quat_identity();
+		bone.init.trans = bone.transinit_global;
+	}
+	
+	// Apply Extra Rotations in Local Space
+	if(extraRotation) {
+		for(size_t k = 0; k < MAX_EXTRA_ROTATE; k++) {
+			ObjVertGroup i = extraRotation->group_number[k];
+
+			if(i != ObjVertGroup()) {
+				size_t boneIndex = size_t(i.handleData());
+				skeleton.bones[boneIndex].init.quat = angleToQuatForExtraRotation(extraRotation->group_rotate[k]);
+			}
+		}
+	}
+
+	// Perform animation in Local space
+	Cedric_AnimateObject(&skeleton, animlayer);
+
+	if(extraScale.groupIndex != ObjVertGroup()) {
+		size_t boneIndex = size_t(extraScale.groupIndex.handleData());
+		Bone & bone = skeleton.bones[boneIndex];
+
+		bone.init.scale += extraScale.scale;
+	}
+	
+	// Check for Animation Blending in Local space
+	if(io) {
+		// Is There any Between-Animations Interpolation to make ?
+		Cedric_BlendAnimation(skeleton, &io->animBlend);
+		
+		for(size_t i = 0; i < skeleton.bones.size(); i++) {
+			skeleton.bones[i].last = skeleton.bones[i].init;
+		}
+	}
+	
 	// Build skeleton in Object Space
 	TransformInfo t(pos, rotation, scale, ftr);
 	Cedric_ConcatenateTM(skeleton, t);
 
-	Cedric_TransformVerts(eobj, pos);
+	Cedric_TransformVerts(eobj);
 	if(io) {
 		io->bbox3D = UpdateBbox3d(eobj);
 	}
-
-	Cedric_ViewProjectTransform(eobj);
+	
+	DrawEERIEInter_ViewProjectTransform(eobj);
 	if(io) {
-		io->bbox2D = Cedric_UpdateBbox2d(*eobj);
+		io->bbox2D = UpdateBbox2d(*eobj);
 	}
 }
 
-void EERIEDrawAnimQuatRender(EERIE_3DOBJ *eobj, const Vec3f & pos, Entity *io, float invisibility) {
-
+void EERIEDrawAnimQuatRender(EERIE_3DOBJ * eobj, const Vec3f & pos, Entity * io, float invisibility) {
+	
 	ARX_PROFILE_FUNC();
 	
 	if(io && io != entities.player() && !Cedric_IO_Visible(io->pos))
 		return;
-
-	bool isFightingNpc = io &&
-						 (io->ioflags & IO_NPC) &&
-						 (io->_npcdata->behavior & BEHAVIOUR_FIGHT) &&
-						 closerThan(io->pos, player.pos, 240.f);
-
-	if(!isFightingNpc && ARX_SCENE_PORTAL_ClipIO(io, pos))
+	
+	bool isFightingNpc = io && (io->ioflags & IO_NPC) && (io->_npcdata->behavior & BEHAVIOUR_FIGHT)
+	                     && closerThan(io->pos, player.pos, 240.f);
+	if(!isFightingNpc && ARX_SCENE_PORTAL_ClipIO(io, pos)) {
 		return;
-
+	}
+	
 	Cedric_AnimateDrawEntityRender(eobj, pos, io, invisibility);
 }
 
 void AnimatedEntityRender(Entity * entity, float invisibility) {
-
-	Cedric_ViewProjectTransform(entity->obj);
-	entity->bbox2D = Cedric_UpdateBbox2d(*entity->obj);
-
+	
+	DrawEERIEInter_ViewProjectTransform(entity->obj);
+	entity->bbox2D = UpdateBbox2d(*entity->obj);
+	
 	EERIEDrawAnimQuatRender(entity->obj, entity->pos, entity, invisibility);
 }

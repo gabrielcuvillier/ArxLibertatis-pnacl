@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -53,7 +53,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 /*!
  * \brief Releases Data for linked objects
- * \param obj
  */
 void EERIE_LINKEDOBJ_ReleaseData(EERIE_3DOBJ * obj) {
 	
@@ -70,33 +69,34 @@ void EERIE_LINKEDOBJ_UnLinkObjectFromObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tou
 	
 	for(size_t k = 0; k < obj->linked.size(); k++) {
 		if(obj->linked[k].lgroup != ObjVertGroup() && obj->linked[k].obj == tounlink) {
-			for(size_t i = 0; i < tounlink->vertexlist.size(); i++) {
-				tounlink->vertexlist[i].vert.p = tounlink->vertexlist[i].v;
-			}
-			
 			obj->linked.erase(obj->linked.begin() + k);
 			return;
 		}
 	}
 }
 
-bool EERIE_LINKEDOBJ_LinkObjectToObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tolink, const std::string& actiontext, const std::string& actiontext2, Entity * io)
-{
-	if(!obj || !tolink)
-		return false;
+void EERIE_LINKEDOBJ_LinkObjectToObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tolink, const std::string & actiontext,
+                                        const std::string & actiontext2, Entity * io) {
+	
+	if(!obj || !tolink) {
+		return;
+	}
 	
 	ActionPoint ni = GetActionPointIdx(obj, actiontext);
-	if(ni == ActionPoint())
-		return false;
+	if(ni == ActionPoint()) {
+		return;
+	}
 	
 	ObjVertGroup group = GetActionPointGroup(obj, ni);
-	if(group == ObjVertGroup())
-		return false;
-
+	if(group == ObjVertGroup()) {
+		return;
+	}
+	
 	ActionPoint ni2 = GetActionPointIdx(tolink, actiontext2);
-	if(ni2 == ActionPoint())
-		return false;
-
+	if(ni2 == ActionPoint()) {
+		return;
+	}
+	
 	EERIE_LINKED link;
 	link.lidx2 = ni2;
 	link.lidx = ni;
@@ -105,6 +105,4 @@ bool EERIE_LINKEDOBJ_LinkObjectToObject(EERIE_3DOBJ * obj, EERIE_3DOBJ * tolink,
 	link.io = io;
 	
 	obj->linked.push_back(link);
-	
-	return true;
 }

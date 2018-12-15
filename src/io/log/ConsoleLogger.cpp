@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -56,9 +56,9 @@ Backend * Console::get() {
 	}
 	
 	#if ARX_HAVE_ISATTY
-	if((!hasStdout || isatty(1)) && (!hasStdErr || isatty(2))) {
+	if((!hasStdout || isatty(1)) && (!hasStdErr || isatty(2)) && !std::getenv("NO_COLOR")) {
 		char * term = std::getenv("TERM");
-		if(term && std::strcmp(term, "dumb")) {
+		if(term && std::strcmp(term, "dumb") != 0) {
 			return new ColorConsole;
 		}
 	}

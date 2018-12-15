@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2015 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -45,6 +45,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <stddef.h>
 
+#include <boost/foreach.hpp>
+
 #include "audio/AudioGlobal.h"
 #include "audio/AudioBackend.h"
 #include "audio/AudioResource.h"
@@ -53,18 +55,26 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 namespace audio {
 
-Mixer::Mixer() :
-	paused(false),
-	volume(DEFAULT_VOLUME),
-	parent(NULL),
-	finalVolume(DEFAULT_VOLUME) {
+Mixer::Mixer(const Mixer * parent)
+	: paused(false)
+	, m_volume(DEFAULT_VOLUME)
+	, m_parent(parent)
+	, finalVolume(DEFAULT_VOLUME)
+{
+	updateVolume();
+	
+	if(m_parent && !paused && m_parent->paused) {
+		pause();
+	}
 }
 
 Mixer::~Mixer() {
 	
-	for(size_t i = 0; i < _mixer.size(); i++) {
-		if(_mixer[i] && _mixer[i]->parent == this) {
-			_mixer.remove(i);
+	for(MixerList::iterator i = g_mixers.begin(); i != g_mixers.end();) {
+		if(*i && (*i)->m_parent == this) {
+			i = g_mixers.remove(i);
+		} else {
+			++i;
 		}
 	}
 	
@@ -73,20 +83,24 @@ Mixer::~Mixer() {
 
 void Mixer::clear(bool force) {
 	
-	for(size_t i = 0; i < _amb.size(); i++) {
-		Ambiance * ambiance = _amb[i];
-		if(ambiance && _mixer[ambiance->getChannel().mixer.handleData()] == this) {
-			if(force || ambiance->getChannel().flags & FLAG_AUTOFREE) {
-				_amb.remove(i);
+	for(AmbianceList::iterator i = g_ambiances.begin(); i != g_ambiances.end();) {
+		Ambiance * ambiance = *i;
+		if(ambiance && g_mixers[ambiance->getChannel().mixer] == this) {
+			if(force || (ambiance->getChannel().flags & FLAG_AUTOFREE)) {
+				i = g_ambiances.remove(i);
 			} else {
 				ambiance->stop();
+				++i;
 			}
+		} else {
+			++i;
 		}
 	}
 	
 	// Delete sources referencing this mixer.
 	for(Backend::source_iterator p = backend->sourcesBegin(); p != backend->sourcesEnd();) {
-		if(*p && _mixer.isValid((*p)->getChannel().mixer.handleData()) && _mixer[(*p)->getChannel().mixer.handleData()] == this) {
+		if(*p && g_mixers.isValid((*p)->getChannel().mixer)
+		   && g_mixers[(*p)->getChannel().mixer] == this) {
 			p = backend->deleteSource(p);
 		} else {
 			++p;
@@ -95,72 +109,43 @@ void Mixer::clear(bool force) {
 	
 }
 
-aalError Mixer::setVolume(float v) {
+void Mixer::setVolume(float volume) {
 	
-	float vol = glm::clamp(v, 0.f, 1.f);
-	if(volume == vol) {
-		return AAL_OK;
+	volume = glm::clamp(volume, 0.f, 1.f);
+	if(m_volume == volume) {
+		return;
 	}
-	volume = vol;
+	m_volume = volume;
 	
 	updateVolume();
-	
-	return AAL_OK;
 }
 
 void Mixer::updateVolume() {
 	
-	float vol = parent ? parent->finalVolume * volume : volume;
-	if(finalVolume == vol) {
+	float volume = m_parent ? m_parent->finalVolume * m_volume : m_volume;
+	if(finalVolume == volume) {
 		return;
 	}
-	finalVolume = vol;
+	finalVolume = volume;
 	
-	for(size_t i = 0; i < _mixer.size(); i++) {
-		if(_mixer[i] && _mixer[i]->parent == this) {
-			_mixer[i]->updateVolume();
+	BOOST_FOREACH(Mixer * mixer, g_mixers) {
+		if(mixer && mixer->m_parent == this) {
+			mixer->updateVolume();
 		}
 	}
 	
 	for(Backend::source_iterator p = backend->sourcesBegin(); p != backend->sourcesEnd(); ++p) {
-		if(*p && _mixer.isValid((*p)->getChannel().mixer.handleData()) && _mixer[(*p)->getChannel().mixer.handleData()] == this) {
+		if(*p && g_mixers.isValid((*p)->getChannel().mixer) && g_mixers[(*p)->getChannel().mixer] == this) {
 			(*p)->updateVolume();
 		}
 	}
 	
 }
 
-aalError Mixer::setParent(const Mixer * _mixer) {
+void Mixer::stop() {
 	
-	if(parent == _mixer) {
-		return AAL_OK;
-	}
-	
-	// Check for cyles.
-	const Mixer * mixer = _mixer;
-	while(mixer) {
-		if(mixer == this) {
-			return AAL_ERROR;
-		}
-		mixer = mixer->parent;
-	}
-	
-	parent = _mixer;
-	
-	updateVolume();
-	
-	if(parent && !paused && parent->paused) {
-		pause();
-	}
-	
-	return AAL_OK;
-}
-
-aalError Mixer::stop() {
-	
-	for(size_t i = 0; i < _mixer.size(); i++) {
-		Mixer * mixer = _mixer[i];
-		if(mixer && mixer->parent == this) {
+	BOOST_FOREACH(Mixer * mixer, g_mixers) {
+		if(mixer && mixer->m_parent == this) {
 			mixer->stop();
 		}
 	}
@@ -168,62 +153,58 @@ aalError Mixer::stop() {
 	clear(false);
 	
 	paused = false;
-	
-	return AAL_OK;
 }
 
-aalError Mixer::pause() {
+void Mixer::pause() {
 	
-	for(size_t i = 0; i < _mixer.size(); i++) {
-		if(_mixer[i] && _mixer[i]->parent == this) {
-			_mixer[i]->pause();
+	BOOST_FOREACH(Mixer * mixer, g_mixers) {
+		if(mixer && mixer->m_parent == this) {
+			mixer->pause();
 		}
 	}
 	
-	for(size_t i = 0; i < _amb.size(); i++) {
-		if(_amb[i] && _mixer[_amb[i]->getChannel().mixer.handleData()] == this) {
-			_amb[i]->pause();
+	BOOST_FOREACH(Ambiance * ambiance, g_ambiances) {
+		if(ambiance && g_mixers[ambiance->getChannel().mixer] == this) {
+			ambiance->pause();
 		}
 	}
 	
 	for(Backend::source_iterator p = backend->sourcesBegin(); p != backend->sourcesEnd(); ++p) {
-		if(*p && _mixer.isValid((*p)->getChannel().mixer.handleData()) && _mixer[(*p)->getChannel().mixer.handleData()] == this) {
+		if(*p && g_mixers.isValid((*p)->getChannel().mixer)
+		   && g_mixers[(*p)->getChannel().mixer] == this) {
 			(*p)->pause();
 		}
 	}
 	
 	paused = true;
-	
-	return AAL_OK;
 }
 
-aalError Mixer::resume() {
+void Mixer::resume() {
 	
 	if(!paused) {
-		return AAL_OK;
+		return;
 	}
 	
-	for(size_t i = 0; i < _mixer.size(); i++) {
-		if(_mixer[i] && _mixer[i]->parent == this) {
-			_mixer[i]->resume();
+	BOOST_FOREACH(Mixer * mixer, g_mixers) {
+		if(mixer && mixer->m_parent == this) {
+			mixer->resume();
 		}
 	}
 	
-	for(size_t i = 0; i < _amb.size(); i++) {
-		if(_amb[i] && _mixer[_amb[i]->getChannel().mixer.handleData()] == this) {
-			_amb[i]->resume();
+	BOOST_FOREACH(Ambiance * ambiance, g_ambiances) {
+		if(ambiance && g_mixers[ambiance->getChannel().mixer] == this) {
+			ambiance->resume();
 		}
 	}
 	
 	for(Backend::source_iterator p = backend->sourcesBegin(); p != backend->sourcesEnd(); ++p) {
-		if(*p && _mixer.isValid((*p)->getChannel().mixer.handleData()) && _mixer[(*p)->getChannel().mixer.handleData()] == this) {
+		if(*p && g_mixers.isValid((*p)->getChannel().mixer)
+		   && g_mixers[(*p)->getChannel().mixer] == this) {
 			(*p)->resume();
 		}
 	}
 	
 	paused = false;
-	
-	return AAL_OK;
 }
 
 } // namespace audio

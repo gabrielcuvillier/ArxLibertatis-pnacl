@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -83,7 +83,7 @@ enum EquipmentModifierType {
 };
 
 enum EquipmentModifierFlag {
-	IO_ELEMENT_FLAG_PERCENT = (1<<0)
+	IO_ELEMENT_FLAG_PERCENT = 1 << 0
 };
 DECLARE_FLAGS(EquipmentModifierFlag, EquipmentModifierFlags)
 DECLARE_FLAGS_OPERATORS(EquipmentModifierFlags)
@@ -95,9 +95,17 @@ enum EquipmentModifiedSpecialType {
 };
 
 struct IO_EQUIPITEM_ELEMENT {
+	
 	float value;
 	EquipmentModifierFlags flags;
 	EquipmentModifiedSpecialType special;
+	
+	IO_EQUIPITEM_ELEMENT()
+		: value(0.f)
+		, flags(0)
+		, special(IO_SPECIAL_ELEM_NONE)
+	{ }
+	
 };
 
 struct IO_EQUIPITEM {
@@ -105,6 +113,7 @@ struct IO_EQUIPITEM {
 };
 
 struct IO_ITEMDATA {
+	
 	IO_EQUIPITEM * equipitem; // Equipitem Datas
 	long price;
 	short maxcount; // max number cumulable
@@ -123,7 +132,8 @@ struct IO_ITEMDATA {
 		, stealvalue(0)
 		, playerstacksize(0)
 		, LightValue(0)
-	{}
+	{ }
+	
 };
 
 #endif // ARX_GAME_ITEM_H

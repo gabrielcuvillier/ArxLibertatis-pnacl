@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -93,18 +93,18 @@ private:
 		
 		void writeEntry(std::ostream & handle, const std::string & name) const;
 		
-		char * loadData(std::istream & handle, size_t & size, const std::string & name) const;
+		std::string loadData(std::istream & handle, const std::string & name) const;
 		
 	};
 	
 	typedef boost::unordered_map<std::string, File> Files;
 	
-	fs::path savefile;
-	fs::fstream handle;
-	size_t totalSize;
-	size_t usedSize;
-	size_t chunkCount;
-	Files files;
+	fs::path m_savefile;
+	fs::fstream m_handle;
+	size_t m_totalSize;
+	size_t m_usedSize;
+	size_t m_chunkCount;
+	Files m_files;
 	
 	bool defragment();
 	bool loadFileTable();
@@ -145,7 +145,7 @@ public:
 	 */
 	void remove(const std::string & name);
 	
-	char * load(const std::string & name, size_t & size);
+	std::string load(const std::string & name);
 	bool hasFile(const std::string & name) const;
 	
 	std::vector<std::string> getFiles() const;
@@ -163,10 +163,8 @@ public:
 	 * 
 	 * \param savefile the save block to load from
 	 * \param name the file to load
-	 * \param size will be set to the loaded size
-	 * \return a new, malloc-allocated buffer or NULL if eiether the saveblock could not be opened or doesn't contain a file with the given name.
 	 */
-	static char * load(const fs::path & savefile, const std::string & name, size_t & size);
+	static std::string load(const fs::path & savefile, const std::string & name);
 	
 };
 

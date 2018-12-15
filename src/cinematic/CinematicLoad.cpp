@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -74,9 +74,9 @@ static res::path fixTexturePath(const std::string & path) {
 	
 	if(abs_dir != std::string::npos) {
 		return res::path::load(copy.substr(abs_dir + 4));
-	} else {
-		return res::path::load(copy);
 	}
+	
+	return res::path::load(copy);
 }
 
 static std::pair<res::path, bool> fixSoundPath(const std::string & str) {
@@ -91,22 +91,7 @@ static std::pair<res::path, bool> fixSoundPath(const std::string & str) {
 	// Remove irrelevant absolute path components
 	size_t sfx_pos = path.find("\\sfx\\");
 	if(sfx_pos != std::string::npos) {
-		path.erase(0, sfx_pos + 1);
-	}
-	
-	// I guess they changed their minds about language names
-	size_t uk_pos = path.find("\\uk\\");
-	if(uk_pos != std::string::npos) {
-		path.replace(uk_pos, 4, "\\english\\");
-	}
-	size_t fr_pos = path.find("\\fr\\");
-	if(fr_pos != std::string::npos) {
-		path.replace(fr_pos, 4, "\\francais\\");
-	}
-	
-	// Change the speech directory
-	if(boost::starts_with(path, "sfx\\speech\\")) {
-		path.erase(0, 4);
+		path.erase(0, sfx_pos + 5);
 	}
 	
 	// Remove hardcoded language for localised speech
@@ -128,18 +113,15 @@ bool loadCinematic(Cinematic * c, const res::path & file) {
 	
 	LogInfo << "Loading cinematic " << file;
 	
-	size_t size;
-	char * data = resources->readAlloc(file, size);
-	if(!data) {
+	std::string buffer = g_resources->read(file);
+	if(buffer.empty()) {
 		LogError << "Cinematic " << file << " not found";
 		return false;
 	}
 	
-	bool ret = parseCinematic(c, data, size);
-	std::free(data);
+	bool ret = parseCinematic(c, buffer.data(), buffer.size());
 	if(!ret) {
 		LogError << "Could not load cinematic " << file;
-		c->New();
 	}
 	
 	return ret;
@@ -153,7 +135,7 @@ bool parseCinematic(Cinematic * c, const char * data, size_t size) {
 		return false;
 	}
 	
-	if(std::strcmp(cinematicId, "KFA")) {
+	if(std::strcmp(cinematicId, "KFA") != 0) {
 		LogError << "Wrong magic number";
 		return false;
 	}
@@ -248,7 +230,12 @@ bool parseCinematic(Cinematic * c, const char * data, size_t size) {
 		LogError << "Error reading track";
 		return false;
 	}
-	AllocTrack(t.startframe, t.endframe, t.fps);
+	
+	if(t.startframe != 0) {
+		LogWarning << "Cinematic startframe is not 0";
+	}
+	
+	AllocTrack(t.endframe, t.fps);
 	
 	LogDebug(t.nbkey << " keyframes:");
 	for(int i = 0; i < t.nbkey; i++) {
@@ -282,6 +269,8 @@ bool parseCinematic(Cinematic * c, const char * data, size_t size) {
 			k.angzgrille = k175.angzgrille;
 			k.speedtrack = k175.speedtrack;
 			
+			arx_assert(k175.posgrille.toVec3() == Vec3f(0.f));
+			arx_assert(k175.angzgrille == 0.f);
 		} else {
 			
 			C_KEY_1_76 k176;
@@ -308,6 +297,8 @@ bool parseCinematic(Cinematic * c, const char * data, size_t size) {
 			idsound = k176.idsound[0]; // 0 was the language code for 'French'
 			k.idsound = k176.idsound[3]; // 3 was the language code for 'English'
 			
+			arx_assert(k176.posgrille.toVec3() == Vec3f(0.f));
+			arx_assert(k176.angzgrille == 0.f);
 		}
 		
 		if(k.force < 0) {
@@ -322,8 +313,8 @@ bool parseCinematic(Cinematic * c, const char * data, size_t size) {
 			float f = std::min(k.light.fallin, k.light.fallout);
 			
 			float d0 = glm::distance(Vec2f(k.light.pos), Vec2f(-320.f, -240.f));
-			float d1 = glm::distance(Vec2f(k.light.pos), Vec2f( 320.f, -240.f));
-			float d2 = glm::distance(Vec2f(k.light.pos), Vec2f( 320.f,  240.f));
+			float d1 = glm::distance(Vec2f(k.light.pos), Vec2f(320.f, -240.f));
+			float d2 = glm::distance(Vec2f(k.light.pos), Vec2f(320.f,  240.f));
 			float d3 = glm::distance(Vec2f(k.light.pos), Vec2f(-320.f,  240.f));
 			
 			if(f > std::max(std::max(d0, d1), std::max(d2, d3))) {
@@ -348,7 +339,7 @@ bool parseCinematic(Cinematic * c, const char * data, size_t size) {
 		}
 		
 		if(i == 0) {
-			c->pos = k.pos;
+			c->m_pos = k.pos;
 			c->angz = k.angz;
 			c->numbitmap = k.numbitmap;
 			c->fx = k.fx;

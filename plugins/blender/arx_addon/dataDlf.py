@@ -1,4 +1,4 @@
-# Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+# Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
 #
 # This file is part of Arx Libertatis.
 #
@@ -112,28 +112,82 @@ class DANAE_LS_LIGHT(LittleEndianStructure):
         ("lpadd",        c_int32 * 31)
     ]
 
+class DANAE_LS_FOG(LittleEndianStructure):
+    _pack_ = 1
+    _fields_ = [
+        ("pos",         SavedVec3),
+        ("rgb",         SavedColor),
+        ("size",        c_float),
+        ("special",     c_int32),
+        ("scale",       c_float),
+        ("move",        SavedVec3),
+        ("angle",       SavedAnglef),
+        ("speed",       c_float),
+        ("rotatespeed", c_float),
+        ("tolive",      c_int32),
+        ("blend",       c_int32),
+        ("frequency",   c_float),
+        ("fpadd",       c_float * 32),
+        ("lpadd",       c_int32 * 32),
+        ("cpadd",       c_char * 256)
+    ]
+
+class DANAE_LS_PATH(LittleEndianStructure):
+    _pack_ = 1
+    _fields_ = [
+        ("name",        c_char * 64),
+        ("idx",         c_int16),
+        ("flags",       c_int16),
+        ("initpos",     SavedVec3),
+        ("pos",         SavedVec3),
+        ("nb_pathways", c_int32),
+        ("rgb",         SavedColor),
+        ("farclip",     c_float),
+        ("reverb",      c_float),
+        ("amb_max_vol", c_float),
+        ("fpadd",       c_float * 26),
+        ("height",      c_int32),
+        ("lpadd",       c_int32 * 31),
+        ("ambiance",    c_char * 128),
+        ("cpadd",       c_char * 128)
+    ]
+
+class DANAE_LS_PATHWAYS(LittleEndianStructure):
+    _pack_ = 1
+    _fields_ = [
+        ("rpos",  SavedVec3),
+        ("flag",  c_int32),
+        ("time",  c_uint32),
+        ("fpadd", c_float * 2),
+        ("lpadd", c_int32 * 2),
+        ("cpadd", c_char * 32)
+    ]
+
 
 import logging
 from ctypes import sizeof, create_string_buffer
+
+from collections import namedtuple
+
+DlfData = namedtuple('DlfData', ['entities', 'fogs', 'paths'])
 
 class DlfSerializer(object):
     def __init__(self, ioLib):
         self.log = logging.getLogger('DlfSerializer')
         self.ioLib = ioLib
     
-    def read(self, data, lsHeader):
+    def read(self, data, lsHeader) -> DlfData:
         pos = 0
         result = {}
         
         scnHeader = DANAE_LS_SCENE.from_buffer_copy(data, pos)
         pos += sizeof(DANAE_LS_SCENE)
-        self.log.info("DANAE_LS_SCENE name: %s" % scnHeader.name.decode('iso-8859-1'))
+        self.log.debug("DANAE_LS_SCENE name: %s" % scnHeader.name.decode('iso-8859-1'))
         
         EntitiesType = DANAE_LS_INTER * lsHeader.nb_inter
         entities = EntitiesType.from_buffer_copy(data, pos)
         pos += sizeof(EntitiesType)
-        result["entities"] = entities
-        
+
         if lsHeader.lighting != 0:
             lightingHeader = DANAE_LS_LIGHTINGHEADER.from_buffer_copy(data, pos)
             pos += sizeof(DANAE_LS_LIGHTINGHEADER)
@@ -142,21 +196,46 @@ class DlfSerializer(object):
         
         # Skip lights
         pos += sizeof(DANAE_LS_LIGHT) * lsHeader.nb_lights
-        
-        return result
+
+        FogsType = DANAE_LS_FOG * lsHeader.nb_fogs
+        fogs = FogsType.from_buffer_copy(data, pos)
+        pos += sizeof(FogsType)
+
+        # Skip nodes
+        if lsHeader.version >= 1.001:
+            pos += lsHeader.nb_nodes * (204 + lsHeader.nb_nodeslinks * 64)
+
+        paths = []
+        for i in range(lsHeader.nb_paths):
+            path = DANAE_LS_PATH.from_buffer_copy(data, pos)
+            pos += sizeof(DANAE_LS_PATH)
+
+            segments = []
+            for u in range(path.nb_pathways):
+                segment = DANAE_LS_PATHWAYS.from_buffer_copy(data, pos)
+                pos += sizeof(DANAE_LS_PATHWAYS)
+                segments.append(segment)
+
+            paths.append((path, segments))
+
+        return DlfData(
+            entities=entities,
+            fogs=fogs,
+            paths=paths
+        )
         
     
-    def readContainer(self, fileName):
+    def readContainer(self, fileName) -> DlfData:
         f = open(fileName, "rb")
         data = f.read()
         f.close()
 
-        self.log.info("Loaded %i bytes from file %s" % (len(data), fileName))
+        self.log.debug("Loaded %i bytes from file %s" % (len(data), fileName))
         
         pos = 0
         lsHeader = DANAE_LS_HEADER.from_buffer_copy(data, pos)
         pos += sizeof(DANAE_LS_HEADER)
-        self.log.info("DANAE_LS_HEADER version: %f" % lsHeader.version)
+        self.log.debug("DANAE_LS_HEADER version: %f" % lsHeader.version)
         
         if lsHeader.ident.decode('iso-8859-1') != "DANAE_FILE":
             raise Exception('Invalid ident')

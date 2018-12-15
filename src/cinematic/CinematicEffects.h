@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -44,17 +44,17 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #ifndef ARX_CINEMATIC_CINEMATICEFFECTS_H
 #define ARX_CINEMATIC_CINEMATICEFFECTS_H
 
-#include "game/Camera.h"
+#include "graphics/Color.h"
+#include "math/Vector.h"
 
+struct Camera;
 class TextureContainer;
 class CinematicBitmap;
 class Cinematic;
 
-
-Color FX_FadeIN(float a, Color color, Color colord);
 Color FX_FadeOUT(float a, Color color, Color colord);
 bool FX_FlashBlanc(Vec2f size, float speed, Color color, float fps, float currfps);
-bool FX_Blur(Cinematic * c, CinematicBitmap * tb, EERIE_CAMERA &camera);
+bool FX_Blur(Cinematic * c, CinematicBitmap * tb, Camera & camera);
 void FX_DreamPrecalc(CinematicBitmap * bi, float amp, float fps);
 
 #endif // ARX_CINEMATIC_CINEMATICEFFECTS_H

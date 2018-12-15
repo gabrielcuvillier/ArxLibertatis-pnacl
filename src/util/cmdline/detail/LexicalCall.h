@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -87,7 +87,6 @@ public:
 	}
 	
 	result_type operator()(argument_type args) const {
-		//TODO: add  : if(!is_reference<argument_type>)   argument_type = reference<argument_type>
 		return function(args);
 	}
 	
@@ -100,15 +99,14 @@ private:
 	template <typename Fn>
 	struct proxy_function {
 		
-		Fn fn;
+		Fn m_fn;
 		
-		explicit proxy_function(const Fn & fn) : fn(fn) {
+		explicit proxy_function(const Fn & fn) : m_fn(fn) {
 		}
 		
 		result_type operator()(argument_type args) {
-			//TODO: add  : if(!is_reference<argument_type>)   argument_type = reference<argument_type>
 			detail::args_adapter<typename Fn::signature> decoded_args(args);
-			return fn(decoded_args);
+			return m_fn(decoded_args);
 		}
 		
 	};
@@ -212,23 +210,23 @@ public:
 	template <typename Iterator>
 	_Result operator()(Iterator & begin, Iterator optend, Iterator end, _TypeCast & cast) {
 		VArgs<Iterator> args(cast, begin, optend, end);
-		return m_impl(args); 
+		return m_impl(args);
 	}
 	
 	template <typename Iterator>
 	_Result operator()(Iterator & begin, Iterator optend, Iterator end, _TypeCast & cast) const {
 		VArgs<Iterator> args(cast, begin, optend, end);
-		return m_impl(args); 
+		return m_impl(args);
 	}
 	
 	template <typename Iterator>
 	_Result operator()(Iterator & begin, Iterator end, _TypeCast & cast) {
-		return operator()(begin, end, end, cast); 
+		return operator()(begin, end, end, cast);
 	}
 	
 	template <typename Iterator>
 	_Result operator()(Iterator & begin, Iterator end, _TypeCast & cast) const {
-		return operator()(begin, end, end, cast); 
+		return operator()(begin, end, end, cast);
 	}
 	
 };

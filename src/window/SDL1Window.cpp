@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -38,6 +38,8 @@ SDL1Window::SDL1Window()
 	: m_initialized(false)
 	, m_desktopMode(Vec2i(640, 480))
 	, m_input(NULL)
+	, m_gamma(1.f)
+	, m_gammaOverridden(false)
 	{
 	m_renderer = new OpenGLRenderer;
 }
@@ -53,6 +55,7 @@ SDL1Window::~SDL1Window() {
 	}
 	
 	if(s_mainWindow) {
+		restoreGamma();
 		SDL_Quit(), s_mainWindow = NULL;
 	}
 	
@@ -60,7 +63,7 @@ SDL1Window::~SDL1Window() {
 
 bool SDL1Window::initializeFramework() {
 	
-	arx_assert(s_mainWindow == NULL, "SDL only supports one window");
+	arx_assert_msg(s_mainWindow == NULL, "SDL only supports one window");
 	arx_assert(m_displayModes.empty());
 	
 	const char * headerVersion = ARX_STR(SDL_MAJOR_VERSION) "." ARX_STR(SDL_MINOR_VERSION)
@@ -208,11 +211,6 @@ bool SDL1Window::initialize() {
 				continue;
 			}
 		}
-		if(msaaEnabled) {
-			m_MSAALevel = msaaValue;
-		} else {
-			m_MSAALevel = 0;
-		}
 		
 		// Verify that we actually got an accelerated context
 		(void)glGetError(); // clear error flags
@@ -220,6 +218,7 @@ bool SDL1Window::initialize() {
 		glGetIntegerv(GL_MAX_TEXTURE_UNITS, &texunits);
 		if(glGetError() != GL_NO_ERROR || texunits < GLint(m_minTextureUnits)) {
 			if(lastTry) {
+				m_renderer->initialize(); // Log hardware information
 				LogError << "Not enough GL texture units available: have " << texunits
 				         << ", need at least " << m_minTextureUnits;
 				return false;
@@ -245,6 +244,8 @@ bool SDL1Window::initialize() {
 	setTitle(m_title);
 	
 	SDL_ShowCursor(SDL_DISABLE);
+	
+	setGamma(m_gamma);
 	
 	m_renderer->initialize();
 	
@@ -274,9 +275,30 @@ bool SDL1Window::setVSync(int vsync) {
 	return true;
 }
 
+void SDL1Window::restoreGamma() {
+	if(m_gammaOverridden) {
+		SDL_SetGamma(1.f, 1.f, 1.f);
+		SDL_SetGammaRamp(m_gammaRed, m_gammaGreen, m_gammaBlue);
+		m_gammaOverridden = false;
+	}
+}
+
+bool SDL1Window::setGamma(float gamma) {
+	if(m_initialized && m_fullscreen) {
+		if(!m_gammaOverridden) {
+			m_gammaOverridden = (SDL_GetGammaRamp(m_gammaRed, m_gammaGreen, m_gammaBlue) == 0);
+		}
+		if(SDL_SetGamma(gamma, gamma, gamma) != 0) {
+			return false;
+		}
+	}
+	m_gamma = gamma;
+	return true;
+}
+
 bool SDL1Window::setMode(DisplayMode mode, bool fullscreen) {
 	
-	if(fullscreen && mode.resolution == Vec2i_ZERO) {
+	if(fullscreen && mode.resolution == Vec2i(0)) {
 		mode = m_desktopMode;
 	}
 	
@@ -309,8 +331,16 @@ void SDL1Window::changeMode(DisplayMode mode, bool makeFullscreen) {
 		return;
 	}
 	
+	if(!makeFullscreen && wasFullscreen) {
+		restoreGamma();
+	}
+	
 	if(wasFullscreen != makeFullscreen) {
 		onToggleFullscreen(makeFullscreen);
+	}
+	
+	if(makeFullscreen) {
+		setGamma(m_gamma);
 	}
 	
 	updateSize();
@@ -373,9 +403,9 @@ void SDL1Window::tick() {
 			case SDL_KEYDOWN: {
 				
 				// For some reason, release notes from SDL 1.2.12 says a SDL_QUIT message
-				// should be sent when Command+Q is pressed on Mac OS or ALT-F4 on other platforms
+				// should be sent when Command+Q is pressed on macOS or ALT-F4 on other platforms
 				// but it doesn't look like it's working as expected...
-				#if ARX_PLATFORM == ARX_PLATFORM_MACOSX
+				#if ARX_PLATFORM == ARX_PLATFORM_MACOS
 				int quitkey = SDLK_q, quitmod = KMOD_META;
 				#else
 				int quitkey = SDLK_F4, quitmod = KMOD_ALT;
@@ -449,6 +479,21 @@ void SDL1Window::setMinimizeOnFocusLost(bool enabled) {
 
 Window::MinimizeSetting SDL1Window::willMinimizeOnFocusLost() {
 	return AlwaysEnabled;
+}
+
+std::string SDL1Window::getClipboardText() {
+	// Clipboard not supported by SDL 1
+	return std::string();
+}
+
+void SDL1Window::setClipboardText(const std::string & text) {
+	// Clipboard not supported by SDL 1
+	ARX_UNUSED(text);
+}
+
+void SDL1Window::allowScreensaver(bool allowed) {
+	// Toggling screensaver not supported by SDL 1
+	ARX_UNUSED(allowed);
 }
 
 InputBackend * SDL1Window::getInputBackend() {

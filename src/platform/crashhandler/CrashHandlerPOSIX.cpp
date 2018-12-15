@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -126,7 +126,7 @@ struct PlatformCrashHandlers {
 	
 };
 
-CrashHandlerPOSIX* CrashHandlerPOSIX::m_sInstance = 0;
+CrashHandlerPOSIX * CrashHandlerPOSIX::m_sInstance = 0;
 
 CrashHandlerPOSIX::CrashHandlerPOSIX() : m_pPreviousCrashHandlers(NULL) {
 	m_sInstance = this;
@@ -296,6 +296,8 @@ bool CrashHandlerPOSIX::initialize() {
 		return false;
 	}
 	
+	m_arg = "--crashinfo=" + m_SharedMemoryName;
+	
 	std::memset(m_pCrashInfo->backtrace, 0, sizeof(m_pCrashInfo->backtrace));
 	
 	#if ARX_HAVE_PRCTL
@@ -322,7 +324,7 @@ CrashHandlerPOSIX::~CrashHandlerPOSIX() {
 	m_sInstance = 0;
 }
 
-CrashHandlerPOSIX& CrashHandlerPOSIX::getInstance() {
+CrashHandlerPOSIX & CrashHandlerPOSIX::getInstance() {
 	arx_assert(m_sInstance != 0);
 	return *m_sInstance;
 }
@@ -503,10 +505,7 @@ void CrashHandlerPOSIX::handleCrash(int signal, void * info, void * context) {
 		std::abort();
 	}
 	#ifdef ARX_HAVE_EXECVP
-	char argument[256];
-	strcpy(argument, "--crashinfo=");
-	strcat(argument, m_SharedMemoryName.c_str());
-	const char * args[] = { m_executable.string().c_str(), argument, NULL };
+	const char * args[] = { m_executable.string().c_str(), m_arg.c_str(), NULL };
 	execvp(m_executable.string().c_str(), const_cast<char **>(args));
 	#endif
 	

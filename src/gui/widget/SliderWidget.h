@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,16 +20,24 @@
 #ifndef ARX_GUI_WIDGET_SLIDERWIDGET_H
 #define ARX_GUI_WIDGET_SLIDERWIDGET_H
 
+#include <string>
+
 #include <boost/function.hpp>
 
-#include "gui/widget/ButtonWidget.h"
 #include "gui/widget/Widget.h"
+#include "platform/Platform.h"
+
+class Font;
+class ButtonWidget;
+class TextWidget;
+class TextureContainer;
 
 //! Slider with value in the range [0..10]
-class SliderWidget: public Widget {
+class SliderWidget arx_final : public Widget {
 	
 public:
-	explicit SliderWidget(const Vec2f & unscaled);
+	
+	explicit SliderWidget(const Vec2f & size, Font * font, const std::string & label);
 	virtual ~SliderWidget();
 	
 	void setMinimum(int minimum);
@@ -37,27 +45,32 @@ public:
 	void setValue(int value) { m_value = value; }
 	int getValue() const { return m_value; }
 	
-	void Move(const Vec2f & offset);
-	bool OnMouseClick();
-	void Update();
-	void Render();
-	void RenderMouseOver();
-	void EmptyFunction();
+	void move(const Vec2f & offset);
+	bool click();
+	void update();
+	void render(bool mouseOver = false);
+	void hover();
 	
-	boost::function<void(int)> valueChanged;	// NOLINT
+	boost::function<void(int /* state */)> valueChanged;
 	
 	virtual WidgetType type() const {
 		return WidgetType_Slider;
-	};
+	}
 	
 private:
-	ButtonWidget		*	pLeftButton;
-	ButtonWidget		*	pRightButton;
-	TextureContainer	* pTex1;
-	TextureContainer	* pTex2;
 	
-	int	m_minimum;
-	int	m_value;
+	void newValue(int value);
+	
+	TextWidget * m_label;
+	ButtonWidget * m_left;
+	ButtonWidget * m_right;
+	TextureContainer * m_textureOff;
+	TextureContainer * m_textureOn;
+	Rectf m_slider;
+	
+	int m_minimum;
+	int m_value;
+	
 };
 
 #endif // ARX_GUI_WIDGET_SLIDERWIDGET_H

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -27,17 +27,17 @@
 #include "math/Vector.h"
 
 class InputBackend;
+namespace fs { class path; }
 
 struct DisplayMode {
 	
 	Vec2i resolution;
 	
-	DisplayMode() { }
-	DisplayMode(const DisplayMode & o) : resolution(o.resolution) { }
+	DisplayMode() : resolution(0) { }
 	/* implicit */ DisplayMode(Vec2i res) : resolution(res) { }
-	bool operator<(const DisplayMode & other) const;
-	bool operator==(const DisplayMode & other) const {
-		return resolution == other.resolution;
+	bool operator<(const DisplayMode & o) const;
+	bool operator==(const DisplayMode & o) const {
+		return resolution == o.resolution;
 	}
 	
 };
@@ -94,7 +94,22 @@ public:
 	 * Return if fullscreen windows if they lose focus.
 	 */
 	virtual MinimizeSetting willMinimizeOnFocusLost() = 0;
-
+	
+	/*!
+	 * Get the current text contents of the clipboard.
+	 */
+	virtual std::string getClipboardText() = 0;
+	
+	/*!
+	 * Get the contents of the clipboard to the given text.
+	 */
+	virtual void setClipboardText(const std::string & text) = 0;
+	
+	/*!
+	 * Set if the user's screensaver is allowed to start.
+	 */
+	virtual void allowScreensaver(bool allowed) = 0;
+	
 	class Listener {
 		
 	public:
@@ -113,6 +128,7 @@ public:
 		virtual void onWindowGotFocus(const Window & window);
 		virtual void onWindowLostFocus(const Window & window);
 		virtual void onPaintWindow(const Window & window);
+		virtual void onDroppedFile(const Window & window, const fs::path & path);
 		
 	};
 	
@@ -128,7 +144,7 @@ public:
 	
 	const Vec2i & getPosition() const { return m_position; }
 	const Vec2i & getSize() const { return m_size; }
-	const DisplayMode getDisplayMode() const { return DisplayMode(m_size); }
+	DisplayMode getDisplayMode() const { return DisplayMode(m_size); }
 	
 	bool isFullScreen() const { return m_fullscreen; }
 	
@@ -143,11 +159,12 @@ protected:
 	void onMinimize();
 	void onMaximize();
 	void onRestore();
-	void onShow(bool show);
+	void onShow(bool isVisible);
 	void onToggleFullscreen(bool fullscreen);
 	void onFocus(bool hasFocus);
 	void onPaint();
 	void onCreate();
+	void onDroppedFile(const fs::path & path);
 	
 	std::string m_title; //!< Window title bar caption.
 	Vec2i m_position;    //!< Screen position in pixels (relative to the upper left corner)

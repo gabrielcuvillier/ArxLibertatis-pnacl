@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -20,36 +20,28 @@
 #ifndef ARX_GRAPHICS_OPENGL_GLTEXTURESTAGE_H
 #define ARX_GRAPHICS_OPENGL_GLTEXTURESTAGE_H
 
-#include "graphics/texture/TextureStage.h"
-
 #include <map>
-#include <GL/glew.h>
+
+#include "graphics/opengl/OpenGLUtil.h"
+#include "graphics/texture/TextureStage.h"
+#include "platform/Platform.h"
 
 class OpenGLRenderer;
-class GLTexture2D;
+class GLTexture;
 
-class GLTextureStage : public TextureStage {
+class GLTextureStage arx_final : public TextureStage {
 	
 public:
 	
 	GLTextureStage(OpenGLRenderer * renderer, unsigned textureStage);
 	~GLTextureStage();
 	
-	Texture* getTexture() const;
+	Texture * getTexture() const;
 	void setTexture(Texture * pTexture);
 	void resetTexture();
 	
-	void setColorOp(TextureOp textureOp, TextureArg arg0, TextureArg arg1);
 	void setColorOp(TextureOp textureOp);
-	void setAlphaOp(TextureOp textureOp, TextureArg arg0, TextureArg arg1);
 	void setAlphaOp(TextureOp textureOp);
-	
-	WrapMode getWrapMode() const;
-	void setWrapMode(WrapMode wrapMode);
-	
-	void setMinFilter(FilterMode filterMode);
-	void setMagFilter(FilterMode filterMode);
-	void setMipFilter(FilterMode filterMode);
 	
 	void setMipMapLODBias(float bias);
 	
@@ -57,47 +49,31 @@ public:
 	
 private:
 	
-	bool isEnabled() { return ((ops[Color] != OpDisable) || (ops[Alpha] != OpDisable)); }
+	bool isEnabled() { return ((ops[ColorOp] != OpDisable) || (ops[AlphaOp] != OpDisable)); }
 	
 	OpenGLRenderer * renderer;
 	
 	enum OpType {
-		Color,
-		Alpha
-	};
-	
-	enum Arg {
-		Arg0,
-		Arg1
+		ColorOp,
+		AlphaOp
 	};
 	
 	TextureOp ops[2];
-	TextureArg args[2][2];
 	
-	void setArg(OpType alpha, Arg idx, TextureArg arg);
+	void setArg(OpType alpha, GLint arg);
 	
-	void setOp(OpType alpha, GLint op, GLfloat scale);
+	void setOp(OpType alpha, GLint op, GLint scale);
 	void setOp(OpType alpha, TextureOp op);
-	void setOp(OpType alpha, TextureOp op, TextureArg arg0, TextureArg arg1);
 
 	void setTexEnv(GLenum target, GLenum pname, GLint param);
-	void setTexEnv(GLenum target, GLenum pname, GLfloat param);
 
-	GLTexture2D * tex;
-	GLTexture2D * current;
-	
-	WrapMode wrapMode;
-	FilterMode minFilter;
-	FilterMode magFilter;
-	FilterMode mipFilter;
+	GLTexture * tex;
+	GLTexture * current;
 
 	typedef std::map<GLenum, GLint> IntegerStateCache;
 	IntegerStateCache m_stateCacheIntegers;
-
-	typedef std::map<GLenum, GLfloat> FloatStateCache;
-	FloatStateCache m_stateCacheFloats;
 	
-	friend class GLTexture2D;
+	friend class GLTexture;
 };
 
 #endif // ARX_GRAPHICS_OPENGL_GLTEXTURESTAGE_H

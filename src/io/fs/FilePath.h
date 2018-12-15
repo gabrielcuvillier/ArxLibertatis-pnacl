@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -39,7 +39,7 @@ private:
 	
 	static path resolve(const path & base, const path & branch);
 	
-	static std::string load(const std::string & src);
+	static std::string load(const std::string & str);
 	
 	static path create(const std::string & src);
 	
@@ -57,15 +57,10 @@ public:
 	static const char ext_sep = '.';
 	
 	path() { }
-	path(const path & other) : pathstr(other.pathstr) { }
 	/* implicit */ path(const std::string & str) : pathstr(load(str)) { }
 	/* implicit */ path(const char * str) : pathstr(load(str)) { }
 	path(const char * begin, const char * end)
 		: pathstr(load(std::string(begin, end))) { }
-	
-	path & operator=(const path & other) {
-		return (pathstr = other.pathstr, *this);
-	}
 	
 	path operator/(const path & other) const;
 	
@@ -210,11 +205,11 @@ public:
 	bool is_dot() const { return pathstr.length() == 1 && pathstr[0] == '.'; }
 	
 	bool is_root() const {
-		return (pathstr.length() == 1 && pathstr[0] == dir_sep)
+		return ((pathstr.length() == 1 && pathstr[0] == dir_sep)
 		#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 			|| (pathstr.length() <= 3 && pathstr.length() >= 2 && pathstr[1] == ':')
 		#endif
-		;
+		);
 	}
 	
 	//! Is this a relative path. An empty path is neither relative nor absolute.

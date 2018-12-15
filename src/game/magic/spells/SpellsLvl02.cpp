@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2014-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -27,6 +27,7 @@
 #include "game/NPC.h"
 #include "game/Player.h"
 #include "game/Spells.h"
+#include "game/effect/ParticleSystems.h"
 #include "graphics/RenderBatcher.h"
 #include "graphics/Renderer.h"
 #include "graphics/particle/Particle.h"
@@ -35,30 +36,26 @@
 #include "scene/GameSound.h"
 #include "scene/Interactive.h"
 
-
-
 HealSpell::HealSpell()
-	: SpellBase()
-	, m_currentTime(0)
-{}
+	: m_pos(0.f)
+{ }
 
 bool HealSpell::CanLaunch() {
 	
 	return !spells.ExistAnyInstanceForThisCaster(m_type, m_caster);
 }
 
-void HealSpell::Launch()
-{
+void HealSpell::Launch() {
+	
 	if(!(m_flags & SPELLCAST_FLAG_NOSOUND)) {
-		ARX_SOUND_PlaySFX(SND_SPELL_HEALING, &m_caster_pos);
+		ARX_SOUND_PlaySFX(g_snd.SPELL_HEALING, &m_caster_pos);
 	}
 	
 	m_hasDuration = true;
 	m_fManaCostPerSecond = 0.4f * m_level;
-	m_duration = (m_launchDuration > -1) ? m_launchDuration : 3500;
-	m_currentTime = 0;
+	m_duration = (m_launchDuration >= 0) ? m_launchDuration : GameDurationMs(3500);
 	
-	if(m_caster == PlayerEntityHandle) {
+	if(m_caster == EntityHandle_Player) {
 		m_pos = player.pos;
 	} else {
 		m_pos = entities[m_caster]->pos;
@@ -66,46 +63,16 @@ void HealSpell::Launch()
 	
 	m_particles.SetPos(m_pos);
 	
-	{
-	ParticleParams cp;
-	cp.m_nbMax = 350;
-	cp.m_life = 800;
-	cp.m_lifeRandom = 2000;
-	cp.m_pos = Vec3f(100, 200, 100);
-	cp.m_direction = Vec3f(0.f, -1.f, 0.f);
-	cp.m_angle = glm::radians(5.f);
-	cp.m_speed = 120;
-	cp.m_speedRandom = 84;
-	cp.m_gravity = Vec3f(0, -10, 0);
-	cp.m_flash = 0;
-	cp.m_rotation = 1.0f / (101 - 80);
-
-	cp.m_startSegment.m_size = 8;
-	cp.m_startSegment.m_sizeRandom = 8;
-	cp.m_startSegment.m_color = Color(205, 205, 255, 245).to<float>();
-	cp.m_startSegment.m_colorRandom = Color(50, 50, 0, 10).to<float>();
-
-	cp.m_endSegment.m_size = 6;
-	cp.m_endSegment.m_sizeRandom = 4;
-	cp.m_endSegment.m_color = Color(20, 20, 30, 0).to<float>();
-	cp.m_endSegment.m_colorRandom = Color(0, 0, 40, 0).to<float>();
+	m_particles.SetParams(g_particleParameters[ParticleParam_Heal]);
 	
-	cp.m_blendMode = RenderMaterial::Additive;
-	cp.m_texture.set("graph/particles/heal_0005", 0, 100);
-	cp.m_spawnFlags = PARTICLE_CIRCULAR | PARTICLE_BORDER;
-	m_particles.SetParams(cp);
-	}
-	
-	m_light = GetFreeDynLight();
-	if(lightHandleIsValid(m_light)) {
-		EERIE_LIGHT * light = lightHandleGet(m_light);
-		
+	EERIE_LIGHT * light = dynLightCreate(m_light);
+	if(light) {
 		light->intensity = 2.3f;
 		light->fallstart = 200.f;
 		light->fallend   = 350.f;
 		light->rgb = Color3f(0.4f, 0.4f, 1.0f);
 		light->pos = m_pos + Vec3f(0.f, -50.f, 0.f);
-		light->duration = 200;
+		light->duration = GameDurationMs(200);
 		light->extras = 0;
 	}
 }
@@ -116,34 +83,28 @@ void HealSpell::End() {
 
 void HealSpell::Update() {
 	
-	m_currentTime += g_framedelay;
-	
-	if(m_caster == PlayerEntityHandle) {
+	if(m_caster == EntityHandle_Player) {
 		m_pos = player.pos;
-	} else if(ValidIONum(m_target)) {
-		m_pos = entities[m_target]->pos;
+	} else if(Entity * target = entities.get(m_target)) {
+		m_pos = target->pos;
 	}
 	
-	if(!lightHandleIsValid(m_light))
-		m_light = GetFreeDynLight();
-	
-	if(lightHandleIsValid(m_light)) {
-		EERIE_LIGHT * light = lightHandleGet(m_light);
-		
+	EERIE_LIGHT * light = dynLightCreate(m_light);
+	if(light) {
 		light->intensity = 2.3f;
 		light->fallstart = 200.f;
 		light->fallend   = 350.f;
 		light->rgb = Color3f(0.4f, 0.4f, 1.0f);
 		light->pos = m_pos + Vec3f(0.f, -50.f, 0.f);
-		light->duration = 200;
+		light->duration = GameDurationMs(200);
 		light->extras = 0;
 	}
 
-	long ff = m_duration - m_currentTime;
+	GameDuration ff = m_duration - m_elapsed;
 	
-	if(ff < 1500) {
+	if(ff < GameDurationMs(1500)) {
 		m_particles.m_parameters.m_spawnFlags = PARTICLE_CIRCULAR;
-		m_particles.m_parameters.m_gravity = Vec3f_ZERO;
+		m_particles.m_parameters.m_gravity = Vec3f(0.f);
 
 		std::list<Particle *>::iterator i;
 
@@ -161,72 +122,70 @@ void HealSpell::Update() {
 	}
 
 	m_particles.SetPos(m_pos);
-	m_particles.Update(g_framedelay);
+	m_particles.Update(g_gameTime.lastFrameDuration());
 	m_particles.Render();
 	
 	for(size_t ii = 0; ii < entities.size(); ii++) {
 		const EntityHandle handle = EntityHandle(ii);
 		Entity * e = entities[handle];
 		
-		if ((e)
-			&& (e->show==SHOW_FLAG_IN_SCENE) 
-			&& (e->gameFlags & GFLAG_ISINTREATZONE)
-			&& (e->ioflags & IO_NPC)
-			&& (e->_npcdata->lifePool.current>0.f)
-			)
-		{
+		if(e && e->show == SHOW_FLAG_IN_SCENE && (e->gameFlags & GFLAG_ISINTREATZONE) && (e->ioflags & IO_NPC)
+		   && e->_npcdata->lifePool.current > 0.f) {
+			
 			float dist;
-
-			if(handle == m_caster)
-				dist=0;
-			else
-				dist=fdist(m_pos, e->pos);
-
-			if(dist<300.f) {
-				float gain = Random::getf(0.8f, 2.4f) * m_level * (300.f - dist) * (1.0f/300) * g_framedelay * (1.0f/1000);
-
-				if(handle == PlayerEntityHandle) {
+			if(handle == m_caster) {
+				dist = 0;
+			} else {
+				dist = fdist(m_pos, e->pos);
+			}
+			
+			if(dist < 300.f) {
+				float gain = Random::getf(0.8f, 2.4f) * m_level * (300.f - dist) * (1.f / 300) * g_framedelay * 0.001f;
+				if(handle == EntityHandle_Player) {
 					if(!BLOCK_PLAYER_CONTROLS) {
 						player.lifePool.current = std::min(player.lifePool.current + gain, player.Full_maxlife);
 					}
+				} else {
+					e->_npcdata->lifePool.current = std::min(e->_npcdata->lifePool.current + gain, e->_npcdata->lifePool.max);
 				}
-				else
-					e->_npcdata->lifePool.current = std::min(e->_npcdata->lifePool.current+gain, e->_npcdata->lifePool.max);
 			}
+			
 		}
-	}	
+		
+	}
+	
 }
 
-void DetectTrapSpell::Launch()
-{
+void DetectTrapSpell::Launch() {
+	
 	spells.endByCaster(m_caster, SPELL_DETECT_TRAP);
 	
-	if(m_caster == PlayerEntityHandle) {
+	if(m_caster == EntityHandle_Player) {
 		m_target = m_caster;
 		if(!(m_flags & SPELLCAST_FLAG_NOSOUND)) {
-			ARX_SOUND_PlayInterface(SND_SPELL_DETECT_TRAP);
-			m_snd_loop = ARX_SOUND_PlaySFX(SND_SPELL_DETECT_TRAP_LOOP, &m_caster_pos, 1.f, ARX_SOUND_PLAY_LOOPED);
+			ARX_SOUND_PlayInterface(g_snd.SPELL_DETECT_TRAP);
+			m_snd_loop = ARX_SOUND_PlaySFX_loop(g_snd.SPELL_DETECT_TRAP_LOOP, &m_caster_pos, 1.f);
 		}
 	}
 	
-	m_duration = 60000;
+	m_duration = GameDurationMs(60000);
 	m_fManaCostPerSecond = 0.4f;
 	m_hasDuration = true;
 	
 	m_targets.push_back(m_target);
 }
 
-void DetectTrapSpell::End()
-{
-	if(m_caster == PlayerEntityHandle) {
-		ARX_SOUND_Stop(m_snd_loop);
-	}
+void DetectTrapSpell::End() {
+	
+	ARX_SOUND_Stop(m_snd_loop);
+	m_snd_loop = audio::SourcedSample();
+	
 	m_targets.clear();
 }
 
 void DetectTrapSpell::Update() {
 	
-	if(m_caster == PlayerEntityHandle) {
+	if(m_caster == EntityHandle_Player) {
 		Vec3f pos = ARX_PLAYER_FrontPos();
 		ARX_SOUND_RefreshPosition(m_snd_loop, pos);
 	}
@@ -240,26 +199,28 @@ void ArmorSpell::Launch()
 	spells.endByCaster(m_caster, SPELL_FIRE_PROTECTION);
 	spells.endByCaster(m_caster, SPELL_COLD_PROTECTION);
 	
-	if(m_caster == PlayerEntityHandle) {
+	if(m_caster == EntityHandle_Player) {
 		m_target = m_caster;
 	}
 	
 	if(!(m_flags & SPELLCAST_FLAG_NOSOUND)) {
-		ARX_SOUND_PlaySFX(SND_SPELL_ARMOR_START, &entities[m_target]->pos);
+		ARX_SOUND_PlaySFX(g_snd.SPELL_ARMOR_START, &entities[m_target]->pos);
 	}
 	
-	m_snd_loop = ARX_SOUND_PlaySFX(SND_SPELL_ARMOR_LOOP, &entities[m_target]->pos, 1.f, ARX_SOUND_PLAY_LOOPED);
+	m_snd_loop = ARX_SOUND_PlaySFX_loop(g_snd.SPELL_ARMOR_LOOP, &entities[m_target]->pos, 1.f);
 	
-	m_duration = (m_launchDuration > -1) ? m_launchDuration : 20000;
+	if(m_caster == EntityHandle_Player) {
+		m_duration = 0;
+		m_hasDuration = false;
+	} else {
+		m_duration = (m_launchDuration >= 0) ? m_launchDuration : GameDurationMs(20000);
+		m_hasDuration = true;
+	}
 	
-	if(m_caster == PlayerEntityHandle)
-		m_duration = 20000000;
-	
-	m_hasDuration = true;
 	m_fManaCostPerSecond = 0.2f * m_level;
-		
-	if(ValidIONum(m_target)) {
-		Entity *io = entities[m_target];
+	
+	Entity * io = entities.get(m_target);
+	if(io) {
 		io->halo.flags = HALO_ACTIVE;
 		io->halo.color = Color3f(0.5f, 0.5f, 0.25f);
 		io->halo.radius = 45.f;
@@ -268,13 +229,15 @@ void ArmorSpell::Launch()
 	m_targets.push_back(m_target);
 }
 
-void ArmorSpell::End()
-{
-	ARX_SOUND_Stop(m_snd_loop);
-	ARX_SOUND_PlaySFX(SND_SPELL_ARMOR_END, &entities[m_target]->pos);
+void ArmorSpell::End() {
 	
-	if(ValidIONum(m_target)) {
-		ARX_HALO_SetToNative(entities[m_target]);
+	ARX_SOUND_Stop(m_snd_loop);
+	m_snd_loop = audio::SourcedSample();
+	
+	Entity * target = entities.get(m_target);
+	if(target) {
+		ARX_SOUND_PlaySFX(g_snd.SPELL_ARMOR_END, &target->pos);
+		ARX_HALO_SetToNative(target);
 	}
 	
 	m_targets.clear();
@@ -282,8 +245,8 @@ void ArmorSpell::End()
 
 void ArmorSpell::Update() {
 	
-	if(ValidIONum(m_target)) {
-		Entity *io = entities[m_target];
+	Entity * io = entities.get(m_target);
+	if(io) {
 		io->halo.flags = HALO_ACTIVE;
 		io->halo.color = Color3f(0.5f, 0.5f, 0.25f);
 		io->halo.radius = 45.f;
@@ -302,28 +265,29 @@ LowerArmorSpell::LowerArmorSpell()
 	
 }
 
-void LowerArmorSpell::Launch()
-{
+void LowerArmorSpell::Launch() {
+	
 	spells.endByTarget(m_target, SPELL_LOWER_ARMOR);
 	spells.endByCaster(m_caster, SPELL_ARMOR);
 	spells.endByCaster(m_caster, SPELL_FIRE_PROTECTION);
 	spells.endByCaster(m_caster, SPELL_COLD_PROTECTION);
 	
 	if(!(m_flags & SPELLCAST_FLAG_NOSOUND)) {
-		ARX_SOUND_PlaySFX(SND_SPELL_LOWER_ARMOR, &entities[m_target]->pos);
+		ARX_SOUND_PlaySFX(g_snd.SPELL_LOWER_ARMOR, &entities[m_target]->pos);
 	}
 	
-	m_duration = (m_launchDuration > -1) ? m_launchDuration : 20000;
+	if(m_caster == EntityHandle_Player) {
+		m_duration = 0;
+		m_hasDuration = false;
+	} else {
+		m_duration = (m_launchDuration >= 0) ? m_launchDuration : GameDurationMs(20000);
+		m_hasDuration = true;
+	}
 	
-	if(m_caster == PlayerEntityHandle)
-		m_duration = 20000000;
-	
-	m_hasDuration = true;
 	m_fManaCostPerSecond = 0.2f * m_level;
 	
-	if(ValidIONum(m_target)) {
-		Entity *io = entities[m_target];
-		
+	Entity * io = entities.get(m_target);
+	if(io) {
 		if(io && !(io->halo.flags & HALO_ACTIVE)) {
 			io->halo.flags |= HALO_ACTIVE;
 			io->halo.color = Color3f(1.f, 0.05f, 0.0f);
@@ -338,14 +302,16 @@ void LowerArmorSpell::Launch()
 	m_targets.push_back(m_target);
 }
 
-void LowerArmorSpell::End()
-{
-	ARX_SOUND_PlaySFX(SND_SPELL_LOWER_ARMOR_END);
-	Entity *io = entities[m_target];
+void LowerArmorSpell::End() {
+	
+	ARX_SOUND_PlaySFX(g_snd.SPELL_LOWER_ARMOR_END);
 	
 	if(m_haloCreated) {
-		io->halo.flags &= ~HALO_ACTIVE;
-		ARX_HALO_SetToNative(io);
+		Entity * io = entities.get(m_target);
+		if(io) {
+			io->halo.flags &= ~HALO_ACTIVE;
+			ARX_HALO_SetToNative(io);
+		}
 	}
 	
 	m_targets.clear();
@@ -353,9 +319,8 @@ void LowerArmorSpell::End()
 
 void LowerArmorSpell::Update() {
 	
-	if(ValidIONum(m_target)) {
-		Entity *io = entities[m_target];
-		
+	Entity * io = entities.get(m_target);
+	if(io) {
 		if(io && !(io->halo.flags & HALO_ACTIVE)) {
 			io->halo.flags |= HALO_ACTIVE;
 			io->halo.color = Color3f(1.f, 0.05f, 0.0f);
@@ -372,128 +337,67 @@ Vec3f LowerArmorSpell::getPosition() {
 	return getTargetPosition();
 }
 
-HarmSpell::HarmSpell()
-	: m_light()
-	, m_damage()
-	, m_pitch(0.f)
-{
-	
-}
+HarmSpell::HarmSpell() { }
 
-void HarmSpell::Launch()
-{
+void HarmSpell::Launch() {
+	
 	if(!(m_flags & SPELLCAST_FLAG_NOSOUND)) {
-		ARX_SOUND_PlaySFX(SND_SPELL_HARM, &m_caster_pos);
+		ARX_SOUND_PlaySFX(g_snd.SPELL_HARM, &m_caster_pos);
 	}
 	
-	m_snd_loop = ARX_SOUND_PlaySFX(SND_SPELL_MAGICAL_SHIELD, &m_caster_pos, 1.f, ARX_SOUND_PLAY_LOOPED);
+	m_snd_loop = ARX_SOUND_PlaySFX_loop(g_snd.SPELL_MAGICAL_SHIELD_LOOP, &m_caster_pos, 1.f);
 	
 	spells.endByCaster(m_caster, SPELL_LIFE_DRAIN);
 	spells.endByCaster(m_caster, SPELL_MANA_DRAIN);
 	
-	m_duration = (m_launchDuration >-1) ? m_launchDuration : 6000000;
-	m_hasDuration = true;
+	m_hasDuration = m_launchDuration >= 0;
+	m_duration = m_hasDuration ? m_launchDuration : 0;
 	m_fManaCostPerSecond = 0.4f;
 
 	DamageParameters damage;
 	damage.radius = 150.f;
 	damage.damages = 4.f;
 	damage.area = DAMAGE_FULL;
-	damage.duration = 100000000;
+	damage.duration = GameDurationMs(100000000);
 	damage.source = m_caster;
 	damage.flags = DAMAGE_FLAG_DONT_HURT_SOURCE | DAMAGE_FLAG_FOLLOW_SOURCE | DAMAGE_FLAG_ADD_VISUAL_FX;
 	damage.type = DAMAGE_TYPE_FAKEFIRE | DAMAGE_TYPE_MAGICAL;
 	m_damage = DamageCreate(damage);
 	
-	m_light = GetFreeDynLight();
-	if(lightHandleIsValid(m_light)) {
-		EERIE_LIGHT * light = lightHandleGet(m_light);
-		
-		light->intensity = 2.3f;
-		light->fallend = 700.f;
-		light->fallstart = 500.f;
-		light->rgb = Color3f::red;
-		light->pos = m_caster_pos;
-	}
+	m_cabal.addRing(Color3f(0.8f, 0.4f, 0.f));
+	m_cabal.addRing(Color3f(0.5f, 3.f, 0.f));
+	m_cabal.addRing(Color3f(0.25f, 0.1f, 0.f));
+	m_cabal.addRing(Color3f(0.15f, 0.1f, 0.f));
+	m_cabal.disableSecondRingSet();
+	
+	m_cabal.setLowerColorRndRange(Color3f(0.8f, 0.6f, 0.0f));
+	m_cabal.setUpperColorRndRange(Color3f(1.0f, 0.8f, 0.0f));
+	m_cabal.setStartLightColor(Color3f::red);
+	m_cabal.create(m_caster_pos);
 }
 
-void HarmSpell::End()
-{
+void HarmSpell::End() {
+	
 	DamageRequestEnd(m_damage);
 	
-	endLightDelayed(m_light, 600);
+	m_cabal.end();
 	
 	ARX_SOUND_Stop(m_snd_loop);
+	m_snd_loop = audio::SourcedSample();
 }
 
-// TODO copy-paste cabal
-void HarmSpell::Update()
-{
-	float refpos;
-	float scaley;
+void HarmSpell::Update() {
 	
-	if(m_caster == PlayerEntityHandle)
-		scaley = 90.f;
-	else
-		scaley = glm::abs(entities[m_caster]->physics.cyl.height * (1.0f/2)) + 30.f;
-	
-	const float frametime = float(arxtime.get_frame_time());
-	
-	float mov = std::sin(frametime * (1.0f/800)) * scaley;
-	
-	Vec3f cabalpos;
-	if(m_caster == PlayerEntityHandle) {
-		cabalpos.x = player.pos.x;
-		cabalpos.y = player.pos.y + 60.f - mov;
-		cabalpos.z = player.pos.z;
-		refpos = player.pos.y + 60.f;
-	} else {
-		cabalpos.x = entities[m_caster]->pos.x;
-		cabalpos.y = entities[m_caster]->pos.y - scaley - mov;
-		cabalpos.z = entities[m_caster]->pos.z;
-		refpos = entities[m_caster]->pos.y - scaley;
+	float scaley = 90.f;
+	float offset = 60.f;
+	if(m_caster != EntityHandle_Player) {
+		scaley = glm::abs(entities[m_caster]->physics.cyl.height * (1.0f / 2)) + 30.f;
+		offset = -scaley;
 	}
+	m_cabal.setYScale(scaley);
+	m_cabal.setOffset(offset);
 	
-	float Es = std::sin(frametime * (1.0f/800) + glm::radians(scaley));
-	
-	if(lightHandleIsValid(m_light)) {
-		EERIE_LIGHT * light = lightHandleGet(m_light);
-		
-		light->pos.x = cabalpos.x;
-		light->pos.y = refpos;
-		light->pos.z = cabalpos.z;
-		light->rgb.r = Random::getf(0.8f, 1.0f);
-		light->rgb.g = Random::getf(0.6f, 0.8f);
-		light->fallstart = Es * 1.5f;
-	}
-	
-	RenderMaterial mat;
-	mat.setCulling(CullNone);
-	mat.setDepthTest(true);
-	mat.setBlendType(RenderMaterial::Additive);
-	
-	Anglef cabalangle(0.f, 0.f, 0.f);
-	cabalangle.setPitch(m_pitch + g_framedelay * 0.1f);
-	m_pitch = cabalangle.getPitch();
-	
-	Vec3f cabalscale = Vec3f(Es);
-	Color3f cabalcolor = Color3f(0.8f, 0.4f, 0.f);
-	Draw3DObject(cabal, cabalangle, cabalpos, cabalscale, cabalcolor, mat);
-	
-	mov = std::sin((frametime - 30.f) * (1.0f/800)) * scaley;
-	cabalpos.y = refpos - mov;
-	cabalcolor = Color3f(0.5f, 3.f, 0.f);
-	Draw3DObject(cabal, cabalangle, cabalpos, cabalscale, cabalcolor, mat);
-	
-	mov = std::sin((frametime - 60.f) * (1.0f/800)) * scaley;
-	cabalpos.y = refpos - mov;
-	cabalcolor = Color3f(0.25f, 0.1f, 0.f);
-	Draw3DObject(cabal, cabalangle, cabalpos, cabalscale, cabalcolor, mat);
-	
-	mov = std::sin((frametime - 120.f) * (1.0f/800)) * scaley;
-	cabalpos.y = refpos - mov;
-	cabalcolor = Color3f(0.15f, 0.1f, 0.f);
-	Draw3DObject(cabal, cabalangle, cabalpos, cabalscale, cabalcolor, mat);
-	
-	ARX_SOUND_RefreshPosition(m_snd_loop, cabalpos);
+	Vec3f casterPos = (m_caster == EntityHandle_Player) ? player.pos : entities[m_caster]->pos;
+	Vec3f cabalPos = m_cabal.update(casterPos);
+	ARX_SOUND_RefreshPosition(m_snd_loop, cabalPos);
 }

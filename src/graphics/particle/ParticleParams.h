@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -48,8 +48,8 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "math/Vector.h"
 
 enum ParticleSpawnFlag {
-	PARTICLE_CIRCULAR = (1<<0),
-	PARTICLE_BORDER   = (1<<1)
+	PARTICLE_CIRCULAR = 1 << 0,
+	PARTICLE_BORDER   = 1 << 1
 };
 DECLARE_FLAGS(ParticleSpawnFlag, ParticleSpawn)
 DECLARE_FLAGS_OPERATORS(ParticleSpawn)
@@ -105,14 +105,14 @@ public:
 	ParticleSpawn m_spawnFlags;
 	
 	ParticleParams()
-		: m_pos(Vec3f_ZERO)
-		, m_direction(Vec3f_ZERO)
-		, m_gravity(Vec3f_ZERO)
+		: m_pos(0.f)
+		, m_direction(0.f)
+		, m_gravity(0.f)
 		, m_looping(true)
 		, m_nbMax(0)
 		, m_freq(-1)
-		, m_rotationRandomDirection(0)
-		, m_rotationRandomStart(0)
+		, m_rotationRandomDirection(false)
+		, m_rotationRandomStart(false)
 		, m_life(0)
 		, m_lifeRandom(0)
 		, m_angle(0)
@@ -122,10 +122,8 @@ public:
 		, m_rotation(0)
 		, m_texture()
 		, m_blendMode(RenderMaterial::Additive)
-		, m_startSegment()
-		, m_endSegment()
-		, m_spawnFlags()
-	{}
+	{ }
+	
 };
 
 #endif // ARX_GRAPHICS_PARTICLE_PARTICLEPARAMS_H

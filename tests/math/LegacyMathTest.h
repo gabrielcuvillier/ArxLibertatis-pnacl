@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -33,9 +33,7 @@ class LegacyMathTest : public CppUnit::TestFixture {
 	CPPUNIT_TEST(quatTransformVectorTest);
 	CPPUNIT_TEST(quatMatrixConversionTest);
 	CPPUNIT_TEST(vecMatrixConversionTest);
-	CPPUNIT_TEST(angleTest);
 	CPPUNIT_TEST(angleConversionTest);
-	CPPUNIT_TEST(cameraRotationTest);
 	CPPUNIT_TEST(inventorySizeTest);
 	CPPUNIT_TEST(angleToVectorXZ_Test);
 	CPPUNIT_TEST(vectorRotateTest);
@@ -44,9 +42,6 @@ class LegacyMathTest : public CppUnit::TestFixture {
 	CPPUNIT_TEST_SUITE_END();
 	
 public:
-	LegacyMathTest()
-		: CppUnit::TestFixture()
-	{}
 	
 	void setUp();
 	void tearDown();
@@ -58,9 +53,7 @@ public:
 	void quatTransformVectorTest();
 	void quatMatrixConversionTest();
 	void vecMatrixConversionTest();
-	void angleTest();
 	void angleConversionTest();
-	void cameraRotationTest();
 	
 	void inventorySizeTest();
 	
@@ -70,6 +63,7 @@ public:
 	void focalToFovTest();
 	
 	void pointInerpolationTest();
+	
 };
 
 #endif // ARX_TESTS_GRAPHICS_LEGACYMATHTEST_H

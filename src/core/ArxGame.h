@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -45,6 +45,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_CORE_ARXGAME_H
 
 #include "core/Application.h"
+#include "core/SaveGame.h"
 
 #include "graphics/Renderer.h"
 
@@ -67,7 +68,6 @@ protected:
 	void shutdownGame();
 	
 	void doFrame();
-	void update();
 	void render();
 
 	void manageKeyMouse();
@@ -75,9 +75,6 @@ protected:
 	void manageEditorControls();
 	void managePlayerControls();
 	void updateAllInterface();
-
-	void update2DFX();
-	void goFor2DFX();
 	
 public:
 	
@@ -96,10 +93,6 @@ private:
 	void handlePlayerDeath();
 	void updateActiveCamera();
 	
-	bool isInMenu() const;
-	
-	void renderMenu();
-	
 	void updateLevel();
 	void renderLevel();
 	
@@ -109,11 +102,12 @@ private:
 	virtual void onResizeWindow(const Window & window);
 	virtual void onDestroyWindow(const Window & window);
 	virtual void onToggleFullscreen(const Window & window);
+	virtual void onDroppedFile(const Window & window, const fs::path & path);
 	
 	bool m_wasResized;
 	
-	void onRendererInit(Renderer &);
-	void onRendererShutdown(Renderer &);
+	void onRendererInit(Renderer & renderer);
+	void onRendererShutdown(Renderer & renderer);
 	
 	bool initWindow(RenderWindow * window);
 	
@@ -127,14 +121,16 @@ enum InfoPanels {
 	InfoPanelFramerate,
 	InfoPanelFramerateGraph,
 	InfoPanelDebug,
-	InfoPanelDebugToggles,
 	InfoPanelGuiDebug,
+	InfoPanelAudio,
 	InfoPanelEnumSize
 };
 
 extern InfoPanels g_debugInfo;
 
 extern TextureContainer * enviro;
+
+extern SavegameHandle LOADQUEST_SLOT;
 
 #endif // ARX_CORE_ARXGAME_H
 

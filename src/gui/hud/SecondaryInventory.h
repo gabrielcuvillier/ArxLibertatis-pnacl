@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2015-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -28,28 +28,36 @@ class TextureContainer;
 
 
 class SecondaryInventoryPickAllHudIcon : public HudIconBase {
-private:
+	
 	Vec2f m_size;
 	
 public:
+	
+	SecondaryInventoryPickAllHudIcon() : m_size(0.f) { }
+	
 	void init();
 	void update(const Rectf & parent);
 	void updateInput();
+	
 };
 
 class SecondaryInventoryCloseHudIcon : public HudIconBase {
-private:
+	
 	Vec2f m_size;
 	
 public:
+	
+	SecondaryInventoryCloseHudIcon() : m_size(0.f) { }
+	
 	void init();
 	void update(const Rectf & parent);
 	void updateInput();
+	
 };
 
 
 class SecondaryInventoryHud : public HudItem {
-private:
+	
 	Vec2f m_size;
 	TextureContainer * ingame_inventory;
 	TextureContainer * m_canNotSteal;
@@ -59,8 +67,19 @@ private:
 	SecondaryInventoryCloseHudIcon m_closeButton;
 	
 public:
+	
+	SecondaryInventoryHud()
+		: m_size(0.f)
+		, ingame_inventory(NULL)
+		, m_canNotSteal(NULL)
+		, m_defaultBackground(NULL)
+		, m_fadeDirection(Fade_stable)
+		, m_fadePosition(0.f)
+	{ }
+	
 	void init();
 	void update();
+	void updateRect();
 	void draw();
 	
 	void updateInputButtons();
@@ -72,7 +91,7 @@ public:
 	Entity * getObj(const Vec2s & pos);
 	
 	void dropEntity();
-	bool dragEntity(Entity * io, const Vec2s &pos);
+	bool dragEntity(Entity * io, const Vec2s & pos);
 	
 	void close();
 	
@@ -86,6 +105,7 @@ public:
 	
 	Fade m_fadeDirection;
 	float m_fadePosition;
+	
 };
 
 extern SecondaryInventoryHud g_secondaryInventoryHud;

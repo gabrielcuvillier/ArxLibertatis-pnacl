@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -45,44 +45,47 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #define ARX_GRAPHICS_EFFECTS_MAGICMISSILE_H
 
 #include "graphics/effects/SpellEffects.h"
+#include "platform/Platform.h"
 
 // Done By : Didier Pédreno
 class CMagicMissile : public CSpellFx {
 	
 public:
+	
 	CMagicMissile();
 	~CMagicMissile();
 	
-	void SetTTL(unsigned long);
+	void SetTTL(GameDuration aulTTL);
 	
-	void Create(const Vec3f & startPos, const Anglef &);
-	void Update(float timeDelta);
+	void Create(const Vec3f & startPos, const Anglef & angles);
+	void Update(GameDuration timeDelta);
 	void Render();
 	
 	bool bExplo;
 	bool bMove;
 	Vec3f eCurPos;
 	
-	float lightIntensityFactor;
-	
-	LightHandle lLightId;
-	
 protected:
+	
 	Color3f m_trailColor;
 	Color3f m_projectileColor;
 	TextureContainer * tex_mm;
 	
 private:
+	
 	int iLength;
-	int	iBezierPrecision;
+	int iBezierPrecision;
 	float fTrail;
 	Vec3f pathways[6];
-	audio::SourceId snd_loop;
+	
 };
 
-class MrMagicMissileFx : public CMagicMissile {
+class MrMagicMissileFx arx_final : public CMagicMissile {
+	
 public:
+	
 	MrMagicMissileFx();
+	
 };
 
 #endif // ARX_GRAPHICS_EFFECTS_MAGICMISSILE_H

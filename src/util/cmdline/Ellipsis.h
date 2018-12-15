@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -99,18 +99,18 @@ public:
 	
 	explicit ellipsis(size_type s, const value_type & v = value_type(),
 	                  const allocator_type & a = allocator_type())
-		: super_t(s,v,a) {
+		: super_t(s, v, a) {
 	}
 	
 	template <typename Iter>
 	ellipsis(Iter b, Iter e, const allocator_type & a = allocator_type())
-		: super_t(b,e,a) {
+		: super_t(b, e, a) {
 	}
 	
 	ellipsis(const ellipsis & rh) : super_t(rh) { }
 	
 	ellipsis & operator=(const ellipsis & rh) {
-		static_cast<super_t&>(*this) = rh;
+		static_cast<super_t &>(*this) = rh;
 		return *this;
 	}
 	

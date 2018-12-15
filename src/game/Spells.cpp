@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -59,8 +59,6 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 
-#include <glm/gtx/norm.hpp>
-
 #include "animation/Animation.h"
 
 #include "core/Application.h"
@@ -94,6 +92,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "gui/Menu.h"
 #include "gui/Interface.h"
 #include "gui/MiniMap.h"
+#include "gui/Notification.h"
 
 #include "graphics/BaseGraphicsTypes.h"
 #include "graphics/Color.h"
@@ -136,11 +135,9 @@ bool GLOBAL_MAGIC_MODE = true;
 
 short ARX_FLARES_broken(1);
 
-long snip=0;
-static Vec2s g_LastFlarePosition;
-static unsigned long g_LastFlareTime;
-
-unsigned char ucFlick=0;
+long snip = 0;
+static Vec2f g_LastFlarePosition;
+static PlatformInstant g_LastFlareTime = 0;
 
 SpellManager spells;
 
@@ -157,14 +154,8 @@ void SpellManager::init() {
 }
 
 void SpellManager::clearAll() {
-	
 	for(size_t i = 0; i < MAX_SPELLS; i++) {
-		SpellBase * spell = m_spells[i];
-		
-		if(spell) {
-			delete spell;
-		}
-		
+		delete m_spells[i];
 		m_spells[i] = NULL;
 	}
 }
@@ -173,9 +164,12 @@ SpellBase * SpellManager::operator[](const SpellHandle handle) {
 	return m_spells[handle.handleData()];
 }
 
+static void SPELLEND_Notify(const SpellBase & spell);
+
 void SpellManager::endSpell(SpellBase * spell)
 {
 	spell->m_duration = 0;
+	spell->m_hasDuration = true;
 }
 
 void SpellManager::endByCaster(EntityHandle caster) {
@@ -232,7 +226,7 @@ bool SpellManager::ExistAnyInstanceForThisCaster(SpellType typ, EntityHandle cas
 	return false;
 }
 
-SpellBase *SpellManager::getSpellByCaster(EntityHandle caster, SpellType type) {
+SpellBase * SpellManager::getSpellByCaster(EntityHandle caster, SpellType type) {
 	
 	if(caster == EntityHandle())
 		return NULL;
@@ -283,15 +277,17 @@ void SpellManager::replaceCaster(EntityHandle oldCaster, EntityHandle newCaster)
 	}
 }
 
-void SpellManager::removeTarget(Entity *io) {
+void SpellManager::removeTarget(Entity * io) {
 	
 	for(size_t i = 0; i < MAX_SPELLS; i++) {
 		SpellBase * spell = m_spells[i];
-		if(!spell)
+		if(!spell) {
 			continue;
-		
-		spell->m_targets.erase(std::remove(spell->m_targets.begin(), spell->m_targets.end(), io->index()), spell->m_targets.end());
+		}
+		spell->m_targets.erase(std::remove(spell->m_targets.begin(), spell->m_targets.end(), io->index()),
+		                       spell->m_targets.end());
 	}
+	
 }
 
 bool SpellManager::hasFreeSlot()
@@ -349,26 +345,26 @@ static const char * MakeSpellName(SpellType num) {
 		case SPELL_FIREBALL              : return "fireball";
 		case SPELL_CREATE_FOOD           : return "create_food";
 		case SPELL_ICE_PROJECTILE        : return "ice_projectile";
-		// Level 4 
+		// Level 4
 		case SPELL_BLESS                 : return "bless";
 		case SPELL_DISPELL_FIELD         : return "dispell_field";
 		case SPELL_FIRE_PROTECTION       : return "fire_protection";
 		case SPELL_TELEKINESIS           : return "telekinesis";
 		case SPELL_CURSE                 : return "curse";
 		case SPELL_COLD_PROTECTION       : return "cold_protection";
-		// Level 5 
+		// Level 5
 		case SPELL_RUNE_OF_GUARDING      : return "rune_of_guarding";
 		case SPELL_LEVITATE              : return "levitate";
 		case SPELL_CURE_POISON           : return "cure_poison";
 		case SPELL_REPEL_UNDEAD          : return "repel_undead";
 		case SPELL_POISON_PROJECTILE     : return "poison_projectile";
-		// Level 6 
+		// Level 6
 		case SPELL_RISE_DEAD             : return "raise_dead";
 		case SPELL_PARALYSE              : return "paralyse";
 		case SPELL_CREATE_FIELD          : return "create_field";
 		case SPELL_DISARM_TRAP           : return "disarm_trap";
 		case SPELL_SLOW_DOWN             : return "slowdown";
-		// Level 7  
+		// Level 7
 		case SPELL_FLYING_EYE            : return "flying_eye";
 		case SPELL_FIRE_FIELD            : return "fire_field";
 		case SPELL_ICE_FIELD             : return "ice_field";
@@ -404,16 +400,18 @@ static void SPELLCAST_Notify(const SpellBase & spell) {
 	if(!spellName)
 		return;
 	
+	Entity * sender = (source != EntityHandle()) ? entities[source] : NULL;
+	ScriptParameters parameters;
+	parameters.push_back(spellName);
+	parameters.push_back(long(spell.m_level));
+	
 	for(size_t i = 0; i < entities.size(); i++) {
 		const EntityHandle handle = EntityHandle(i);
-		
 		if(entities[handle] != NULL) {
-			EVENT_SENDER = (source != EntityHandle()) ? entities[source] : NULL;
-			char param[256];
-			sprintf(param, "%s %ld", spellName, (long)spell.m_level);
-			SendIOScriptEvent(entities[handle], SM_SPELLCAST, param);
+			SendIOScriptEvent(sender, entities[handle], SM_SPELLCAST, parameters);
 		}
 	}
+	
 }
 
 static void SPELLCAST_NotifyOnlyTarget(const SpellBase & spell) {
@@ -425,14 +423,11 @@ static void SPELLCAST_NotifyOnlyTarget(const SpellBase & spell) {
 	const char * spellName = MakeSpellName(spell.m_type);
 	
 	if(spellName) {
-		if(source != EntityHandle())
-			EVENT_SENDER = entities[source];
-		else
-			EVENT_SENDER = NULL;
-
-		char param[256];
-		sprintf(param,"%s %ld",spellName,(long)spell.m_level);
-		SendIOScriptEvent(entities[spell.m_target], SM_SPELLCAST, param);
+		Entity * sender = (source != EntityHandle()) ? entities[source] : NULL;
+		ScriptParameters parameters;
+		parameters.push_back(spellName);
+		parameters.push_back(long(spell.m_level));
+		SendIOScriptEvent(sender, entities[spell.m_target], SM_SPELLCAST, parameters);
 	}
 }
 
@@ -442,15 +437,12 @@ static void SPELLEND_Notify(const SpellBase & spell) {
 	const char * spellName = MakeSpellName(spell.m_type);
 
 	if(spell.m_type == SPELL_CONFUSE) {
-		EVENT_SENDER = ValidIONum(source) ? entities[source] : NULL;
-		
-		if(ValidIONum(spell.m_target)) {
-			if(spellName) {
-				Entity * targ = entities[spell.m_target];
-				char param[128];
-				sprintf(param,"%s %ld", spellName, (long)spell.m_level);
-				SendIOScriptEvent(targ, SM_SPELLEND, param);
-			}
+		if(ValidIONum(spell.m_target) && spellName) {
+			Entity * sender = ValidIONum(source) ? entities[source] : NULL;
+			ScriptParameters parameters;
+			parameters.push_back(spellName);
+			parameters.push_back(long(spell.m_level));
+			SendIOScriptEvent(sender, entities[spell.m_target], SM_SPELLEND, parameters);
 		}
 		return;
 	}
@@ -460,37 +452,33 @@ static void SPELLEND_Notify(const SpellBase & spell) {
 		return;
 	}
 	
+	Entity * sender = ValidIONum(source) ? entities[source] : NULL;
+	ScriptParameters parameters;
+	parameters.push_back(spellName);
+	parameters.push_back(long(spell.m_level));
+	
 	for(size_t i = 0; i < entities.size(); i++) {
 		const EntityHandle handle = EntityHandle(i);
-		
 		if(entities[handle]) {
-			EVENT_SENDER = ValidIONum(source) ? entities[source] : NULL;
-			
-			char param[128];
-			sprintf(param, "%s %ld", spellName, (long)spell.m_level);
-			SendIOScriptEvent(entities[handle], SM_SPELLEND, param);
+			SendIOScriptEvent(sender, entities[handle], SM_SPELLEND, parameters);
 		}
 	}
+	
 }
 
 //! Plays the sound of Fizzling spell
 void ARX_SPELLS_Fizzle(SpellBase * spell) {
 	
-	spells.endSpell(spell);
-	
 	if(ValidIONum(spell->m_caster)) {
-		ARX_SOUND_PlaySFX(SND_MAGIC_FIZZLE, &spell->m_caster_pos);
+		ARX_SOUND_PlaySFX(g_snd.MAGIC_FIZZLE, &spell->m_caster_pos);
 	}
 }
 
 
 void ARX_SPELLS_ManageMagic() {
-	arx_assert(entities.player());
 	
-	if(ARXmenu.currentmode!=AMCM_OFF)
-		return;
-
-	Entity *io = entities.player();
+	arx_assert(entities.player());
+	Entity * io = entities.player();
 	
 	const ANIM_HANDLE * anim = io->animlayer[1].cur_anim;
 	
@@ -517,7 +505,7 @@ void ARX_SPELLS_ManageMagic() {
 		if(player.Interface & INTER_COMBATMODE) {
 			WILLRETURNTOCOMBATMODE = true;
 
-			ARX_INTERFACE_Combat_Mode(0);
+			ARX_INTERFACE_setCombatMode(COMBAT_MODE_OFF);
 
 			ResetAnim(io->animlayer[1]);
 			io->animlayer[1].flags &= ~EA_LOOP;
@@ -543,14 +531,14 @@ void ARX_SPELLS_ManageMagic() {
 			}
 			
 			if(eeMousePressed1()) {
-				Vec2s pos = DANAEMouse;
+				Vec2f pos = Vec2f(DANAEMouse);
 				if(TRUE_PLAYER_MOUSELOOK_ON) {
-					pos = MemoMouse;
+					pos = Vec2f(MemoMouse);
 				}
 				
-				unsigned long now = arxtime.now_ul();
+				PlatformInstant now = g_platformTime.frameStart();
 				
-				const unsigned long interval = 1000 / 60;
+				const PlatformDuration interval = PlatformDurationMs(1000 / 60);
 				
 				if(ARX_FLARES_broken) {
 					g_LastFlarePosition = pos;
@@ -559,7 +547,7 @@ void ARX_SPELLS_ManageMagic() {
 				
 				if(now - g_LastFlareTime >= interval) {
 					
-					if(glm::distance(Vec2f(pos), Vec2f(g_LastFlarePosition)) > 14 * g_sizeRatio.y) {
+					if(glm::distance(pos, g_LastFlarePosition) > 14 * g_sizeRatio.y) {
 						FlareLine(g_LastFlarePosition, pos);
 						g_LastFlarePosition = pos;
 					}
@@ -572,12 +560,15 @@ void ARX_SPELLS_ManageMagic() {
 					g_LastFlareTime = now - std::min(now - g_LastFlareTime - interval, interval);
 				}
 				
-				ARX_FLARES_broken=0;
+				ARX_FLARES_broken = 0;
 				
-				if(!ARX_SOUND_IsPlaying(SND_MAGIC_DRAW))
-					ARX_SOUND_PlaySFX(SND_MAGIC_DRAW, NULL, 1.0F, ARX_SOUND_PLAY_LOOPED);
+				if(!ARX_SOUND_IsPlaying(player.magic_draw)) {
+					player.magic_draw = ARX_SOUND_PlaySFX_loop(g_snd.MAGIC_DRAW_LOOP, NULL, 1.f);
+				}
+				
 			} else {
-				ARX_SOUND_Stop(SND_MAGIC_DRAW);				
+				ARX_SOUND_Stop(player.magic_draw);
+				player.magic_draw = audio::SourcedSample();
 			}
 			
 			snip = 0;
@@ -586,8 +577,8 @@ void ARX_SPELLS_ManageMagic() {
 		ARX_FLARES_broken = 1;
 		MagicFlareChangeColor();
 		
-		if(player.doingmagic != 0) { //==2)
-			player.doingmagic = 0;//1
+		if(player.doingmagic != 0) {
+			player.doingmagic = 0;
 			if(io->anims[ANIM_CAST_END]) {
 				changeAnimation(io, 1, io->anims[ANIM_CAST_END]);
 			}
@@ -627,37 +618,36 @@ void ARX_SPELLS_ManageMagic() {
 
 		ARX_SPELLS_ResetRecognition();
 	} else if(ARX_FLARES_broken == 2) {
-		ARX_SPELLS_Analyse();
 
-		if(!SpellMoves.empty())
-			ARX_SPELLS_AnalyseSYMBOL();
+		if(!config.input.useAltRuneRecognition) {
+			ARX_SPELLS_Analyse();
+			if(!SpellMoves.empty())
+				ARX_SPELLS_AnalyseSYMBOL();
+		} else {
+			ARX_SPELLS_Analyse_Alt();
+		}
 	
 		ARX_FLARES_broken = 1;
 	}
 }
 
-static bool CanPayMana(SpellBase * spell, float cost, bool _bSound = true) {
+static bool CanPayMana(SpellBase * spell, float cost) {
 	
-	if(spell->m_flags & SPELLCAST_FLAG_NOMANA)
+	if(spell->m_flags & SPELLCAST_FLAG_NOMANA) {
 		return true;
-
-	if(spell->m_caster == PlayerEntityHandle) {
+	}
+	if(spell->m_caster == EntityHandle_Player) {
 		if(player.manaPool.current < cost) {
-			ARX_SPELLS_Fizzle(spell);
-
-			if(_bSound) {
-				ARX_SPEECH_Add(getLocalised("player_cantcast"));
-				ARX_SPEECH_AddSpeech(entities.player(), "player_cantcast", ANIM_TALK_NEUTRAL);
-			}
 			return false;
 		}
-
+		
 		player.manaPool.current -= cost;
 		return true;
-	} else if(ValidIONum(spell->m_caster)) {
+	}
+	
+	if(ValidIONum(spell->m_caster)) {
 		if(entities[spell->m_caster]->ioflags & IO_NPC) {
 			if(entities[spell->m_caster]->_npcdata->manaPool.current < cost) {
-				ARX_SPELLS_Fizzle(spell);
 				return false;
 			}
 			entities[spell->m_caster]->_npcdata->manaPool.current -= cost;
@@ -671,13 +661,13 @@ static bool CanPayMana(SpellBase * spell, float cost, bool _bSound = true) {
 static EntityHandle TemporaryGetSpellTarget(const Vec3f & from) {
 	
 	float mindist = std::numeric_limits<float>::max();
-	EntityHandle found = PlayerEntityHandle;
+	EntityHandle found = EntityHandle_Player;
 	for(size_t i = 1; i < entities.size(); i++) {
 		const EntityHandle handle = EntityHandle(i);
 		Entity * e = entities[handle];
 		
 		if(e && e->ioflags & IO_NPC) {
-			float dist = glm::distance2(from, e->pos);
+			float dist = arx::distance2(from, e->pos);
 			if(dist < mindist) {
 				found = handle;
 				mindist = dist;
@@ -693,63 +683,54 @@ struct TARGETING_SPELL {
 	SpellcastFlags flags;
 	long level;
 	EntityHandle target;
-	long duration;
+	GameDuration duration;
 };
 
 static TARGETING_SPELL t_spell;
 
-long LOOKING_FOR_SPELL_TARGET=0;
-unsigned long LOOKING_FOR_SPELL_TARGET_TIME=0;
+long LOOKING_FOR_SPELL_TARGET = 0;
+GameInstant LOOKING_FOR_SPELL_TARGET_TIME = 0;
+
 void ARX_SPELLS_CancelSpellTarget() {
 	t_spell.typ = SPELL_NONE;
-	LOOKING_FOR_SPELL_TARGET=0;
+	LOOKING_FOR_SPELL_TARGET = 0;
 }
 
 void ARX_SPELLS_LaunchSpellTarget(Entity * io) {
 	if(io) {
-		ARX_SPELLS_Launch(t_spell.typ,
-		                  PlayerEntityHandle,
-		                  t_spell.flags,
-		                  t_spell.level,
-		                  io->index(),
+		ARX_SPELLS_Launch(t_spell.typ, EntityHandle_Player, t_spell.flags, t_spell.level, io->index(),
 		                  t_spell.duration);
 	}
 }
 
-float ARX_SPELLS_ApplyFireProtection(Entity * io,float damages)
-{
+float ARX_SPELLS_ApplyFireProtection(Entity * io, float damages) {
+	
 	if(io) {
+		
 		SpellBase * spell = spells.getSpellOnTarget(io->index(), SPELL_FIRE_PROTECTION);
 		if(spell) {
-			float modif = 1.f - (spell->m_level * ( 1.0f / 10 ));
-
-			modif = glm::clamp(modif, 0.f, 1.f);
-
-			damages *= modif;
+			damages *= glm::clamp(1.f - (spell->m_level * 0.1f), 0.f, 1.f);
 		}
-
+		
 		if(io->ioflags & IO_NPC) {
-			damages -= io->_npcdata->resist_fire*( 1.0f / 100 )*damages;
-
-			if(damages < 0.f)
-				damages=0.f;
+			damages -= io->_npcdata->resist_fire * 0.01f * damages;
+			if(damages < 0.f) {
+				damages = 0.f;
+			}
 		}
+		
 	}
-
+	
 	return damages;
 }
 
-float ARX_SPELLS_ApplyColdProtection(Entity * io,float damages)
-{
+float ARX_SPELLS_ApplyColdProtection(Entity * io, float damages) {
+	
 	SpellBase * spell = spells.getSpellOnTarget(io->index(), SPELL_COLD_PROTECTION);
 	if(spell) {
-		float modif = 1.f - (spell->m_level * ( 1.0f / 10 ));
-
-		modif = glm::clamp(modif, 0.f, 1.f);
-
-		damages *= modif;
+		damages *= glm::clamp(1.f - (spell->m_level * 0.1f), 0.f, 1.f);
 	}
-
+	
 	return damages;
 }
 
@@ -789,7 +770,6 @@ float ARX_SPELLS_GetManaCost(SpellType spell, float casterLevel) {
 		case SPELL_DISPELL_FIELD:         return   7.f;
 		case SPELL_RUNE_OF_GUARDING:      return   9.f;
 		case SPELL_CURE_POISON:           return  10.f;
-		case SPELL_TELEPORT:              return  10.f;
 		case SPELL_RISE_DEAD:             return  12.f;
 		case SPELL_DISARM_TRAP:           return  15.f;
 		case SPELL_FIRE_FIELD:            return  15.f;
@@ -881,7 +861,6 @@ static SpellBase * createSpellInstance(SpellType type) {
 		case SPELL_CONTROL_TARGET: return new ControlTargetSpell();
 		case SPELL_FREEZE_TIME: return new FreezeTimeSpell();
 		case SPELL_MASS_INCINERATE: return new MassIncinerateSpell();
-		case SPELL_TELEPORT: return new TeleportSpell();
 	}
 	
 	return NULL;
@@ -889,17 +868,17 @@ static SpellBase * createSpellInstance(SpellType type) {
 
 
 
-bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags, long level, EntityHandle target, long duration) {
+bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags, long level, EntityHandle target, GameDuration duration) {
 	
 	if(cur_rf == 3) {
-		flags |= SPELLCAST_FLAG_NOCHECKCANCAST | SPELLCAST_FLAG_NOMANA;	
+		flags |= SPELLCAST_FLAG_NOCHECKCANCAST | SPELLCAST_FLAG_NOMANA;
 	}
 
 	if(sp_max) {
-		level = std::max(level, 15L);
+		level = std::max(level, 15l);
 	}
 	
-	if(   source == PlayerEntityHandle
+	if(   source == EntityHandle_Player
 	   && !(flags & SPELLCAST_FLAG_NOCHECKCANCAST)
 	) {
 		for(size_t i = 0; i < MAX_SPELL_SYMBOLS; i++) {
@@ -916,16 +895,16 @@ bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags,
 	
 	float playerSpellLevel = 0;
 	
-	if(source == PlayerEntityHandle) {
+	if(source == EntityHandle_Player) {
 		ARX_SPELLS_ResetRecognition();
-
+		
 		if(player.SpellToMemorize.bSpell) {
 			CurrSpellSymbol = 0;
 			player.SpellToMemorize.bSpell = false;
 		}
-
+		
 		ARX_PLAYER_ComputePlayerFullStats();
-
+		
 		if(level == -1) {
 			playerSpellLevel = player.m_skillFull.casting + player.m_attributeFull.mind;
 			playerSpellLevel = glm::clamp(playerSpellLevel * 0.1f, 1.0f, 10.0f);
@@ -936,97 +915,95 @@ bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags,
 	
 	// Todo what was this assert supposed to do ?
 	// arx_assert(!(source && (flags & SPELLCAST_FLAG_PRECAST)));
-
+	
 	if(flags & SPELLCAST_FLAG_PRECAST) {
 		int l = level;
-
+		
 		if(l <= 0) {
 			l = checked_range_cast<int>(playerSpellLevel);
 		}
-
+		
 		SpellcastFlags flgs = flags;
 		flgs &= ~SPELLCAST_FLAG_PRECAST;
 		ARX_SPELLS_Precast_Add(typ, l, flgs, duration);
 		return true;
 	}
 	
-	if(target == EntityHandle() && source == PlayerEntityHandle)
-	switch(typ) {
-		case SPELL_LOWER_ARMOR:
-		case SPELL_CURSE:
-		case SPELL_PARALYSE:
-		case SPELL_INCINERATE:
-		case SPELL_SLOW_DOWN:
-		case SPELL_CONFUSE:
-		{
-			LOOKING_FOR_SPELL_TARGET_TIME	= arxtime.now_ul();
-			LOOKING_FOR_SPELL_TARGET		= 1;
-			t_spell.typ						= typ;
-			t_spell.flags					= flags;
-			t_spell.level					= level;
-			t_spell.target					= target;
-			t_spell.duration				= duration;
-			return false;
-		}			
-		case SPELL_ENCHANT_WEAPON:		
-		{
-			LOOKING_FOR_SPELL_TARGET_TIME	= arxtime.now_ul();
-			LOOKING_FOR_SPELL_TARGET		= 2;
-			t_spell.typ						= typ;
-			t_spell.flags					= flags;
-			t_spell.level					= level;
-			t_spell.target					= target;
-			t_spell.duration				= duration;
-			return false;
-		}	
-		break;
-		case SPELL_CONTROL_TARGET:
-		{
-			long tcount = 0;
-
-			if(!ValidIONum(source))
+	if(target == EntityHandle() && source == EntityHandle_Player) {
+		switch(typ) {
+			case SPELL_LOWER_ARMOR:
+			case SPELL_CURSE:
+			case SPELL_PARALYSE:
+			case SPELL_INCINERATE:
+			case SPELL_SLOW_DOWN:
+			case SPELL_CONFUSE: {
+				LOOKING_FOR_SPELL_TARGET_TIME = g_gameTime.now();
+				LOOKING_FOR_SPELL_TARGET = 1;
+				t_spell.typ = typ;
+				t_spell.flags = flags;
+				t_spell.level = level;
+				t_spell.target = target;
+				t_spell.duration = duration;
 				return false;
-
-			Vec3f cpos = entities[source]->pos;
-
-			for(size_t ii = 1 ; ii < entities.size(); ii++) {
-				const EntityHandle handle = EntityHandle(ii);
-				Entity * ioo = entities[handle];
+			}
+			case SPELL_ENCHANT_WEAPON: {
+				LOOKING_FOR_SPELL_TARGET_TIME = g_gameTime.now();
+				LOOKING_FOR_SPELL_TARGET = 2;
+				t_spell.typ = typ;
+				t_spell.flags = flags;
+				t_spell.level = level;
+				t_spell.target = target;
+				t_spell.duration = duration;
+				return false;
+			}
+			case SPELL_CONTROL_TARGET: {
+				long tcount = 0;
 				
-				if(ioo && (ioo->ioflags & IO_NPC) && ioo->_npcdata->lifePool.current > 0.f
-				   && ioo->show == SHOW_FLAG_IN_SCENE
-				   && ioo->groups.find("demon") != ioo->groups.end()
-				   && closerThan(ioo->pos, cpos, 900.f)) {
-					tcount++;
+				if(!ValidIONum(source)) {
+					return false;
 				}
-			}
-
-			if(tcount == 0) {
-				ARX_SOUND_PlaySFX( SND_MAGIC_FIZZLE, &cpos );
+				
+				Vec3f cpos = entities[source]->pos;
+				
+				for(size_t ii = 1; ii < entities.size(); ii++) {
+					const EntityHandle handle = EntityHandle(ii);
+					Entity * ioo = entities[handle];
+					
+					if(ioo && (ioo->ioflags & IO_NPC) && ioo->_npcdata->lifePool.current > 0.f
+						&& ioo->show == SHOW_FLAG_IN_SCENE
+						&& ioo->groups.find("demon") != ioo->groups.end()
+						&& closerThan(ioo->pos, cpos, 900.f)) {
+						tcount++;
+					}
+				}
+				
+				if(tcount == 0) {
+					ARX_SOUND_PlaySFX(g_snd.MAGIC_FIZZLE, &cpos);
+					return false;
+				}
+				
+				ARX_SOUND_PlaySpeech("player_follower_attack");
+				
+				LOOKING_FOR_SPELL_TARGET_TIME = g_gameTime.now();
+				LOOKING_FOR_SPELL_TARGET = 1;
+				t_spell.typ = typ;
+				t_spell.flags = flags;
+				t_spell.level = level;
+				t_spell.target = target;
+				t_spell.duration = duration;
 				return false;
 			}
-
-			ARX_SOUND_PlaySpeech("player_follower_attack");
-
-			LOOKING_FOR_SPELL_TARGET_TIME	= arxtime.now_ul();
-			LOOKING_FOR_SPELL_TARGET		= 1;
-			t_spell.typ						= typ;
-			t_spell.flags					= flags;
-			t_spell.level					= level;
-			t_spell.target					= target;
-			t_spell.duration				= duration;
-			return false;
+			default: break;
 		}
-		break;
-		default: break;
 	}
-
-	if(source == PlayerEntityHandle) {
+	
+	if(source == EntityHandle_Player) {
 		ARX_SPELLS_CancelSpellTarget();
 	}
-
-	if(!spells.hasFreeSlot())
+	
+	if(!spells.hasFreeSlot()) {
 		return false;
+	}
 	
 	SpellBase * spell = createSpellInstance(typ);
 	if(!spell)
@@ -1047,14 +1024,14 @@ bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags,
 	
 	float spellLevel;
 	
-	if(source == PlayerEntityHandle) {
+	if(source == EntityHandle_Player) {
 		// Player source
 		spellLevel = playerSpellLevel; // Level of caster
 	} else {
 		// IO source
 		spellLevel = (float)glm::clamp(level, 1l, 10l);
 	}
-
+	
 	if(flags & SPELLCAST_FLAG_LAUNCHPRECAST) {
 		spellLevel = static_cast<float>(level);
 	}
@@ -1066,17 +1043,22 @@ bool ARX_SPELLS_Launch(SpellType typ, EntityHandle source, SpellcastFlags flags,
 	spell->m_level = spellLevel;
 	spell->m_flags = flags;
 	spell->m_type = typ;
-	spell->m_timcreation = arxtime.now_ul();
+	spell->m_timcreation = g_gameTime.now();
 	spell->m_fManaCostPerSecond = 0.f;
 	spell->m_launchDuration = duration;
-
+	
 	if(!CanPayMana(spell, ARX_SPELLS_GetManaCost(typ, spell->m_level))) {
+		if(spell->m_caster == EntityHandle_Player) {
+			notification_add(getLocalised("player_cantcast"));
+			ARX_SPEECH_AddSpeech(entities.player(), "player_cantcast", ANIM_TALK_NEUTRAL);
+		}
+		ARX_SPELLS_Fizzle(spell);
 		delete spell;
 		return false;
 	}
 	
 	if(!GLOBAL_MAGIC_MODE) {
-		ARX_SOUND_PlaySFX(SND_MAGIC_FIZZLE);
+		ARX_SPELLS_Fizzle(spell);
 		delete spell;
 		return false;
 	}
@@ -1108,10 +1090,6 @@ void ARX_SPELLS_Update() {
 	
 	ARX_PROFILE_FUNC();
 	
-	ucFlick++;
-	
-	const unsigned long now = arxtime.now_ul();
-	
 	for(size_t u = 0; u < MAX_SPELLS; u++) {
 		SpellBase * spell = spells[SpellHandle(u)];
 		if(!spell)
@@ -1121,17 +1099,15 @@ void ARX_SPELLS_Update() {
 			spells.endSpell(spell);
 		}
 		
-		if(   spell->m_hasDuration
-		   && !CanPayMana(spell, spell->m_fManaCostPerSecond * g_framedelay * (1.f/1000), false)
-		) {
+		if(!CanPayMana(spell, spell->m_fManaCostPerSecond * (g_gameTime.lastFrameDuration() / GameDurationMs(1000)))) {
 			ARX_SPELLS_Fizzle(spell);
+			spells.endSpell(spell);
 		}
 		
-		const long framediff = spell->m_timcreation + spell->m_duration - now;
+		spell->m_elapsed += g_gameTime.lastFrameDuration();
 		
-		if(framediff < 0) {
+		if(spell->m_hasDuration && spell->m_elapsed > spell->m_duration) {
 			SPELLEND_Notify(*spell);
-			
 			spell->End();
 			spells.freeSlot(spell);
 			continue;
@@ -1143,14 +1119,15 @@ void ARX_SPELLS_Update() {
 	}
 }
 
-void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle target, SpellcastFlags flags, long duration)
+void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle target, SpellcastFlags flags, GameDuration duration)
 {
 	if(!io || io->spellcast_data.castingspell != SPELL_NONE)
 		return;
-
-	if(!(flags & SPELLCAST_FLAG_NOMANA) && (io->ioflags & IO_NPC) && (io->_npcdata->manaPool.current<=0.f))
+	
+	if(!(flags & SPELLCAST_FLAG_NOMANA) && (io->ioflags & IO_NPC) && io->_npcdata->manaPool.current <= 0.f) {
 		return;
-
+	}
+	
 	unsigned long i(0);
 
 	for(; i < SPELL_TYPES_COUNT; i++)
@@ -1179,12 +1156,11 @@ void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle t
 	io->spellcast_data.duration = duration;
 	io->spellcast_data.target = target;
 	
-	io->gameFlags &=~GFLAG_INVISIBILITY;
+	io->gameFlags &= ~GFLAG_INVISIBILITY;
 	
-	if (	((io->spellcast_data.spell_flags & SPELLCAST_FLAG_NOANIM)
-		&&	(io->spellcast_data.spell_flags & SPELLCAST_FLAG_NODRAW) )
-		||	(io->spellcast_data.spell_flags & SPELLCAST_FLAG_PRECAST))	
-	{
+	if (((io->spellcast_data.spell_flags & SPELLCAST_FLAG_NOANIM)
+	     && (io->spellcast_data.spell_flags & SPELLCAST_FLAG_NODRAW))
+	    || (io->spellcast_data.spell_flags & SPELLCAST_FLAG_PRECAST)) {
 		
 		ARX_SPELLS_Launch(io->spellcast_data.castingspell,
 		                  io->index(),
@@ -1195,6 +1171,6 @@ void TryToCastSpell(Entity * io, SpellType spellType, long level, EntityHandle t
 		
 		io->spellcast_data.castingspell = SPELL_NONE;
 	}
-
-	io->spellcast_data.spell_flags &=~SPELLCAST_FLAG_NODRAW; // temporary, removes colored flares
+	
+	io->spellcast_data.spell_flags &= ~SPELLCAST_FLAG_NODRAW; // temporary, removes colored flares
 }

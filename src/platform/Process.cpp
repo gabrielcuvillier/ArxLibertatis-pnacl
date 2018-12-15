@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2013-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -55,9 +55,9 @@
  * When combining -flto and -fvisibility=hidden we and up with a hidden
  * 'environ' symbol in crt1.o on FreeBSD 9, which causes the link to fail.
  */
-extern char ** environ __attribute__((visibility("default")));
+extern char ** environ __attribute__((visibility("default"))); // NOLINT
 #else
-extern char ** environ;
+extern char ** environ; // NOLINT
 #endif
 #endif
 
@@ -74,25 +74,32 @@ extern char ** environ;
 
 #include "util/String.h"
 
+#if ARX_PLATFORM != ARX_PLATFORM_WIN32 && ARX_HAVE_OPEN && !ARX_HAVE_O_CLOEXEC
+#define O_CLOEXEC 0
+#endif
+
 namespace platform {
 
 #if ARX_PLATFORM != ARX_PLATFORM_WIN32
-static process_handle run(const char * exe, const char * const args[], int stdout,
+static process_handle run(const char * exe, const char * const args[], int outfd,
                           bool unlocalized, bool detach) {
 	
 	char ** argv = const_cast<char **>(args);
 	
 	#if ARX_HAVE_OPEN
-	static int dev_null = open("/dev/null", O_RDWR);
+	static int dev_null = open("/dev/null", O_RDWR | O_CLOEXEC);
+	#if !ARX_HAVE_O_CLOEXEC && ARX_HAVE_FCNTL
+	fcntl(dev_null, F_SETFD, FD_CLOEXEC);
+	#endif
 	#endif
 	
 	pid_t pid = 0;
 	
-#if ARX_HAVE_POSIX_SPAWNP
+	#if ARX_HAVE_POSIX_SPAWNP
 	
 	// Fast POSIX implementation: posix_spawnp avoids unnecessary vm copies
 	
-	if(stdout <= 0 && unlocalized == false) {
+	if(outfd <= 0 && !unlocalized) {
 		
 		// Redirect standard input, output and error to /dev/null
 		static posix_spawn_file_actions_t * file_actionsp = NULL;
@@ -124,10 +131,10 @@ static process_handle run(const char * exe, const char * const args[], int stdou
 	
 	else
 	
-#endif
+	#endif // ARX_HAVE_POSIX_SPAWNP
 	
 	{
-#if ARX_HAVE_FORK && ARX_HAVE_EXECVP
+		#if ARX_HAVE_FORK && ARX_HAVE_EXECVP
 		
 		// Compatibility POSIX implementation
 		
@@ -140,14 +147,14 @@ static process_handle run(const char * exe, const char * const args[], int stdou
 			#if ARX_HAVE_OPEN
 			if(detach && dev_null > 0) {
 				(void)dup2(dev_null, 0);
-				if(stdout > 0) {
+				if(outfd <= 0) {
 					dup2(dev_null, 1);
 				}
 				(void)dup2(dev_null, 2);
 			}
 			#endif
-			if(stdout > 0) {
-				(void)dup2(stdout, 1);
+			if(outfd > 0) {
+				(void)dup2(outfd, 1);
 			}
 			#endif
 			
@@ -172,13 +179,13 @@ static process_handle run(const char * exe, const char * const args[], int stdou
 			exit(-1);
 		}
 		
-#endif
+		#endif // ARX_HAVE_FORK && ARX_HAVE_EXECVP
 	}
 	
-#if !ARX_HAVE_POSIX_SPAWNP && !(ARX_HAVE_FORK && ARX_HAVE_EXECVP)
-	ARX_UNUSED(argv), ARX_UNUSED(stdout), ARX_UNUSED(unlocalized), ARX_UNUSED(detach);
+	#if !ARX_HAVE_POSIX_SPAWNP && !(ARX_HAVE_FORK && ARX_HAVE_EXECVP)
+	ARX_UNUSED(argv), ARX_UNUSED(outfd), ARX_UNUSED(unlocalized), ARX_UNUSED(detach);
 	#warning "Executing helper processes not supported on this system."
-#endif
+	#endif
 	
 	return (pid <= 0) ? 0 : pid;
 }
@@ -222,7 +229,7 @@ process_handle runAsync(const char * exe, const char * const args[], bool detach
 	
 #else
 	
-	return run(exe, args, /*stdout=*/ 0, /*unlocalized=*/ false, detach);
+	return run(exe, args, /*outfd=*/ 0, /*unlocalized=*/ false, detach);
 	
 #endif
 	
@@ -243,7 +250,7 @@ process_id getProcessId(process_handle process) {
 	#if ARX_PLATFORM == ARX_PLATFORM_WIN32
 	return process ? GetProcessId(process) : 0;
 	#else
-	return process_id(process);
+	return process;
 	#endif
 }
 
@@ -363,7 +370,7 @@ void reapZombies() {
 	#if ARX_PLATFORM != ARX_PLATFORM_WIN32 && ARX_HAVE_WAITPID
 	std::vector<process_handle>::iterator it = g_childProcesses.begin();
 	while(it != g_childProcesses.end()) {
-		if(waitpid(*it, NULL, WNOHANG) == 0) {
+		if(waitpid(*it, NULL, WNOHANG) != 0) {
 			it = g_childProcesses.erase(it);
 		} else {
 			++it;
@@ -468,7 +475,7 @@ void launchDefaultProgram(const std::string & uri) {
 	
 	CoUninitialize();
 	
-	#elif ARX_PLATFORM == ARX_PLATFORM_MACOSX
+	#elif ARX_PLATFORM == ARX_PLATFORM_MACOS
 	
 	const char * command[] = { "open", uri.c_str(), NULL };
 	runHelper(command);

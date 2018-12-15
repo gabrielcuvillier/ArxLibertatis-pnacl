@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2014 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -44,14 +44,15 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #ifndef ARX_SCENE_LEVELFORMAT_H
 #define ARX_SCENE_LEVELFORMAT_H
 
+#include "graphics/Color.h"
 #include "graphics/GraphicsFormat.h"
 #include "platform/Platform.h"
 
-//Fileformat version
+// File format version
 const f32 DLH_CURRENT_VERSION = 1.44f;
 
 
-#pragma pack(push,1)
+#pragma pack(push, 1)
 
 
 struct DANAE_LS_HEADER {
@@ -98,9 +99,15 @@ struct DANAE_LS_LIGHTINGHEADER {
 };
 
 struct DANAE_LS_VLIGHTING {
+	
 	s32 r;
 	s32 g;
 	s32 b;
+	
+	operator ColorBGRA() const {
+		return Color(u8(r), u8(g), u8(b)).toBGRA();
+	}
+	
 };
 
 // version 1.003f
@@ -147,14 +154,14 @@ struct DANAE_LS_PATH {
 	SavedVec3 initpos;
 	SavedVec3 pos;
 	s32 nb_pathways;
-	SavedColor rgb; 
+	SavedColor rgb;
 	f32 farclip;
 	f32 reverb;
 	f32 amb_max_vol;
 	f32 fpadd[26];
 	s32 height;
 	s32 lpadd[31];
-	char ambiance[128]; 
+	char ambiance[128];
 	char cpadd[128];
 };
 

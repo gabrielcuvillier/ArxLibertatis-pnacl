@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2016 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -51,7 +51,50 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 #include "graphics/GraphicsTypes.h"
 
 struct EERIEPOLY;
+struct EERIE_3DOBJ;
 
-void ARX_PHYSICS_BOX_ApplyModel(PHYSICS_BOX_DATA * pbox, float framediff, float rubber, Entity * source);
+struct PhysicsParticle {
+	
+	Vec3f initpos;
+	Vec3f pos;
+	Vec3f velocity;
+	Vec3f force;
+	float mass;
+	
+	PhysicsParticle()
+		: initpos(0.f)
+		, pos(0.f)
+		, velocity(0.f)
+		, force(0.f)
+		, mass(0.f)
+	{ }
+	
+};
+
+struct PHYSICS_BOX_DATA {
+	
+	boost::array<PhysicsParticle, 15> vert;
+	short active;
+	short stopcount;
+	float radius; //!< Radius around vert[0].pos for spherical collision
+	float storedtiming;
+	float surface;
+	
+	PHYSICS_BOX_DATA()
+		: active(0)
+		, stopcount(0)
+		, radius(0.f)
+		, storedtiming(0.f)
+		, surface(0.f)
+	{ }
+	
+};
+
+bool EERIE_PHYSICS_BOX_IsValidPosition(const Vec3f & pos);
+
+void EERIE_PHYSICS_BOX_Create(EERIE_3DOBJ * obj);
+void EERIE_PHYSICS_BOX_Release(EERIE_3DOBJ * obj);
+void EERIE_PHYSICS_BOX_Launch(EERIE_3DOBJ * obj, const Vec3f & pos, const Anglef & angle, const Vec3f & vect);
+void ARX_PHYSICS_BOX_ApplyModel(PHYSICS_BOX_DATA & pbox, float framediff, float rubber, Entity & source);
 
 #endif // ARX_PHYSICS_PHYSICS_H

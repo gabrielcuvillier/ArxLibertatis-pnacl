@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2012 Arx Libertatis Team (see the AUTHORS file)
+ * Copyright 2011-2017 Arx Libertatis Team (see the AUTHORS file)
  *
  * This file is part of Arx Libertatis.
  *
@@ -46,6 +46,7 @@ ZeniMax Media Inc., Suite 120, Rockville, Maryland 20850 USA.
 
 #include <list>
 
+#include "core/TimeTypes.h"
 #include "graphics/BaseGraphicsTypes.h"
 #include "graphics/Renderer.h"
 #include "graphics/Draw.h"
@@ -72,7 +73,7 @@ public:
 	ParticleSystem();
 	~ParticleSystem();
 	
-	void SetParams(const ParticleParams & app);
+	void SetParams(const ParticleParams & params);
 	
 	void SetPos(const Vec3f & pos);
 	
@@ -81,7 +82,7 @@ public:
 	void StopEmission();
 	bool IsAlive();
 	
-	void Update(long);
+	void Update(GameDuration delta);
 	
 private:
 	
@@ -99,7 +100,7 @@ private:
 	
 	void SetParticleParams(Particle * particle);
 	
-	void SetTexture(const char *, int, int);
+	void SetTexture(const char * _pszTex, int _iNbTex, int _iTime);
 	
 public:
 	
