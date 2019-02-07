@@ -6,3 +6,5 @@ build_pnacl
 build
 *.orig
 arx_
+cmake-build*/
+.idea
