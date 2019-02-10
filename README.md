@@ -72,7 +72,7 @@ A few remarks:
 
 The easiest way to see the game running in your browser is simply to go to the following URL using latest version Chrome: 
 
-http://arxpnacl.cad-labs.fr
+__http://pnacl.continuation-labs.com/arxdemo__
 
 A static website is hosted here, with a main HTML page embedding the PNaCl module ready to run, and some Javascript code to provide browser-side access to game data.
 
